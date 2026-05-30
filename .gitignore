@@ -41,3 +41,12 @@ out
 
 # OS
 Thumbs.db
+
+# Dev scripts
+start-dev.bat
+start-dev.ps1
+start.bat
+launch.vbs
+
+# Internal
+.claude/
