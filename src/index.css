@@ -1,0 +1,124 @@
+@import "tailwindcss";
+@import "highlight.js/styles/atom-one-dark.css";
+@plugin "tailwindcss-animate";
+@plugin "@tailwindcss/typography";
+
+/* Override hljs background with theme variable */
+.hljs { background: var(--code-bg) !important; }
+
+@keyframes thinking-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30%            { transform: translateY(-5px); opacity: 1; }
+}
+
+
+:root {
+  interpolate-size: allow-keywords;
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* === Backgrounds === */
+  --bg-base:     #0a0a0a;
+  --bg-sidebar:  #0d0d0d;
+  --bg-surface:  #111111;
+  --bg-elevated: #1a1a1a;
+
+  /* === Text === */
+  --text-primary:   rgba(255,255,255,0.85);
+  --text-secondary: rgba(255,255,255,0.70);
+  --text-muted:     rgba(255,255,255,0.40);
+  --text-faint:     rgba(255,255,255,0.25);
+  --text-ghost:     rgba(255,255,255,0.15);
+
+  /* === Borders === */
+  --border-subtle:  rgba(255,255,255,0.05);
+  --border-default: rgba(255,255,255,0.08);
+  --border-strong:  rgba(255,255,255,0.15);
+
+  /* === Interactive surfaces === */
+  --surface-hover:    rgba(255,255,255,0.06);
+  --surface-selected: rgba(255,255,255,0.08);
+  --surface-active:   rgba(255,255,255,0.15);
+
+  /* === Code blocks === */
+  --code-bg: #141414;
+
+  /* === Accent (violet) === */
+  --accent:       #8b5cf6;
+  --accent-dim:   rgba(139,92,246,0.20);
+
+  /* === Semantic === */
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-error:   #f87171;
+
+  /* === Error bubble === */
+  --error-bg:     rgba(239,68,68,0.10);
+  --error-border: rgba(239,68,68,0.25);
+  --error-text:   rgba(255,180,180,0.90);
+}
+
+@theme {
+  --color-bg-base:      var(--bg-base);
+  --color-bg-sidebar:   var(--bg-sidebar);
+  --color-bg-surface:   var(--bg-surface);
+  --color-bg-elevated:  var(--bg-elevated);
+
+  --color-text-primary:   var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted:     var(--text-muted);
+  --color-text-faint:     var(--text-faint);
+  --color-text-ghost:     var(--text-ghost);
+
+  --color-border-subtle:  var(--border-subtle);
+  --color-border-default: var(--border-default);
+  --color-border-strong:  var(--border-strong);
+
+  --color-surface-hover:    var(--surface-hover);
+  --color-surface-selected: var(--surface-selected);
+  --color-surface-active:   var(--surface-active);
+
+  --color-accent:     var(--accent);
+  --color-accent-dim: var(--accent-dim);
+
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-error:   var(--color-error);
+
+  --color-error-bg:     var(--error-bg);
+  --color-error-border: var(--error-border);
+  --color-error-text:   var(--error-text);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-base);
+}
+
+#root {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-drag-region {
+  -webkit-app-region: drag;
+}
+
+.app-drag-region * {
+  -webkit-app-region: no-drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.no-drag * {
+  -webkit-app-region: no-drag;
+}
