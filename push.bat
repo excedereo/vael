@@ -1,5 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
+cd /d "%~dp0"
 
 :: Get version from package.json
 for /f "tokens=*" %%i in ('node -e "process.stdout.write(require('./package.json').version)"') do set VERSION=%%i
