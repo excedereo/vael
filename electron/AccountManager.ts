@@ -95,24 +95,7 @@ export class AccountManager {
         migrationVersion: 13,
         projects: { [homedir]: { hasTrustDialogAccepted: true } },
       }
-      // Also copy oauthAccount from default .claude if exists
-      try {
-        const defaultClaude = path.join(process.env.USERPROFILE || process.env.HOME || '', '.claude', '.claude.json')
-        if (fs.existsSync(defaultClaude)) {
-          const cfg = JSON.parse(fs.readFileSync(defaultClaude, 'utf-8'))
-          if (cfg.oauthAccount) (seed as Record<string, unknown>).oauthAccount = cfg.oauthAccount
-        }
-      } catch {}
       fs.writeFileSync(claudeJsonPath, JSON.stringify(seed, null, 2))
-    }
-
-    // Copy credentials from default .claude if not present
-    const credPath = path.join(configDir, '.credentials.json')
-    if (!fs.existsSync(credPath)) {
-      try {
-        const defaultCred = path.join(process.env.USERPROFILE || process.env.HOME || '', '.claude', '.credentials.json')
-        if (fs.existsSync(defaultCred)) fs.copyFileSync(defaultCred, credPath)
-      } catch {}
     }
 
     const account: Account = { id, name: id, configDir }

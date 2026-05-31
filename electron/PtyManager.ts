@@ -1,18 +1,54 @@
 import * as pty from 'node-pty'
 import path from 'path'
 import os from 'os'
+import { execSync } from 'child_process'
+import fs from 'fs'
 import { stripAnsi } from './usageParser.js'
 
 export type PtyOutputCallback = (data: string) => void
 
-const CLAUDE_BIN = process.env.CLAUDE_BIN
-  || 'C:\\Users\\reaya\\AppData\\Roaming\\npm\\claude.cmd'
+function findClaudeBin(): string {
+  if (process.env.CLAUDE_BIN && fs.existsSync(process.env.CLAUDE_BIN)) return process.env.CLAUDE_BIN
+  if (process.platform === 'win32') {
+    for (const name of ['claude.cmd', 'claude']) {
+      try {
+        const found = execSync(`where ${name}`, { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf-8' }).trim().split('\n')[0].trim()
+        if (found && fs.existsSync(found)) return found
+      } catch {}
+    }
+  } else {
+    try {
+      const found = execSync('which claude', { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf-8' }).trim()
+      if (found && fs.existsSync(found)) return found
+    } catch {}
+  }
+  const home = os.homedir()
+  const candidates = process.platform === 'win32'
+    ? [
+        path.join(home, 'AppData', 'Roaming', 'npm', 'claude.cmd'),
+        path.join(home, 'AppData', 'Local', 'Programs', 'claude', 'claude.exe'),
+        'C:\\Program Files\\claude\\claude.exe',
+      ]
+    : [path.join(home, '.npm-global', 'bin', 'claude'), '/usr/local/bin/claude', '/usr/bin/claude']
+  for (const p of candidates) { if (fs.existsSync(p)) return p }
+  return process.platform === 'win32' ? 'claude.cmd' : 'claude'
+}
 
-// Derive the actual exe from the .cmd wrapper location
-const CLAUDE_EXE = path.join(
-  path.dirname(CLAUDE_BIN),
-  'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe',
-)
+function findClaudeExe(bin: string): string {
+  // If it's already an .exe, use it directly
+  if (bin.endsWith('.exe')) return bin
+  // If it's a .cmd wrapper, try to find the actual exe next to it or via node_modules
+  if (bin.endsWith('.cmd')) {
+    const exeNext = bin.replace('.cmd', '.exe')
+    if (fs.existsSync(exeNext)) return exeNext
+    const viaModules = path.join(path.dirname(bin), 'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe')
+    if (fs.existsSync(viaModules)) return viaModules
+  }
+  return bin
+}
+
+const CLAUDE_BIN = findClaudeBin()
+const CLAUDE_EXE = findClaudeExe(CLAUDE_BIN)
 
 export class PtyManager {
   private ptyProcess: pty.IPty | null = null
