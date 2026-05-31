@@ -129,8 +129,47 @@ function ensureUsageSession(accountId: string, configDir: string): string {
   return sessionId
 }
 
-function spawnUsagePty(_accountId: string, configDir: string) {
-  usagePty.spawn(configDir) // no --resume needed, just need a live claude for /usage
+async function spawnUsagePty(accountId: string, configDir: string) {
+  // Try to resume existing usage session — avoids startup notifications from claude
+  const existingSessionId = accountManager.getUsageSessionId(accountId)
+  if (existingSessionId) {
+    console.log('[usagePty] resuming existing usage session:', existingSessionId)
+    usagePty.spawn(configDir, existingSessionId)
+    return
+  }
+
+  // No existing session — create one via ClaudeRunner (stream-json, no PTY needed)
+  console.log('[usagePty] creating usage session via ClaudeRunner')
+  const { ClaudeRunner } = await import('./ClaudeRunner.js')
+  const tempRunner = new ClaudeRunner()
+  let createdSessionId: string | null = null
+
+  await new Promise<void>((resolve) => {
+    tempRunner.startNewSession(
+      'hi',
+      configDir,
+      'claude-haiku-4-5',
+      null,
+      'bypassPermissions',
+      (event) => {
+        const e = event as Record<string, unknown>
+        if (e.type === 'system' && e.session_id) {
+          createdSessionId = e.session_id as string
+        }
+      },
+      () => resolve(),
+    )
+    setTimeout(resolve, 20000)
+  })
+
+  if (createdSessionId) {
+    console.log('[usagePty] created usage session:', createdSessionId)
+    accountManager.setUsageSessionId(accountId, createdSessionId)
+    usagePty.spawn(configDir, createdSessionId)
+  } else {
+    console.log('[usagePty] failed to create usage session, spawning without resume')
+    usagePty.spawn(configDir)
+  }
 }
 
 // ── Themes ────────────────────────────────────────────────────────────────────
@@ -310,22 +349,13 @@ ipcMain.handle('accounts:openAuth', (_, configDir: string) => {
   const winTitle = `VaeliAuth-${Date.now()}`
   const batPath = path.join(configDir, '_auth.bat')
   fs.writeFileSync(batPath,
-    `@echo off\ntitle ${winTitle}\ncd /d "${homedir}"\nset CLAUDE_CONFIG_DIR=${configDir}\nclaude\nexit\n`)
+    `@echo off\ntitle ${winTitle}\ncd /d "${homedir}"\nset CLAUDE_CONFIG_DIR=${configDir}\nclaude auth login --claudeai\nexit\n`)
 
   const pidFile = path.join(configDir, '_auth.pid')
   const psOpen = [
     `$wsh = New-Object -ComObject WScript.Shell`,
     `$proc = Start-Process cmd.exe -ArgumentList '/c "${batPath}"' -PassThru`,
     `$proc.Id | Set-Content '${pidFile}'`,
-    // theme: "1. Auto 2. Dark mode 3. Light..." → 2
-    `Start-Sleep -Milliseconds 1500`,
-    `$wsh.AppActivate('${winTitle}')`,
-    `Start-Sleep -Milliseconds 300`,
-    `$wsh.SendKeys('2')`,
-    // login method: "1. Claude account 2. Console 3. 3rd-party" → 1
-    `Start-Sleep -Milliseconds 1000`,
-    `$wsh.AppActivate('${winTitle}')`,
-    `$wsh.SendKeys('1')`,
   ].join('; ')
 
   const child = spawn('powershell.exe', ['-NoProfile', '-Command', psOpen], { windowsHide: true })
@@ -342,11 +372,13 @@ ipcMain.handle('accounts:openAuth', (_, configDir: string) => {
     }
   }
 
-  // Poll for oauthAccount, then auto-close terminal
+  // Poll for oauthAccount or .credentials.json, then auto-close terminal
   const pollLogin = setInterval(() => {
     try {
-      const cfg = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8'))
-      if (cfg.oauthAccount) {
+      const credPath = path.join(configDir, '.credentials.json')
+      const hasCredentials = fs.existsSync(credPath)
+      const cfg = fs.existsSync(claudeJsonPath) ? JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8')) : {}
+      if (cfg.oauthAccount || hasCredentials) {
         clearInterval(pollLogin)
         console.log('[openAuth] login detected, patching .claude.json and killing terminal')
         // Patch trust + onboarding flags so dialogs don't reappear in PTY
@@ -437,6 +469,7 @@ ipcMain.handle('settings:getVersion', () => {
 ipcMain.handle('shell:openExternal', (_, url: string) => {
   shell.openExternal(url)
 })
+
 
 ipcMain.handle('window:minimize', () => mainWindow?.minimize())
 ipcMain.handle('window:maximize', () => {
