@@ -4,6 +4,7 @@ A clean, minimal desktop interface for Claude Code — built for people who want
 
 ![version](https://img.shields.io/badge/version-0.1.5-a78bfa)
 ![platform](https://img.shields.io/badge/platform-Windows-blue)
+![downloads](https://img.shields.io/github/downloads/excedereo/vael/total?label=downloads&color=a78bfa)
 
 ## What is this
 
