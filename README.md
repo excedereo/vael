@@ -9,6 +9,14 @@ A clean, minimal desktop interface for Claude Code — built for people who want
 
 Vael is an Electron app that wraps Claude Code CLI with a proper chat UI. It handles sessions, accounts, file attachments, and all the settings you'd otherwise configure through config files — presented in a way that actually makes sense.
 
+## Download
+
+Grab the latest installer from the [Releases](https://github.com/excedereo/vael/releases/latest) page.
+
+**Requirements before installing:**
+- [Claude Code CLI](https://github.com/anthropics/claude-code) installed and authenticated
+- Windows (other platforms untested)
+
 ## Features
 
 - **Chat** — clean message view with thinking indicators, tool use display, and compact summaries
@@ -19,16 +27,10 @@ Vael is an Electron app that wraps Claude Code CLI with a proper chat UI. It han
 - **Themes** — dark by default, customizable via JSON theme files
 - **Custom avatar slots** — replace the default icons with your own
 
-## Requirements
-
-- [Claude Code CLI](https://github.com/anthropics/claude-code) installed and authenticated
-- Node.js 18+
-- Windows (other platforms untested)
-
-## Getting started
+## Building from source
 
 ```bash
-git clone https://github.com/stralitz/vael
+git clone https://github.com/excedereo/vael
 cd vael
 npm install
 npm run dev
