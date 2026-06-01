@@ -1,7 +1,7 @@
 import { JsonlEntry, ContentBlock } from '../types/index'
 import { cn } from '../lib/utils.js'
 import { ChevronDown, ChevronRight, Copy, Check } from 'lucide-react'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { diffLines } from 'diff'
 import remarkGfm from 'remark-gfm'
@@ -276,6 +276,43 @@ function ToolBlock({ name, input }: { name: string; input: Record<string, unknow
   )
 }
 
+const COLLAPSE_THRESHOLD = 320
+
+function CollapsibleContent({ children }: { children: React.ReactNode }) {
+  const [collapsed, setCollapsed] = useState(true)
+  const [needsCollapse, setNeedsCollapse] = useState(false)
+  const contentRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (contentRef.current && contentRef.current.scrollHeight > COLLAPSE_THRESHOLD) {
+      setNeedsCollapse(true)
+    }
+  }, [])
+
+  return (
+    <>
+      <div
+        ref={contentRef}
+        style={needsCollapse && collapsed
+          ? { maxHeight: `${COLLAPSE_THRESHOLD}px`, overflow: 'hidden', position: 'relative',
+              maskImage: 'linear-gradient(to bottom, black 60%, transparent 100%)',
+              WebkitMaskImage: 'linear-gradient(to bottom, black 60%, transparent 100%)' }
+          : undefined}
+      >
+        {children}
+      </div>
+      {needsCollapse && (
+        <button
+          onClick={() => setCollapsed(v => !v)}
+          className="text-[12px] text-text-muted hover:text-text-secondary transition-colors mt-1"
+        >
+          {collapsed ? 'Show more' : 'Show less'}
+        </button>
+      )}
+    </>
+  )
+}
+
 export function MessageBubble({ entry }: Props) {
   if (entry.type === 'user') {
     const content = typeof entry.message.content === 'string'
@@ -288,8 +325,10 @@ export function MessageBubble({ entry }: Props) {
     if (!cleaned.trim()) return null
     return (
       <div className="py-0.5 my-5">
-        <div className="inline-block max-w-[90%] rounded-2xl rounded-tl-sm bg-surface-hover border border-border-default px-4 py-3 text-sm text-text-primary">
-          <TextContent text={cleaned} plain />
+        <div className="block w-full rounded-2xl rounded-tl-sm bg-surface-hover border border-border-default px-4 py-3 text-sm text-text-primary">
+          <CollapsibleContent>
+            <TextContent text={cleaned} plain />
+          </CollapsibleContent>
         </div>
       </div>
     )
@@ -309,7 +348,9 @@ export function MessageBubble({ entry }: Props) {
           if (block.type === 'text' && block.text) {
             return (
               <div key={i} className="text-sm text-text-primary leading-relaxed">
-                <TextContent text={block.text} />
+                <CollapsibleContent>
+                  <TextContent text={block.text} />
+                </CollapsibleContent>
               </div>
             )
           }

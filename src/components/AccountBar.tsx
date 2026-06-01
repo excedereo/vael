@@ -27,28 +27,28 @@ export function AccountBar({ accounts, activeAccountId, onSwitch, onManage, onSe
   }, [open])
 
   return (
-    <div ref={ref} className="relative px-2 py-2 border-t border-border-subtle">
+    <div ref={ref} className="relative px-2 py-1.5">
       <button
         onClick={() => setOpen(v => !v)}
         className={cn(
-          'w-full flex items-center gap-2 px-2 py-2 rounded-lg transition-colors',
+          'w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors',
           'hover:bg-surface-hover',
           open && 'bg-surface-hover',
         )}
       >
         {/* Avatar */}
-        <div className="w-8 h-8 rounded-md flex items-center justify-center shrink-0" style={{ backgroundColor: 'color-mix(in srgb, var(--accent) 60%, transparent)' }}>
-          <span className="text-[13px] font-semibold text-text-primary">
+        <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style={{ backgroundColor: 'color-mix(in srgb, var(--accent) 50%, transparent)' }}>
+          <span className="text-[12px] font-semibold text-text-primary">
             {(active?.name || '?')[0].toUpperCase()}
           </span>
         </div>
 
         <div className="flex-1 min-w-0 text-left">
-          <div className="text-[14px] text-text-secondary truncate">{active?.name || 'No account'}</div>
-          {active?.email && <div className="text-[12px] text-text-faint truncate">{active.email}</div>}
+          <div className="text-[14px] text-text-muted truncate leading-tight">{active?.name || 'No account'}</div>
+          {active?.email && <div className="text-[12px] text-text-ghost truncate leading-tight">{active.email}</div>}
         </div>
 
-        <ChevronDown size={14} className={cn('text-text-faint transition-transform', open && 'rotate-180')} />
+        <ChevronDown size={12} className={cn('text-text-ghost transition-transform shrink-0', open && 'rotate-180')} />
       </button>
 
       {open && (
@@ -63,13 +63,13 @@ export function AccountBar({ accounts, activeAccountId, onSwitch, onManage, onSe
                   className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-surface-hover transition-colors"
                 >
                   <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style={{ backgroundColor: 'color-mix(in srgb, var(--accent) 50%, transparent)' }}>
-                    <span className="text-[12px] font-semibold text-text-primary">
+                    <span className="text-[13px] font-semibold text-text-primary">
                       {acc.name[0].toUpperCase()}
                     </span>
                   </div>
                   <div className="flex-1 min-w-0 text-left">
-                    <div className="text-[13px] text-text-secondary truncate">{acc.name}</div>
-                    {acc.email && <div className="text-[11px] text-text-faint truncate">{acc.email}</div>}
+                    <div className="text-[14px] text-text-secondary truncate">{acc.name}</div>
+                    {acc.email && <div className="text-[12px] text-text-faint truncate">{acc.email}</div>}
                   </div>
                   {acc.id === activeAccountId && <Check size={13} style={{ color: 'var(--accent)' }} />}
                 </button>
@@ -83,14 +83,14 @@ export function AccountBar({ accounts, activeAccountId, onSwitch, onManage, onSe
           <div className="p-1">
             <button
               onClick={() => { onManage(); setOpen(false) }}
-              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-surface-hover transition-colors text-[13px] text-text-muted hover:text-text-secondary"
+              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-surface-hover transition-colors text-[14px] text-text-muted hover:text-text-secondary"
             >
               <Users size={14} />
               Manage accounts
             </button>
             <button
               onClick={() => { onSettings(); setOpen(false) }}
-              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-surface-hover transition-colors text-[13px] text-text-muted hover:text-text-secondary"
+              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-surface-hover transition-colors text-[14px] text-text-muted hover:text-text-secondary"
             >
               <Settings size={14} />
               Settings

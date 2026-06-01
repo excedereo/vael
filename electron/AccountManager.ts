@@ -61,6 +61,22 @@ export class AccountManager {
     return this.accounts.find(a => a.id === id)
   }
 
+  logoutAccount(id: string): void {
+    id = this.sanitizeId(id)
+    const configDir = path.join(ACCOUNTS_ROOT, id)
+    // Remove only credentials, keep sessions
+    const credPath = path.join(configDir, '.credentials.json')
+    if (fs.existsSync(credPath)) fs.unlinkSync(credPath)
+    const claudeJsonPath = path.join(configDir, '.claude.json')
+    if (fs.existsSync(claudeJsonPath)) {
+      try {
+        const cfg = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8'))
+        delete cfg.oauthAccount
+        fs.writeFileSync(claudeJsonPath, JSON.stringify(cfg, null, 2))
+      } catch {}
+    }
+  }
+
   deleteAccount(id: string): void {
     id = this.sanitizeId(id)
     const configDir = path.join(ACCOUNTS_ROOT, id)

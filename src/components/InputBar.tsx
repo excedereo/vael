@@ -1,11 +1,38 @@
 ﻿import { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '../lib/utils.js'
-import { CornerDownLeft, Square, Check } from 'lucide-react'
+import { CornerDownLeft, Square, Check, Terminal } from 'lucide-react'
 import { UsageCircles } from './UsageCircles.js'
 import { AttachedFiles, AttachedFile } from './AttachedFiles.js'
 import { api } from '../lib/api.js'
 
-export type ModelId = 'claude-opus-4-5' | 'claude-sonnet-4-5' | 'claude-haiku-4-5'
+export type CommandName = 'usage' | 'context' | 'compact'
+
+const COMMANDS: { name: CommandName; description: string }[] = [
+  { name: 'usage',   description: 'Show token usage' },
+  { name: 'context', description: 'Show context window' },
+  { name: 'compact', description: 'Compact session · optional instructions' },
+]
+
+function parseCommand(text: string): CommandName | null {
+  const trimmed = text.trim()
+  if (!trimmed.startsWith('/')) return null
+  const word = trimmed.slice(1).split(/\s/)[0].toLowerCase()
+  const rest = trimmed.slice(1 + word.length)
+  if ((rest === '' || rest.startsWith(' ')) && COMMANDS.find(c => c.name === word)) {
+    return word as CommandName
+  }
+  return null
+}
+
+function getCommandSuggestions(text: string): typeof COMMANDS {
+  if (!text.startsWith('/')) return []
+  const query = text.slice(1).toLowerCase()
+  return COMMANDS.filter(c => c.name.startsWith(query))
+}
+
+export type KnownModelId = 'claude-opus-4-8' | 'claude-sonnet-4-6' | 'claude-haiku-4-5'
+export type ModelId = KnownModelId | string
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 export type PermissionMode = 'bypassPermissions' | 'plan'
 
@@ -14,10 +41,12 @@ const PERMISSION_LABELS: Record<PermissionMode, string> = {
   plan: 'Plan',
 }
 
+const ALL_EFFORTS: EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max']
+
 const MODELS: { id: ModelId; label: string; efforts: EffortLevel[] }[] = [
-  { id: 'claude-opus-4-5',   label: 'Opus 4.5',   efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-  { id: 'claude-sonnet-4-5', label: 'Sonnet 4.5', efforts: ['low', 'medium', 'high'] },
-  { id: 'claude-haiku-4-5',  label: 'Haiku 4.5',  efforts: [] },
+  { id: 'claude-opus-4-8',   label: 'Opus 4.8',         efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6',       efforts: ['low', 'medium', 'high'] },
+  { id: 'claude-haiku-4-5',  label: 'Haiku 4.5',        efforts: [] },
 ]
 
 export function getMaxEffort(model: ModelId): EffortLevel | null {
@@ -38,6 +67,7 @@ interface Props {
   onPermissionChange: (p: PermissionMode) => void
   onSend: (text: string) => void
   onAbort: () => void
+  onCommand: (name: CommandName, fullText: string) => void
   isLocked: boolean
   isRunning: boolean
   hasSession: boolean
@@ -126,30 +156,36 @@ export const InputBar = forwardRef<InputBarHandle, Props>(function InputBar({
   onPermissionChange,
   onSend,
   onAbort,
+  onCommand,
   isLocked,
   isRunning,
   hasSession,
 }, ref) {
   const [popupOpen, setPopupOpen] = useState(false)
+  const [permPopupOpen, setPermPopupOpen] = useState(false)
+  const [effortPopupOpen, setEffortPopupOpen] = useState(false)
   const [pendingText, setPendingText] = useState<string | null>(null)
   const [countdown, setCountdown] = useState(0)
   const [isEmpty, setIsEmpty] = useState(true)
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([])
+  const [customSuccess, setCustomSuccess] = useState(false)
+  const [cmdSuggestions, setCmdSuggestions] = useState<typeof COMMANDS>([])
+  const [cmdSelectedIdx, setCmdSelectedIdx] = useState(0)
+  const [currentText, setCurrentText] = useState('')
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const editRef = useRef<HTMLDivElement>(null)
   const popupRef = useRef<HTMLDivElement>(null)
+  const permPopupRef = useRef<HTMLDivElement>(null)
+  const effortPopupRef = useRef<HTMLDivElement>(null)
   const suppressObserverRef = useRef(false)
 
-  const activeModelDef = MODELS.find(m => m.id === activeModel)!
-  const availableEfforts = activeModelDef.efforts
+  const activeModelDef = MODELS.find(m => m.id === activeModel)
+  const availableEfforts = activeModelDef?.efforts ?? ALL_EFFORTS
   const showEffort = availableEfforts.length > 0
+  const modelLabel = activeModelDef?.label ?? activeModel
 
-  const statusLabel = [
-    activeModelDef.label,
-    showEffort ? activeEffort.charAt(0).toUpperCase() + activeEffort.slice(1) : null,
-    PERMISSION_LABELS[activePermission],
-  ].filter(Boolean).join(' · ')
+  const statusLabel = modelLabel
 
   useEffect(() => {
     if (!popupOpen) return
@@ -159,6 +195,24 @@ export const InputBar = forwardRef<InputBarHandle, Props>(function InputBar({
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [popupOpen])
+
+  useEffect(() => {
+    if (!permPopupOpen) return
+    const handler = (e: MouseEvent) => {
+      if (permPopupRef.current && !permPopupRef.current.contains(e.target as Node)) setPermPopupOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [permPopupOpen])
+
+  useEffect(() => {
+    if (!effortPopupOpen) return
+    const handler = (e: MouseEvent) => {
+      if (effortPopupRef.current && !effortPopupRef.current.contains(e.target as Node)) setEffortPopupOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [effortPopupOpen])
 
 
   const updateEmpty = useCallback(() => {
@@ -170,6 +224,12 @@ export const InputBar = forwardRef<InputBarHandle, Props>(function InputBar({
       Array.from(el.querySelectorAll('[data-fileid]')).map(n => (n as HTMLElement).dataset.fileid!)
     )
     setAttachedFiles(prev => prev.filter(f => presentIds.has(f.id)))
+    // Update command suggestions based on current text
+    const text = extractText(el).trim()
+    setCurrentText(text)
+    const suggestions = getCommandSuggestions(text)
+    setCmdSuggestions(suggestions)
+    setCmdSelectedIdx(0)
     // Height is managed by field-sizing: content in CSS — no JS needed
   }, [])
 
@@ -200,8 +260,21 @@ export const InputBar = forwardRef<InputBarHandle, Props>(function InputBar({
     const text = extractText(el).trim()
     if (!text) return
 
+    // Check if it's a command
+    const cmd = parseCommand(text)
+    if (cmd) {
+      clearEditor()
+      setAttachedFiles([])
+      setCmdSuggestions([])
+      setCurrentText('')
+      onCommand(cmd, text)
+      return
+    }
+
     clearEditor()
     setAttachedFiles([])
+    setCmdSuggestions([])
+    setCurrentText('')
     setPendingText(text)
     setCountdown(2)
 
@@ -212,9 +285,52 @@ export const InputBar = forwardRef<InputBarHandle, Props>(function InputBar({
       setCountdown(0)
       onSend(text)
     }, 2000)
-  }, [isLocked, pendingText, clearEditor, onSend])
+  }, [isLocked, pendingText, clearEditor, onSend, onCommand])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Command dropdown navigation
+    if (cmdSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setCmdSelectedIdx(i => Math.min(i + 1, cmdSuggestions.length - 1))
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setCmdSelectedIdx(i => Math.max(i - 1, 0))
+        return
+      }
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+        e.preventDefault()
+        const selected = cmdSuggestions[cmdSelectedIdx]
+        if (selected) {
+          // Fill the command into editor
+          const el = editRef.current
+          if (el) {
+            suppressObserverRef.current = true
+            el.textContent = '/' + selected.name
+            suppressObserverRef.current = false
+            // Move cursor to end
+            const sel = window.getSelection()
+            if (sel) {
+              const range = document.createRange()
+              range.selectNodeContents(el)
+              range.collapse(false)
+              sel.removeAllRanges()
+              sel.addRange(range)
+            }
+            setCurrentText('/' + selected.name)
+            setCmdSuggestions([])
+          }
+        }
+        return
+      }
+      if (e.key === 'Escape') {
+        setCmdSuggestions([])
+        return
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
@@ -263,7 +379,7 @@ export const InputBar = forwardRef<InputBarHandle, Props>(function InputBar({
         updateEmpty()
       }
     }
-  }, [handleSend, cancelSend, pendingText, updateEmpty])
+  }, [handleSend, cancelSend, pendingText, updateEmpty, cmdSuggestions, cmdSelectedIdx])
 
   const handleButtonClick = () => {
     if (isRunning) { onAbort(); return }
@@ -391,7 +507,7 @@ export const InputBar = forwardRef<InputBarHandle, Props>(function InputBar({
 
   return (
     <div className={cn(
-      'border-t border-border-subtle px-3 pt-2 pb-2',
+      'pt-0 pb-2',
       isLocked && 'opacity-60',
     )}>
       {/* Attached files preview — thumbnails above input */}
@@ -418,10 +534,59 @@ export const InputBar = forwardRef<InputBarHandle, Props>(function InputBar({
       <div className="relative">
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
+        {/* Command dropdown */}
+        {cmdSuggestions.length > 0 && (
+          <div className="absolute bottom-full left-0 mb-1.5 bg-bg-elevated border border-border-default rounded-xl shadow-2xl z-50 min-w-[200px] overflow-hidden py-1">
+            {cmdSuggestions.map((cmd, i) => (
+              <button
+                key={cmd.name}
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  const el = editRef.current
+                  if (el) {
+                    suppressObserverRef.current = true
+                    el.textContent = '/' + cmd.name
+                    suppressObserverRef.current = false
+                    setCurrentText('/' + cmd.name)
+                    setCmdSuggestions([])
+                    el.focus()
+                    const sel = window.getSelection()
+                    if (sel) {
+                      const range = document.createRange()
+                      range.selectNodeContents(el)
+                      range.collapse(false)
+                      sel.removeAllRanges()
+                      sel.addRange(range)
+                    }
+                  }
+                }}
+                className={cn(
+                  'w-full flex items-center gap-2 px-3 py-2 text-[13px] text-left transition-colors',
+                  i === cmdSelectedIdx ? 'bg-surface-selected text-text-primary' : 'text-text-secondary hover:bg-surface-hover',
+                )}
+              >
+                <Terminal size={12} className="shrink-0 text-text-muted" />
+                <span className="font-medium">/{cmd.name}</span>
+                <span className="text-text-muted text-[12px]">{cmd.description}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Placeholder */}
         {isEmpty && !pendingText && (
-          <div className="absolute top-0 left-0 px-3.5 py-3 text-sm text-text-ghost pointer-events-none select-none">
+          <div className="absolute top-0 left-0 right-12 px-3.5 py-2.5 text-base text-text-ghost pointer-events-none select-none flex items-center h-full">
             Type / for commands
+          </div>
+        )}
+
+        {/* Accent overlay when full command is typed */}
+        {parseCommand(currentText) && !isEmpty && (
+          <div
+            className="absolute top-0 left-0 px-4 py-3.5 text-base pointer-events-none select-none whitespace-pre-wrap break-words pr-14"
+            style={{ color: 'color-mix(in srgb, var(--accent) 80%, white 20%)' }}
+          >
+            {currentText}
           </div>
         )}
 
@@ -433,12 +598,14 @@ export const InputBar = forwardRef<InputBarHandle, Props>(function InputBar({
           onPaste={handlePaste}
           suppressContentEditableWarning
           className={cn(
-            'w-full bg-surface-hover rounded-xl px-3.5 py-3 pr-12',
-            'text-sm text-text-primary',
+            'w-full bg-surface-hover rounded-xl px-3.5 py-2.5 pr-12',
+            'text-base',
             'border border-border-default focus:border-border-strong focus:outline-none',
             'transition-[height,border-color] duration-150 ease-out',
             'min-h-[44px] max-h-[200px] overflow-y-auto',
             'whitespace-pre-wrap break-words',
+            'shadow-[0_2px_12px_rgba(0,0,0,0.35)]',
+            parseCommand(currentText) && !isEmpty ? 'text-transparent caret-text-primary' : 'text-text-primary',
           )}
           style={{ wordBreak: 'break-word', overflowAnchor: 'none', fieldSizing: 'content' } as React.CSSProperties}
         />
@@ -447,41 +614,93 @@ export const InputBar = forwardRef<InputBarHandle, Props>(function InputBar({
           onClick={handleButtonClick}
           disabled={buttonDisabled}
           className={cn(
-            'absolute right-2 bottom-[14px] w-8 h-8 rounded-lg transition-colors flex items-center justify-center pointer-events-auto',
+            'absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg flex items-center justify-center pointer-events-auto',
+            'transition-all duration-150 active:scale-90',
             isRunning || pendingText
-              ? 'text-red-400 hover:text-red-300'
+              ? 'text-red-400 hover:text-red-300 hover:bg-red-400/10 active:bg-red-400/20'
               : !isEmpty && !isLocked
-                ? 'text-text-secondary hover:text-text-primary'
-                : 'text-text-ghost',
+                ? 'text-text-secondary hover:text-text-primary hover:bg-surface-hover active:bg-surface-active'
+                : 'text-text-ghost cursor-default',
           )}
         >
           {pendingText ? (
             <span className="relative flex items-center justify-center w-5 h-5">
-              <Square size={22} className="absolute" />
+              <Square size={20} className="absolute" />
               <span className="text-[11px] font-bold leading-none z-10">{countdown}</span>
             </span>
           ) : isRunning ? (
-            <Square size={20} />
+            <Square size={18} />
           ) : (
-            <CornerDownLeft size={19} />
+            <CornerDownLeft size={18} />
           )}
         </button>
       </div>
 
       {/* Bottom bar */}
-      <div className="flex items-center justify-end mt-2 px-0.5">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between mt-1.5 px-0.5">
+        {/* Left: Permission */}
+        <div className="relative" ref={permPopupRef}>
+          <button
+            onClick={() => setPermPopupOpen(v => !v)}
+            className={cn(
+              'text-sm px-2.5 py-1.5 rounded-lg transition-all duration-150',
+              'hover:bg-surface-hover active:bg-surface-active active:scale-95',
+              permPopupOpen ? 'text-text-secondary bg-surface-hover' : 'text-text-faint hover:text-text-secondary',
+            )}
+          >
+            {PERMISSION_LABELS[activePermission]}
+          </button>
+          <AnimatePresence>
+          {permPopupOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: 4, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 4, scale: 0.97 }}
+              transition={{ duration: 0.12, ease: 'easeOut' }}
+              className="absolute bottom-full left-0 mb-2 bg-bg-elevated border border-border-default rounded-xl shadow-2xl z-50 w-40 overflow-hidden py-1">
+              {(['bypassPermissions', 'plan'] as PermissionMode[]).map(p => (
+                <button
+                  key={p}
+                  onClick={() => { onPermissionChange(p); setPermPopupOpen(false) }}
+                  className={cn(
+                    'w-full flex items-center justify-between px-3 py-2 text-[13px] transition-colors',
+                    activePermission === p
+                      ? 'text-text-primary'
+                      : 'text-text-muted hover:text-text-primary hover:bg-surface-hover',
+                  )}
+                >
+                  <span>{PERMISSION_LABELS[p]}</span>
+                  {activePermission === p && <Check size={12} className="text-text-secondary" />}
+                </button>
+              ))}
+            </motion.div>
+          )}
+          </AnimatePresence>
+        </div>
+
+        {/* Right: Usage + Model + Effort */}
+        <div className="flex items-center gap-1.5">
           <UsageCircles hasSession={hasSession} />
           <div className="relative" ref={popupRef}>
             <button
               onClick={() => setPopupOpen(v => !v)}
-              className="text-[12px] text-text-faint hover:text-text-secondary transition-colors"
+              className={cn(
+                'text-sm px-2.5 py-1.5 rounded-lg transition-all duration-150',
+                'hover:bg-surface-hover active:bg-surface-active active:scale-95',
+                popupOpen ? 'text-text-secondary bg-surface-hover' : 'text-text-faint hover:text-text-secondary',
+              )}
             >
               {statusLabel}
             </button>
 
+            <AnimatePresence>
             {popupOpen && (
-              <div className="absolute bottom-full right-0 mb-2 bg-bg-elevated border border-border-default rounded-xl shadow-2xl z-50 w-56 overflow-hidden">
+              <motion.div
+                initial={{ opacity: 0, y: 4, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 4, scale: 0.97 }}
+                transition={{ duration: 0.12, ease: 'easeOut' }}
+                className="absolute bottom-full right-0 mb-2 bg-bg-elevated border border-border-default rounded-xl shadow-2xl z-50 w-56 overflow-hidden">
                 <div className="px-3 pt-2.5 pb-1">
                   <span className="text-[11px] text-text-faint font-medium uppercase tracking-wider">Models</span>
                 </div>
@@ -507,16 +726,67 @@ export const InputBar = forwardRef<InputBarHandle, Props>(function InputBar({
                   </button>
                 ))}
 
-                {showEffort && (
-                  <>
-                    <div className="mx-3 my-1.5 border-t border-border-default" />
-                    <div className="px-3 pb-1">
-                      <span className="text-[11px] text-text-faint font-medium uppercase tracking-wider">Effort</span>
-                    </div>
+                <div className="px-3 pb-1">
+                  <span className="text-[11px] text-text-faint font-medium uppercase tracking-wider">Custom</span>
+                </div>
+                <div className="px-3 pb-2.5">
+                  <input
+                    type="text"
+                    placeholder="model-id..."
+                    defaultValue={!MODELS.find(m => m.id === activeModel) ? activeModel : ''}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        const val = (e.target as HTMLInputElement).value.trim()
+                        if (val) {
+                          onModelChange(val)
+                          setCustomSuccess(true)
+                          setTimeout(() => setCustomSuccess(false), 1000)
+                        }
+                      }
+                    }}
+                    className={cn(
+                      "w-full bg-surface-hover border rounded-lg px-2.5 py-1.5 text-[12px] text-text-primary placeholder:text-text-ghost outline-none transition-all duration-300",
+                      customSuccess
+                        ? "border-[var(--color-success)] bg-[rgba(52,211,153,0.08)]"
+                        : "border-border-default focus:border-border-strong"
+                    )}
+                  />
+                  <p className={cn("text-[10px] mt-1 transition-colors duration-300", customSuccess ? "text-[var(--color-success)]" : "text-text-faint")}>
+                    {customSuccess ? 'Applied!' : 'Press Enter to apply'}
+                  </p>
+                </div>
+
+                <div className="pb-1.5" />
+              </motion.div>
+            )}
+            </AnimatePresence>
+          </div>
+          {showEffort && (
+            <>
+              <span className="text-text-ghost text-sm select-none">·</span>
+              <div className="relative" ref={effortPopupRef}>
+                <button
+                  onClick={() => setEffortPopupOpen(v => !v)}
+                  className={cn(
+                    'text-sm px-2.5 py-1.5 rounded-lg transition-all duration-150',
+                    'hover:bg-surface-hover active:bg-surface-active active:scale-95',
+                    effortPopupOpen ? 'text-text-secondary bg-surface-hover' : 'text-text-faint hover:text-text-secondary',
+                  )}
+                >
+                  {activeEffort.charAt(0).toUpperCase() + activeEffort.slice(1)}
+                </button>
+                <AnimatePresence>
+                {effortPopupOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 4, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 4, scale: 0.97 }}
+                    transition={{ duration: 0.12, ease: 'easeOut' }}
+                    className="absolute bottom-full right-0 mb-2 bg-bg-elevated border border-border-default rounded-xl shadow-2xl z-50 w-36 overflow-hidden py-1">
                     {availableEfforts.map(e => (
                       <button
                         key={e}
-                        onClick={() => { onEffortChange(e); setPopupOpen(false) }}
+                        onClick={() => { onEffortChange(e); setEffortPopupOpen(false) }}
                         className={cn(
                           'w-full flex items-center justify-between px-3 py-2 text-[13px] capitalize transition-colors',
                           activeEffort === e
@@ -528,35 +798,15 @@ export const InputBar = forwardRef<InputBarHandle, Props>(function InputBar({
                         {activeEffort === e && <Check size={12} className="text-text-secondary" />}
                       </button>
                     ))}
-                  </>
+                  </motion.div>
                 )}
-
-                <div className="mx-3 my-1.5 border-t border-border-default" />
-                <div className="px-3 pb-1">
-                  <span className="text-[11px] text-text-faint font-medium uppercase tracking-wider">Permission</span>
-                </div>
-                {(['bypassPermissions', 'plan'] as PermissionMode[]).map(p => (
-                  <button
-                    key={p}
-                    onClick={() => { onPermissionChange(p); setPopupOpen(false) }}
-                    className={cn(
-                      'w-full flex items-center justify-between px-3 py-2 text-[13px] transition-colors',
-                      activePermission === p
-                        ? 'text-text-primary'
-                        : 'text-text-muted hover:text-text-primary hover:bg-surface-hover',
-                    )}
-                  >
-                    <span>{PERMISSION_LABELS[p]}</span>
-                    {activePermission === p && <Check size={12} className="text-text-secondary" />}
-                  </button>
-                ))}
-
-                <div className="pb-1.5" />
+                </AnimatePresence>
               </div>
-            )}
-          </div>
+            </>
+          )}
         </div>
       </div>
     </div>
   )
 })
+

@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { createPortal } from 'react-dom'
 import { Session } from '../types/index'
 import { cn } from '../lib/utils.js'
-import { Plus, Zap, Settings, Trash2 } from 'lucide-react'
+import { Plus, Zap, Settings, Trash2, Pencil } from 'lucide-react'
 
 type SidebarTab = 'sessions' | 'pyre' | 'console'
 
@@ -25,11 +25,16 @@ interface Props {
   devConsole: boolean
 }
 
-function SessionItem({ session, active, onClick, onContextMenu }: {
+function SessionItem({ session, active, onClick, onContextMenu, isRenaming, renameValue, onRenameChange, onRenameCommit, displayTitle }: {
   session: Session
   active: boolean
   onClick: () => void
   onContextMenu: (e: React.MouseEvent) => void
+  isRenaming?: boolean
+  renameValue?: string
+  onRenameChange?: (v: string) => void
+  onRenameCommit?: () => void
+  displayTitle: string
 }) {
   return (
     <div
@@ -43,15 +48,30 @@ function SessionItem({ session, active, onClick, onContextMenu }: {
 
       {/* Title with fade-out mask */}
       <div className="flex-1 min-w-0 relative overflow-hidden">
-        <p
-          className={cn(
-            'text-[13px] leading-snug whitespace-nowrap',
-            active ? 'text-text-primary' : 'text-text-secondary group-hover:text-text-primary transition-colors',
-          )}
-          style={{ maskImage: 'linear-gradient(to right, black 70%, transparent 100%)' }}
-        >
-          {session.title || 'New conversation'}
-        </p>
+        {isRenaming ? (
+          <input
+            autoFocus
+            value={renameValue}
+            onChange={e => onRenameChange?.(e.target.value)}
+            onBlur={onRenameCommit}
+            onKeyDown={e => {
+              if (e.key === 'Enter') onRenameCommit?.()
+              if (e.key === 'Escape') onRenameCommit?.()
+            }}
+            onClick={e => e.stopPropagation()}
+            className="w-full bg-transparent text-[14px] text-text-primary outline-none border-b border-border-strong leading-snug"
+          />
+        ) : (
+          <p
+            className={cn(
+              'text-[14px] leading-snug whitespace-nowrap',
+              active ? 'text-text-primary' : 'text-text-secondary group-hover:text-text-primary transition-colors',
+            )}
+            style={{ maskImage: 'linear-gradient(to right, black 70%, transparent 100%)' }}
+          >
+            {displayTitle}
+          </p>
+        )}
       </div>
 
     </div>
@@ -62,6 +82,38 @@ function SessionItem({ session, active, onClick, onContextMenu }: {
 export function Sidebar({ sessions, activeSessionId, onSelect, onNew, onDelete, isLocked, activeTab: tab, onTabChange: setTab, devConsole }: Props) {
   const [ctxMenu, setCtxMenu] = useState<ContextMenu | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [sessionNames, setSessionNames] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem('vaeliSessionNames') || '{}') } catch { return {} }
+  })
+
+  const saveSessionName = (id: string, name: string) => {
+    const updated = { ...sessionNames, [id]: name }
+    setSessionNames(updated)
+    localStorage.setItem('vaeliSessionNames', JSON.stringify(updated))
+  }
+
+  const startRename = (session: Session) => {
+    setRenamingId(session.id)
+    setRenameValue(sessionNames[session.id] || session.title || '')
+    setCtxMenu(null)
+  }
+
+  const commitRename = () => {
+    if (renamingId) {
+      const trimmed = renameValue.trim()
+      if (trimmed) saveSessionName(renamingId, trimmed)
+      else {
+        const updated = { ...sessionNames }
+        delete updated[renamingId]
+        setSessionNames(updated)
+        localStorage.setItem('vaeliSessionNames', JSON.stringify(updated))
+      }
+    }
+    setRenamingId(null)
+  }
 
   // Close on outside click or Escape
   useEffect(() => {
@@ -155,8 +207,13 @@ export function Sidebar({ sessions, activeSessionId, onSelect, onNew, onDelete, 
                 key={session.id}
                 session={session}
                 active={activeSessionId === session.id}
-                onClick={() => !isLocked && onSelect(session)}
+                onClick={() => !isLocked && !renamingId && onSelect(session)}
                 onContextMenu={e => handleContextMenu(e, session)}
+                isRenaming={renamingId === session.id}
+                renameValue={renameValue}
+                onRenameChange={setRenameValue}
+                onRenameCommit={commitRename}
+                displayTitle={sessionNames[session.id] || session.title || 'New conversation'}
               />
             ))}
           </div>
@@ -181,14 +238,21 @@ export function Sidebar({ sessions, activeSessionId, onSelect, onNew, onDelete, 
           <div className="p-1">
             <button
               onClick={() => { navigator.clipboard.writeText(ctxMenu.session.id); setCtxMenu(null) }}
-              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[14px] text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
             >
               <span className="text-[11px] font-mono text-text-faint">ID</span>
               Копировать ID
             </button>
             <button
+              onClick={() => startRename(ctxMenu.session)}
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[14px] text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
+            >
+              <Pencil size={13} />
+              Переименовать
+            </button>
+            <button
               onClick={() => { onDelete(ctxMenu.session); setCtxMenu(null) }}
-              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-red-400/80 hover:text-red-400 hover:bg-red-400/8 transition-colors"
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[14px] text-red-400/80 hover:text-red-400 hover:bg-red-400/8 transition-colors"
             >
               <Trash2 size={13} />
               Удалить

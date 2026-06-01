@@ -2,6 +2,7 @@ import defaultPng from '../assets/default.png'
 import punchingGif from '../assets/punching_self.gif'
 import thinkingGif from '../assets/thinking.gif'
 import errorGif from '../assets/vaeli-error.gif'
+import compactingGif from '../assets/compacting.gif'
 
 export interface AvatarSlot {
   id: string
@@ -26,6 +27,7 @@ export const AVATAR_SLOTS: AvatarSlot[] = [
   { id: 'tool',     label: 'Иконка инструмента',   desc: 'при использовании инструментов', tag: '',            tagColor: '',                        builtinSrc: null },
   { id: 'done',     label: 'Иконка завершения',    desc: 'после получения ответа',          tag: '',            tagColor: '',                        builtinSrc: null },
   { id: 'error',    label: 'Иконка ошибки',        desc: 'при ошибке',                     tag: '',            tagColor: '',                        builtinSrc: errorGif },
+  { id: 'compacting', label: 'Иконка компакта',   desc: 'при сжатии контекста',           tag: '',            tagColor: '',                        builtinSrc: compactingGif },
 ]
 
 const LS_KEY = 'vaeliAvatarSlots'

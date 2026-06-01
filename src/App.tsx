@@ -6,11 +6,11 @@ import { useSession } from './hooks/useSession.js'
 import { useNavHistory } from './hooks/useNavHistory.js'
 import { Sidebar } from './components/Sidebar.js'
 import { ChatView } from './components/ChatView.js'
-import { InputBar, InputBarHandle, ModelId, EffortLevel, PermissionMode, getMaxEffort } from './components/InputBar.js'
+import { InputBar, InputBarHandle, ModelId, EffortLevel, PermissionMode, CommandName, getMaxEffort } from './components/InputBar.js'
 import { StatusBar } from './components/StatusBar.js'
 import { AccountBar } from './components/AccountBar.js'
 import { AccountsPage } from './components/AccountsPage.js'
-import { SettingsPage } from './components/SettingsPage.js'
+import { SettingsPage, DEFAULT_CONTENT_PADDING } from './components/SettingsPage.js'
 import { AccountSwitchModal } from './components/AccountSwitchModal.js'
 import { FirstLaunch } from './components/FirstLaunch.js'
 import { ErrorToast } from './components/ErrorToast.js'
@@ -41,7 +41,7 @@ export default function App() {
     refreshAccounts,
   } = useAppState()
 
-  const [activeModel, setActiveModel] = useState<ModelId>('claude-sonnet-4-5')
+  const [activeModel, setActiveModel] = useState<ModelId>('claude-sonnet-4-6')
   const [activeEffort, setActiveEffort] = useState<EffortLevel>('medium')
   const [activePermission, setActivePermission] = useState<PermissionMode>('bypassPermissions')
   const [page, setPage] = useState<'chat' | 'accounts' | 'settings'>('chat')
@@ -171,6 +171,16 @@ export default function App() {
 
   const [chatAtBottom, setChatAtBottom] = useState(true)
   const [scrollTrigger, setScrollTrigger] = useState(0)
+  const [contentPadding, setContentPadding] = useState<number>(() => {
+    try { const s = localStorage.getItem('vaeliUISettings'); return s ? (JSON.parse(s).contentPadding ?? DEFAULT_CONTENT_PADDING) : DEFAULT_CONTENT_PADDING } catch { return DEFAULT_CONTENT_PADDING }
+  })
+  useEffect(() => {
+    const h = () => {
+      try { const s = localStorage.getItem('vaeliUISettings'); setContentPadding(s ? (JSON.parse(s).contentPadding ?? DEFAULT_CONTENT_PADDING) : DEFAULT_CONTENT_PADDING) } catch {}
+    }
+    window.addEventListener('vaeli:uiSettingsChanged', h)
+    return () => window.removeEventListener('vaeli:uiSettingsChanged', h)
+  }, [])
   const inputBarRef = useRef<InputBarHandle>(null)
   const mainAreaRef = useRef<HTMLDivElement>(null)
   const [dragOver, setDragOver] = useState(false)
@@ -232,7 +242,7 @@ export default function App() {
     }
   }, [accountsLoaded, accounts.length])
   const activeSession = sessions.find(s => s.id === activeSessionId) || null
-  const { entries, liveEntries, isStreaming, isThinking, liveTool, appendUserMessage, error, clearError, streamStats } = useSession(activeSession)
+  const { entries, liveEntries, isStreaming, isThinking, isCompacting, liveTool, appendUserMessage, error, clearError, streamStats } = useSession(activeSession)
 
   const handleSelectSession = useCallback((session: Session) => {
     setActiveSessionId(session.id)
@@ -300,6 +310,11 @@ export default function App() {
     setIsRunning(false)
   }, [setIsRunning])
 
+  const handleCommand = useCallback((name: CommandName, fullText: string) => {
+    if (!activeSessionId && (name === 'compact' || name === 'context')) return
+    api.sessionCommand(fullText)
+  }, [activeSessionId])
+
   const handleDeleteSession = useCallback(async (session: import('./types/index').Session) => {
     const sessionPath = `${session.projectPath}\\${session.id}.jsonl`
     await api.deleteSession(sessionPath)
@@ -320,7 +335,7 @@ export default function App() {
           </div>
           <div className="flex flex-col gap-2">
             <span className="text-[15px] text-text-primary font-medium">Нужен Claude Code</span>
-            <span className="text-[13px] text-text-muted leading-relaxed">
+            <span className="text-[14px] text-text-muted leading-relaxed">
               {installing
                 ? 'Устанавливаем Claude Code, подожди немного…'
                 : 'Vael не может работать без Claude Code. Можем установить автоматически.'}
@@ -335,8 +350,8 @@ export default function App() {
                 { label: 'claude', value: deps.claude },
               ].map(({ label, value }) => (
                 <div key={label} className="flex items-center justify-between px-3 py-2 bg-bg-elevated rounded-xl border border-border-default">
-                  <span className="text-[12px] text-text-muted font-mono">{label}</span>
-                  <span className={cn('text-[12px] font-mono', value ? 'text-emerald-400' : 'text-red-400')}>
+                  <span className="text-[13px] text-text-muted font-mono">{label}</span>
+                  <span className={cn('text-[13px] font-mono', value ? 'text-emerald-400' : 'text-red-400')}>
                     {value ?? 'не найден'}
                   </span>
                 </div>
@@ -347,12 +362,12 @@ export default function App() {
           {/* Install log on error */}
           {installLog && (
             <div className="w-full px-3 py-2 bg-bg-elevated rounded-xl border border-border-default text-left">
-              <span className="text-[11px] text-red-400 font-mono whitespace-pre-wrap break-all">{installLog}</span>
+              <span className="text-[12px] text-red-400 font-mono whitespace-pre-wrap break-all">{installLog}</span>
             </div>
           )}
 
           {installing ? (
-            <div className="flex items-center gap-2 text-[13px] text-text-muted">
+            <div className="flex items-center gap-2 text-[14px] text-text-muted">
               <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
               Установка…
             </div>
@@ -360,19 +375,19 @@ export default function App() {
             <div className="flex flex-col gap-2 w-full">
               <button
                 onClick={handleInstallClaude}
-                className="w-full py-2.5 rounded-xl bg-accent text-white text-[13px] font-medium hover:bg-accent/90 transition-colors"
+                className="w-full py-2.5 rounded-xl bg-accent text-white text-[14px] font-medium hover:bg-accent/90 transition-colors"
               >
                 Установить автоматически
               </button>
               <button
                 onClick={() => api.openExternal('https://docs.anthropic.com/en/docs/claude-code/setup')}
-                className="w-full py-2.5 rounded-xl border border-border-default text-[13px] text-text-muted hover:text-text-primary hover:border-border-strong transition-colors"
+                className="w-full py-2.5 rounded-xl border border-border-default text-[14px] text-text-muted hover:text-text-primary hover:border-border-strong transition-colors"
               >
                 Открыть документацию
               </button>
               <button
                 onClick={() => api.checkDeps().then(setDeps)}
-                className="text-[12px] text-text-ghost hover:text-text-faint transition-colors"
+                className="text-[13px] text-text-ghost hover:text-text-faint transition-colors"
               >
                 Проверить снова
               </button>
@@ -389,12 +404,12 @@ export default function App() {
       {/* Temp cleanup banner */}
       {tempCleanupBanner && (
         <div className="fixed top-10 left-1/2 -translate-x-1/2 z-[300] animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-bg-elevated border border-border-default shadow-2xl shadow-black/60 text-[13px]">
+          <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-bg-elevated border border-border-default shadow-2xl shadow-black/60 text-[14px]">
             <span className="text-text-secondary">Очистка temp папки…</span>
             <span className="text-text-faint">{tempCleanupCountdown}с</span>
             <button
               onClick={() => api.tempCancelCleanup()}
-              className="text-text-muted hover:text-text-primary transition-colors border border-border-default rounded-lg px-2.5 py-1 text-[12px]"
+              className="text-text-muted hover:text-text-primary transition-colors border border-border-default rounded-lg px-2.5 py-1 text-[13px]"
             >
               Отмена
             </button>
@@ -403,8 +418,8 @@ export default function App() {
       )}
       <StatusBar syncStatus={syncStatus} syncMessage={syncMessage} />
 
-      {/* NavControls overlay — always visible top-left, not affected by sidebar collapse */}
-      <div className="fixed top-0 left-0 z-50 h-10 flex items-center px-2 gap-0.5 no-drag">
+      {/* NavControls overlay — hidden when overlay pages are open */}
+      <div className={cn("fixed top-0 left-0 z-50 h-10 flex items-center px-2 gap-0.5 no-drag", page !== 'chat' && "hidden")}>
         <NavControls
           canGoBack={canGoBack}
           canGoForward={canGoForward}
@@ -483,6 +498,8 @@ export default function App() {
             liveEntries={liveEntries}
             isStreaming={isStreaming}
             isThinking={isThinking}
+            isCompacting={isCompacting}
+            contentPadding={contentPadding}
             liveTool={liveTool}
             streamStats={streamStats}
             onScrollStateChange={atBottom => setChatAtBottom(atBottom)}
@@ -524,6 +541,9 @@ export default function App() {
         </AnimatePresence>
 
         {sidebarTab === 'sessions' && (
+          <div>
+          <div style={{ height: 24, background: 'linear-gradient(to bottom, transparent, var(--bg-base))', marginTop: -24, pointerEvents: 'none', position: 'relative', zIndex: 1 }} />
+          <div style={{ paddingLeft: contentPadding, paddingRight: contentPadding }}>
           <InputBar
             ref={inputBarRef}
             activeModel={activeModel}
@@ -534,10 +554,13 @@ export default function App() {
             onPermissionChange={setActivePermission}
             onSend={handleSend}
             onAbort={handleAbort}
+            onCommand={handleCommand}
             isLocked={isLocked}
             isRunning={isRunning}
             hasSession={!!activeSessionId}
           />
+          </div>
+          </div>
         )}
       </div>
 
@@ -549,6 +572,7 @@ export default function App() {
             activeAccountId={activeAccountId || ''}
             onBack={() => setPage('chat')}
             onAccountsChange={refreshAccounts}
+            onSwitchAccount={async id => { await switchAccount(id); setPage('chat') }}
           />
         </div>
       )}

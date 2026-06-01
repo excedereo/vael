@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { ArrowLeft, Lock, ExternalLink, ShieldCheck, ChevronDown, Check, Plus, RotateCcw, Trash2, FolderOpen, HardDrive, Loader2 } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { cn } from '../lib/utils.js'
+import { WindowControls } from './WindowControls.js'
 import { applyTheme, saveActiveTheme, loadActiveThemeFile } from '../lib/theme.js'
 import { BUILTIN_THEMES } from '../lib/builtinThemes.js'
 import {
@@ -49,7 +50,10 @@ interface UISettings {
   reduceMotion: boolean
   showTurnDuration: boolean
   autoScroll: boolean
+  contentPadding: number
 }
+
+export const DEFAULT_CONTENT_PADDING = 160
 
 type Tab = 'interface' | 'icons' | 'claude' | 'system'
 
@@ -62,8 +66,9 @@ const NOTIF_OPTIONS    = ['auto', 'always', 'never']
 function loadUISettings(): UISettings {
   try {
     const s = localStorage.getItem('vaeliUISettings')
-    return s ? JSON.parse(s) : { reduceMotion: false, showTurnDuration: false, autoScroll: true }
-  } catch { return { reduceMotion: false, showTurnDuration: false, autoScroll: true } }
+    const parsed = s ? JSON.parse(s) : {}
+    return { reduceMotion: false, showTurnDuration: false, autoScroll: true, contentPadding: DEFAULT_CONTENT_PADDING, ...parsed }
+  } catch { return { reduceMotion: false, showTurnDuration: false, autoScroll: true, contentPadding: DEFAULT_CONTENT_PADDING } }
 }
 
 function saveUISettings(s: UISettings) {
@@ -86,9 +91,11 @@ function SlotCard({ slot, slotOverrides, updateSlot }: {
   const isOverridden = slot.id in slotOverrides
   const isDeleted = isOverridden && slotOverrides[slot.id] === null
   return (
-    <div className="flex gap-4 p-4 rounded-xl border border-border-subtle">
+    <div
+      className="flex gap-4 p-4 rounded-xl border border-border-subtle hover:border-border-default transition-all duration-150"
+    >
       <button
-        onClick={async () => {
+        onClick={async (e) => {
           const picked = await api.pickAvatar()
           if (picked) updateSlot(slot.id, picked)
         }}
@@ -103,21 +110,21 @@ function SlotCard({ slot, slotOverrides, updateSlot }: {
       </button>
       <div className="flex-1 min-w-0 flex flex-col justify-center">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[13px] text-text-secondary font-medium">{slot.label}</span>
-          {slot.tag && <span className={cn('text-[10px] px-1.5 py-0.5 rounded-md font-medium', slot.tagColor)}>{slot.tag}</span>}
+          <span className="text-[14px] text-text-secondary font-medium">{slot.label}</span>
+          {slot.tag && <span className={cn('text-[11px] px-1.5 py-0.5 rounded-md font-medium', slot.tagColor)}>{slot.tag}</span>}
         </div>
-        <div className="text-[11px] text-text-faint mt-0.5">
+        <div className="text-[12px] text-text-faint mt-0.5">
           {isOverridden && slotOverrides[slot.id]
             ? slotOverrides[slot.id]!.split(/[/\\]/).pop()
             : slot.builtinSrc ? 'файл: встроенный' : 'файл: не указан'
           }
         </div>
-        {slot.desc && <div className="text-[10px] text-text-ghost mt-0.5">{slot.desc}</div>}
+        {slot.desc && <div className="text-[11px] text-text-ghost mt-0.5">{slot.desc}</div>}
         <div className="flex gap-2 mt-3">
           <button
             onClick={() => updateSlot(slot.id, undefined)}
             disabled={!isOverridden}
-            className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] border transition-colors',
+            className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] border transition-colors',
               isOverridden ? 'border-border-strong text-text-muted hover:text-text-primary hover:border-white/25' : 'border-border-subtle text-text-ghost cursor-not-allowed')}
           >
             <RotateCcw size={11} />Сбросить
@@ -125,7 +132,7 @@ function SlotCard({ slot, slotOverrides, updateSlot }: {
           <button
             onClick={() => updateSlot(slot.id, null)}
             disabled={isDeleted}
-            className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] border transition-colors',
+            className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] border transition-colors',
               !isDeleted ? 'border-border-strong text-red-400/55 hover:text-red-400/90 hover:border-red-400/30' : 'border-border-subtle text-text-ghost cursor-not-allowed')}
           >
             <Trash2 size={11} />Удалить
@@ -136,7 +143,10 @@ function SlotCard({ slot, slotOverrides, updateSlot }: {
   )
 }
 
-function IconsTab({ slotOverrides, updateSlot }: { slotOverrides: SlotOverrides; updateSlot: (id: string, path: string | null | undefined) => void }) {
+function IconsTab({ slotOverrides, updateSlot }: {
+  slotOverrides: SlotOverrides
+  updateSlot: (id: string, path: string | null | undefined) => void
+}) {
   const [search, setSearch] = useState('')
   const [activeTag, setActiveTag] = useState<string | null>(null)
   const allTags = Object.keys(TAG_COLORS)
@@ -154,12 +164,12 @@ function IconsTab({ slotOverrides, updateSlot }: { slotOverrides: SlotOverrides;
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Поиск по названию..."
-          className="flex-1 bg-surface-hover border border-border-default rounded-lg px-3 py-2 text-[12px] text-text-secondary placeholder:text-text-ghost outline-none focus:border-border-strong transition-colors"
+          className="flex-1 bg-surface-hover border border-border-default rounded-lg px-3 py-2 text-[13px] text-text-secondary placeholder:text-text-ghost outline-none focus:border-border-strong transition-colors"
         />
         <div className="flex gap-1.5">
           <button
             onClick={() => setActiveTag(null)}
-            className={cn('px-3 py-2 rounded-lg text-[12px] border transition-colors',
+            className={cn('px-3 py-2 rounded-lg text-[13px] border transition-colors',
               !activeTag ? 'border-border-strong text-text-secondary' : 'border-border-default text-text-faint hover:text-text-muted')}
           >
             Все
@@ -168,7 +178,7 @@ function IconsTab({ slotOverrides, updateSlot }: { slotOverrides: SlotOverrides;
             <button
               key={tag}
               onClick={() => setActiveTag(activeTag === tag ? null : tag)}
-              className={cn('px-3 py-2 rounded-lg text-[12px] border transition-colors',
+              className={cn('px-3 py-2 rounded-lg text-[13px] border transition-colors',
                 activeTag === tag ? cn(TAG_COLORS[tag], 'border-transparent') : 'border-border-default text-text-faint hover:text-text-muted')}
             >
               {tag}
@@ -176,7 +186,7 @@ function IconsTab({ slotOverrides, updateSlot }: { slotOverrides: SlotOverrides;
           ))}
         </div>
       </div>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-3">
         {filtered.map(slot => (
           <SlotCard key={slot.id} slot={slot} slotOverrides={slotOverrides} updateSlot={updateSlot} />
         ))}
@@ -185,11 +195,20 @@ function IconsTab({ slotOverrides, updateSlot }: { slotOverrides: SlotOverrides;
   )
 }
 
+
 export function SettingsPage({ onBack }: Props) {
   const [tab, setTab] = useState<Tab>('interface')
   const [claude, setClaude] = useState<ClaudeSettings>({})
   const [saving, setSaving] = useState(false)
   const [version, setVersion] = useState<string>('')
+  const [uiSettings, setUiSettings] = useState<UISettings>(() => loadUISettings())
+
+  const updateUI = (patch: Partial<UISettings>) => {
+    const next = { ...uiSettings, ...patch }
+    setUiSettings(next)
+    saveUISettings(next)
+    window.dispatchEvent(new Event('vaeli:uiSettingsChanged'))
+  }
   const [slotOverrides, setSlotOverrides] = useState<SlotOverrides>(() => loadSlotOverrides())
 
   const updateSlot = (id: string, path: string | null | undefined) => {
@@ -222,10 +241,23 @@ export function SettingsPage({ onBack }: Props) {
     try { return JSON.parse(localStorage.getItem('vaeliDevConsole') ?? 'false') } catch { return false }
   })
 
+  const [showDev, setShowDev] = useState<boolean>(() => {
+    try { return JSON.parse(localStorage.getItem('vaeliDevConsole') || 'false') } catch { return false }
+  })
+
   const [applyPty, setApplyPty] = useState<boolean>(() => {
     try { return JSON.parse(localStorage.getItem('vaeliApplyPtyOptimizations') ?? 'true') }
     catch { return true }
   })
+
+  const [autoDownload, setAutoDownload] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('vaeliAutoDownload') || 'false') } catch { return false }
+  })
+  const [vaelVersion, setVaelVersion] = useState<string>('')
+
+  useEffect(() => {
+    api.getVaelVersion().then(v => setVaelVersion(v)).catch(() => {})
+  }, [])
 
   const [tempAutoDelete, setTempAutoDelete] = useState<string>('1d')
   const [tempDirSize, setTempDirSize] = useState<{ bytes: number; count: number } | null>(null)
@@ -306,209 +338,282 @@ export function SettingsPage({ onBack }: Props) {
 
   return (
     <div className="flex flex-col h-full bg-bg-base">
-      {/* Drag region */}
-      <div className="h-8 shrink-0 app-drag-region" />
-
       {/* Header */}
-      <div className="flex items-center gap-3 px-6 py-3 border-b border-border-subtle app-drag-region">
+      <div className="flex items-center gap-3 px-4 border-b border-border-subtle app-drag-region h-10 shrink-0">
         <button
           onClick={onBack}
-          className="flex items-center justify-center w-7 h-7 rounded-lg hover:bg-surface-selected transition-colors text-text-muted hover:text-text-secondary"
+          className="flex items-center justify-center w-7 h-7 rounded-lg hover:bg-surface-selected transition-colors text-text-muted hover:text-text-secondary no-drag"
         >
           <ArrowLeft size={15} />
         </button>
-        <h1 className="text-[14px] font-semibold text-text-primary">Settings</h1>
-        {saving && <span className="ml-auto text-[11px] text-text-faint">Saving...</span>}
+        <h1 className="text-[14px] font-semibold text-text-primary flex-1">Settings</h1>
+        {saving && <span className="text-[12px] text-text-faint">Saving...</span>}
+        <div className="no-drag">
+          <WindowControls />
+        </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 px-6 pt-3 pb-0 border-b border-border-subtle">
-        {TABS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={cn(
-              'px-3 py-1.5 text-[12px] rounded-t-lg transition-colors -mb-px',
-              tab === t.id
-                ? 'text-text-primary border border-b-bg-base border-border-default bg-bg-base'
-                : 'text-text-faint hover:text-text-secondary',
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-
-        {/* ── INTERFACE TAB ── */}
-        {tab === 'interface' && (<>
-          <SettingRow label="Тема">
-            <ThemePicker themes={themes} activeThemeFile={activeThemeFile} setActiveThemeFile={setActiveThemeFile} />
-          </SettingRow>
-
-          <PendingSection label="Отображение" reason="Будет реализовано в интерфейсе Vael">
-            <PendingRow label="Reduce motion"      desc="Убрать анимации в интерфейсе" />
-            <PendingRow label="Show turn duration" desc="Показывать время выполнения каждого ответа" />
-            <PendingRow label="Auto-scroll"        desc="Автоматически скроллить вниз при новых сообщениях" />
-          </PendingSection>
-        </>)}
-
-        {/* ── ICONS TAB ── */}
-        {tab === 'icons' && (
-          <IconsTab slotOverrides={slotOverrides} updateSlot={updateSlot} />
-        )}
-
-        {/* ── CLAUDE TAB ── */}
-        {tab === 'claude' && (<>
-          <Section label="Модель">
-            <SelectRow claude label="Default effort level"    value={claude.effortLevel || 'medium'}           options={EFFORT_OPTIONS}    onChange={v => updateClaude({ effortLevel: v })} />
-            <SelectRow claude label="Default permission mode" value={claude.defaultPermissionMode || 'default'} options={PERMISSION_OPTIONS} onChange={v => updateClaude({ defaultPermissionMode: v })} />
-            <ToggleRow claude label="Thinking mode" desc="Расширенное мышление для поддерживаемых моделей (Opus, Sonnet)" value={claude.alwaysThinkingEnabled ?? true} onChange={v => updateClaude({ alwaysThinkingEnabled: v })} />
-          </Section>
-
-          <Section label="Сессия">
-            <ToggleRow claude label="Auto-compact"            desc="Автоматически сжимать контекст когда он заполняется"       value={claude.autoCompactEnabled ?? true}      onChange={v => updateClaude({ autoCompactEnabled: v })} />
-            <ToggleRow claude label="Rewind code"             desc="Сохранять чекпоинты файлов для возможности отката"         value={claude.fileCheckpointingEnabled ?? true} onChange={v => updateClaude({ fileCheckpointingEnabled: v })} />
-            <ToggleRow claude label="Session recap"           desc="Краткое резюме сессии при возвращении спустя время"        value={claude.awaySummaryEnabled ?? false}      onChange={v => updateClaude({ awaySummaryEnabled: v })} />
-            <ToggleRow claude label="Use auto mode during plan" desc="Автоматически переключаться в auto-режим во время планирования" value={claude.useAutoModeDuringPlan ?? true} onChange={v => updateClaude({ useAutoModeDuringPlan: v })} />
-          </Section>
-
-          <Section label="Вывод">
-            <SelectRow claude label="Output style" value={claude.outputStyle || 'default'} options={OUTPUT_OPTIONS} onChange={v => updateClaude({ outputStyle: v })} />
-            <LockedRow label="Verbose output" desc="Обязательно для работы Vael — нельзя отключить" value="Включён" />
-          </Section>
-
-          <Section label="Файлы">
-            <ToggleRow claude label="Respect .gitignore" desc="Скрывать .gitignored файлы в файловом пикере" value={claude.respectGitignore ?? true} onChange={v => updateClaude({ respectGitignore: v })} />
-            <TextRow   claude label="Worktree base ref"  desc="Базовая ветка для git worktree режима"        value={claude.worktreeBaseRef || ''} placeholder="main" onChange={v => updateClaude({ worktreeBaseRef: v })} />
-          </Section>
-
-          <PtyOptSection applyPty={applyPty} onToggle={toggleApplyPty} />
-        </>)}
-
-        {/* ── SYSTEM TAB ── */}
-        {tab === 'system' && (<>
-          <Section label="Интеграции">
-            <ToggleRow claude label="Auto-connect to IDE"   desc="Автоматически подключаться к VS Code / Cursor расширению" value={claude.autoConnectIde ?? false}              onChange={v => updateClaude({ autoConnectIde: v })} />
-            <ToggleRow claude label="Claude in Chrome"      desc="Расширение Chrome активно по умолчанию"                   value={claude.claudeInChromeDefaultEnabled ?? true} onChange={v => updateClaude({ claudeInChromeDefaultEnabled: v })} />
-            <ToggleRow claude label="Enable Remote Control" desc="Разрешить удалённое управление сессиями"                  value={claude.remoteControlAtStartup ?? false}      onChange={v => updateClaude({ remoteControlAtStartup: v })} />
-          </Section>
-
-          <PendingSection label="Уведомления" reason="Будет реализовано через Vael">
-            <PendingRow label="Local notifications"        desc="Системные уведомления Windows" />
-            <PendingRow label="Push: when actions required" desc="Когда клод ждёт подтверждения" />
-            <PendingRow label="Push: when Claude decides"  desc="Когда клод принял решение" />
-          </PendingSection>
-
-          <Section label="Временные файлы">
-            <div className="flex items-center justify-between px-4 py-3">
-              <div className="flex items-center gap-2">
-                <HardDrive size={13} className="text-text-faint" />
-                <div>
-                  <div className="text-[13px] text-text-secondary">Папка temp</div>
-                  <div className="text-[11px] text-text-faint mt-0.5">
-                    {tempDirSize
-                      ? `${tempDirSize.count} файлов · ${(tempDirSize.bytes / 1024).toFixed(1)} KB`
-                      : 'Загрузка...'}
-                  </div>
-                </div>
-              </div>
+      {/* Body */}
+      <div className="flex flex-1 min-h-0 overflow-y-auto">
+        <div className={cn(
+          "flex w-full mx-auto transition-all duration-300",
+          "max-w-6xl"
+        )}>
+          {/* Sidebar */}
+          <div className="w-44 shrink-0 py-4 flex flex-col gap-0.5 px-3">
+            {TABS.map(t => (
               <button
-                onClick={handleTempClear}
-                disabled={tempClearing}
+                key={t.id}
+                onClick={() => setTab(t.id)}
                 className={cn(
-                  'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] border transition-colors',
-                  tempClearing
-                    ? 'border-border-subtle text-text-ghost cursor-not-allowed'
-                    : 'border-border-default text-text-muted hover:text-red-400 hover:border-red-400/30',
+                  'w-full text-left px-3 py-2 rounded-lg text-[14px] transition-all duration-150',
+                  'hover:bg-surface-hover active:scale-[0.98]',
+                  tab === t.id
+                    ? 'text-text-primary bg-surface-selected font-medium'
+                    : 'text-text-muted hover:text-text-secondary',
                 )}
               >
-                {tempClearing ? (
-                  <>
-                    <Loader2 size={11} className="animate-spin" />
-                    Отмена? ({tempClearCountdown}с)
-                  </>
-                ) : (
-                  <>
-                    <Trash2 size={11} />
-                    Очистить
-                  </>
-                )}
+                {t.label}
               </button>
+            ))}
+          </div>
+
+          {/* Content */}
+          {tab === 'icons' ? (
+            <div className="flex-1 overflow-y-auto py-5 px-6 border-l border-border-subtle">
+              <IconsTab slotOverrides={slotOverrides} updateSlot={updateSlot} />
             </div>
-            {tempClearing && (
-              <div className="px-4 pb-3">
-                <button
-                  onClick={() => { tempClearCancelRef.current = true }}
-                  className="text-[11px] text-text-faint hover:text-text-secondary transition-colors"
-                >
-                  Отменить очистку
-                </button>
-              </div>
-            )}
-            <div className="flex items-center justify-between px-4 py-3 border-t border-border-subtle">
-              <div>
-                <div className="text-[13px] text-text-secondary">Авто-удаление при запуске</div>
-                <div className="text-[11px] text-text-faint mt-0.5">Удалять файлы старше указанного времени</div>
-              </div>
-              <select
-                value={tempAutoDelete}
-                onChange={async e => {
-                  const v = e.target.value
-                  setTempAutoDelete(v)
-                  await api.tempSaveSettings({ tempAutoDelete: v })
-                }}
-                className="bg-bg-elevated border border-border-default rounded-lg px-2 py-1.5 text-[12px] text-text-secondary outline-none focus:border-border-strong transition-colors"
-              >
-                <option value="3h">3 часа</option>
-                <option value="6h">6 часов</option>
-                <option value="12h">12 часов</option>
-                <option value="1d">1 день</option>
-                <option value="3d">3 дня</option>
-                <option value="7d">7 дней</option>
-                <option value="14d">14 дней</option>
-                <option value="1mo">1 месяц</option>
-                <option value="never">Никогда</option>
-              </select>
+          ) : (
+            <div className="flex-1 py-5 px-8 space-y-5 border-l border-border-subtle overflow-y-auto">
+
+              {/* ── INTERFACE TAB ── */}
+              {tab === 'interface' && (<>
+                <SettingRow label="Тема">
+                  <ThemePicker themes={themes} activeThemeFile={activeThemeFile} setActiveThemeFile={setActiveThemeFile} />
+                </SettingRow>
+
+                <Section label="Отображение">
+                  <div className="flex items-center justify-between px-4 py-2.5">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-sm text-text-primary">Отступ контента</span>
+                      <span className="text-xs text-text-muted">Боковые отступы чата и инпута</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={uiSettings.contentPadding}
+                        onChange={e => {
+                          const raw = e.target.value.replace(/^0+(\d)/, '$1').replace(/\D/g, '')
+                          const v = raw === '' ? 0 : Number(raw)
+                          if (v <= 600) updateUI({ contentPadding: v })
+                        }}
+                        className="w-20 bg-bg-elevated border border-border-default rounded-lg px-2 py-1 text-sm text-text-primary text-right focus:outline-none focus:border-border-strong [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <span className="text-xs text-text-muted">px</span>
+                    </div>
+                  </div>
+                </Section>
+
+                <PendingSection label="Прочее" reason="Будет реализовано в интерфейсе Vael">
+                  <PendingRow label="Reduce motion"      desc="Убрать анимации в интерфейсе" />
+                  <PendingRow label="Show turn duration" desc="Показывать время выполнения каждого ответа" />
+                  <PendingRow label="Auto-scroll"        desc="Автоматически скроллить вниз при новых сообщениях" />
+                </PendingSection>
+              </>)}
+
+              {/* ── CLAUDE TAB ── */}
+              {tab === 'claude' && (<>
+                <Section label="Поведение">
+                  <ToggleRow claude label="Auto-compact"              desc="Автоматически сжимать контекст когда он заполняется"            value={claude.autoCompactEnabled ?? true}        onChange={v => updateClaude({ autoCompactEnabled: v })} />
+                  <ToggleRow claude label="Thinking mode"             desc="Расширенное мышление для поддерживаемых моделей (Opus, Sonnet)" value={claude.alwaysThinkingEnabled ?? true}      onChange={v => updateClaude({ alwaysThinkingEnabled: v })} />
+                  <ToggleRow claude label="Session recap"             desc="Краткое резюме сессии при возвращении спустя время"             value={claude.awaySummaryEnabled ?? false}        onChange={v => updateClaude({ awaySummaryEnabled: v })} />
+                  <ToggleRow claude label="Rewind code"               desc="Сохранять чекпоинты файлов для возможности отката"              value={claude.fileCheckpointingEnabled ?? true}   onChange={v => updateClaude({ fileCheckpointingEnabled: v })} />
+                  <ToggleRow claude label="Use auto mode during plan" desc="Автоматически переключаться в auto-режим во время планирования"  value={claude.useAutoModeDuringPlan ?? true}      onChange={v => updateClaude({ useAutoModeDuringPlan: v })} />
+                </Section>
+
+                <Section label="По умолчанию">
+                  <SelectRow claude label="Effort level"       value={claude.effortLevel || 'medium'}            options={EFFORT_OPTIONS}     onChange={v => updateClaude({ effortLevel: v })} />
+                  <SelectRow claude label="Permission mode"    value={claude.defaultPermissionMode || 'default'}  options={PERMISSION_OPTIONS}  onChange={v => updateClaude({ defaultPermissionMode: v })} />
+                </Section>
+
+                <Section label="Файлы">
+                  <ToggleRow claude label="Respect .gitignore" desc="Скрывать .gitignored файлы в файловом пикере" value={claude.respectGitignore ?? true} onChange={v => updateClaude({ respectGitignore: v })} />
+                  <TextRow   claude label="Worktree base ref"  desc="Базовая ветка для git worktree режима"        value={claude.worktreeBaseRef || ''} placeholder="main" onChange={v => updateClaude({ worktreeBaseRef: v })} />
+                </Section>
+
+                <Section label="Интеграции">
+                  <ToggleRow claude label="Claude in Chrome"      desc="Расширение Chrome активно по умолчанию"  value={claude.claudeInChromeDefaultEnabled ?? true} onChange={v => updateClaude({ claudeInChromeDefaultEnabled: v })} />
+                  <ToggleRow claude label="Enable Remote Control" desc="Разрешить удалённое управление сессиями" value={claude.remoteControlAtStartup ?? false}      onChange={v => updateClaude({ remoteControlAtStartup: v })} />
+                </Section>
+
+                <Section label="Технические">
+                  <LockedRow label="Output style"   desc="Обязательно для работы Vael — нельзя отключить" value="Default" />
+                  <LockedRow label="Verbose output" desc="Обязательно для работы Vael — нельзя отключить" value="Включён" />
+                </Section>
+
+                <PtyOptSection applyPty={applyPty} onToggle={toggleApplyPty} />
+              </>)}
+
+              {/* ── SYSTEM TAB ── */}
+              {tab === 'system' && (<>
+                <Section label="Временные файлы">
+                  <div className="flex items-center justify-between px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <HardDrive size={13} className="text-text-faint" />
+                      <div>
+                        <div className="text-[14px] text-text-secondary">Папка temp</div>
+                        <div className="text-[12px] text-text-faint mt-0.5">
+                          {tempDirSize
+                            ? `${tempDirSize.count} файлов · ${(tempDirSize.bytes / 1024).toFixed(1)} KB`
+                            : 'Загрузка...'}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleTempClear}
+                      disabled={tempClearing}
+                      className={cn(
+                        'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] border transition-colors',
+                        tempClearing
+                          ? 'border-border-subtle text-text-ghost cursor-not-allowed'
+                          : 'border-border-default text-text-muted hover:text-red-400 hover:border-red-400/30',
+                      )}
+                    >
+                      {tempClearing ? (
+                        <>
+                          <Loader2 size={11} className="animate-spin" />
+                          Отмена? ({tempClearCountdown}с)
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 size={11} />
+                          Очистить
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  {tempClearing && (
+                    <div className="px-4 pb-3">
+                      <button
+                        onClick={() => { tempClearCancelRef.current = true }}
+                        className="text-[12px] text-text-faint hover:text-text-secondary transition-colors"
+                      >
+                        Отменить очистку
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between px-4 py-3 border-t border-border-subtle">
+                    <div>
+                      <div className="text-[14px] text-text-secondary">Авто-удаление при запуске</div>
+                      <div className="text-[12px] text-text-faint mt-0.5">Удалять файлы старше указанного времени</div>
+                    </div>
+                    <Dropdown
+                      value={tempAutoDelete}
+                      options={[
+                        { value: '3h',    label: '3 часа' },
+                        { value: '6h',    label: '6 часов' },
+                        { value: '12h',   label: '12 часов' },
+                        { value: '1d',    label: '1 день' },
+                        { value: '3d',    label: '3 дня' },
+                        { value: '7d',    label: '7 дней' },
+                        { value: '14d',   label: '14 дней' },
+                        { value: '1mo',   label: '1 месяц' },
+                        { value: 'never', label: 'Никогда' },
+                      ]}
+                      onChange={async v => {
+                        setTempAutoDelete(v)
+                        await api.tempSaveSettings({ tempAutoDelete: v })
+                      }}
+                    />
+                  </div>
+                </Section>
+
+                <Section label="Обновления">
+                  <ToggleRow
+                    label="Авто-обновление"
+                    desc="Скачивать и устанавливать обновления автоматически"
+                    value={autoDownload}
+                    onChange={async v => {
+                      setAutoDownload(v)
+                      localStorage.setItem('vaeliAutoDownload', JSON.stringify(v))
+                      await api.setAutoDownload(v)
+                    }}
+                  />
+                  {vaelVersion && (
+                    <div className="flex items-center justify-between px-4 py-3">
+                      <div>
+                        <div className="text-[14px] text-text-secondary">Vael</div>
+                        <div className="text-[12px] text-text-faint mt-0.5">Текущая версия приложения</div>
+                      </div>
+                      <a
+                        href="#"
+                        className="flex items-center gap-1.5 text-[13px] transition-colors"
+                        style={{ color: 'color-mix(in srgb, var(--accent) 70%, transparent)' }}
+                        onMouseEnter={e => ((e.currentTarget as HTMLElement).style.color = 'var(--accent)')}
+                        onMouseLeave={e => ((e.currentTarget as HTMLElement).style.color = 'color-mix(in srgb, var(--accent) 70%, transparent)')}
+                        onClick={e => { e.preventDefault(); api.openExternal('https://github.com/stralitz/vael/releases') }}
+                      >
+                        v{vaelVersion}
+                        <ExternalLink size={10} />
+                      </a>
+                    </div>
+                  )}
+                  <SelectRow label="Claude CLI: канал обновлений" value={claude.autoUpdatesChannel || 'latest'} options={UPDATE_OPTIONS} onChange={v => updateClaude({ autoUpdatesChannel: v })} />
+                  {version && (
+                    <div className="flex items-center justify-between px-4 py-3">
+                      <div>
+                        <div className="text-[14px] text-text-secondary">Claude Code CLI</div>
+                        <div className="text-[12px] text-text-faint mt-0.5">Текущая версия</div>
+                      </div>
+                      <a
+                        href={`https://github.com/anthropics/claude-code/releases/tag/v${version}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1.5 text-[13px] transition-colors"
+                        style={{ color: 'color-mix(in srgb, var(--accent) 70%, transparent)' }}
+                        onMouseEnter={e => ((e.currentTarget as HTMLElement).style.color = 'var(--accent)')}
+                        onMouseLeave={e => ((e.currentTarget as HTMLElement).style.color = 'color-mix(in srgb, var(--accent) 70%, transparent)')}
+                        onClick={e => { e.preventDefault(); api.openExternal(`https://github.com/anthropics/claude-code/releases`) }}
+                      >
+                        v{version}
+                        <ExternalLink size={10} />
+                      </a>
+                    </div>
+                  )}
+                </Section>
+
+                <Section label="Developer">
+                  <ToggleRow
+                    label="Включить Dev-настройки"
+                    desc="Показать расширенные настройки для разработчиков"
+                    value={showDev}
+                    onChange={v => setShowDev(v)}
+                  />
+                  {showDev && (
+                    <ToggleRow
+                      label="Developer console"
+                      desc="Показывать вкладку Console в сайдбаре с логами main process"
+                      value={devConsole}
+                      onChange={v => {
+                        setDevConsole(v)
+                        localStorage.setItem('vaeliDevConsole', JSON.stringify(v))
+                        window.dispatchEvent(new Event('vaeli:devConsoleChanged'))
+                      }}
+                    />
+                  )}
+                </Section>
+
+                <PendingSection label="Уведомления" reason="Будет реализовано через Vael">
+                  <PendingRow label="Local notifications"         desc="Системные уведомления Windows" />
+                  <PendingRow label="Push: when actions required" desc="Когда клод ждёт подтверждения" />
+                  <PendingRow label="Push: when Claude decides"   desc="Когда клод принял решение" />
+                </PendingSection>
+              </>)}
+
             </div>
-          </Section>
-
-          <Section label="Developer">
-            <ToggleRow label="Developer console" desc="Показывать вкладку Console в сайдбаре с логами main process" value={devConsole} onChange={v => {
-              setDevConsole(v)
-              localStorage.setItem('vaeliDevConsole', JSON.stringify(v))
-              window.dispatchEvent(new Event('vaeli:devConsoleChanged'))
-            }} />
-          </Section>
-
-          <Section label="Обновления">
-            <SelectRow label="Auto-update channel" value={claude.autoUpdatesChannel || 'latest'} options={UPDATE_OPTIONS} onChange={v => updateClaude({ autoUpdatesChannel: v })} />
-            {version && (
-              <div className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <div className="text-[13px] text-text-secondary">Текущая версия</div>
-                  <div className="text-[11px] text-text-faint mt-0.5">Claude Code CLI</div>
-                </div>
-                <a
-                  href={`https://github.com/anthropics/claude-code/releases/tag/v${version}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1.5 text-[12px] transition-colors"
-                  style={{ color: 'color-mix(in srgb, var(--accent) 70%, transparent)' }}
-                  onMouseEnter={e => ((e.currentTarget as HTMLElement).style.color = 'var(--accent)')}
-                  onMouseLeave={e => ((e.currentTarget as HTMLElement).style.color = 'color-mix(in srgb, var(--accent) 70%, transparent)')}
-                  onClick={e => { e.preventDefault(); api.openExternal(`https://github.com/anthropics/claude-code/releases`) }}
-                >
-                  v{version}
-                  <ExternalLink size={10} />
-                </a>
-              </div>
-            )}
-          </Section>
-        </>)}
-
+          )}
+        </div>
       </div>
     </div>
   )
@@ -525,17 +630,17 @@ const PTY_ITEMS = [
 function PtyOptSection({ applyPty, onToggle }: { applyPty: boolean; onToggle: (v: boolean) => void }) {
   return (
     <div>
-      <div className="text-[10px] font-medium text-text-faint uppercase tracking-wider mb-2 px-1">PTY-оптимизации</div>
+      <div className="text-[11px] font-medium text-text-faint uppercase tracking-wider mb-2 px-1">PTY-оптимизации</div>
 
       {/* Toggle row */}
       <div className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden divide-y divide-white/5 mb-2">
         <div className="flex items-center justify-between px-4 py-3 gap-4">
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5 text-[13px] text-text-secondary">
+            <div className="flex items-center gap-1.5 text-[14px] text-text-secondary">
               <ShieldCheck size={13} className="text-orange-400/70 shrink-0" />
               Применять рекомендованные настройки
             </div>
-            <div className="text-[11px] text-text-faint mt-0.5">Vael выставит оптимальные значения при каждом сохранении</div>
+            <div className="text-[12px] text-text-faint mt-0.5">Vael выставит оптимальные значения при каждом сохранении</div>
           </div>
           {/* iOS-style toggle */}
           <button
@@ -559,13 +664,13 @@ function PtyOptSection({ applyPty, onToggle }: { applyPty: boolean; onToggle: (v
         {PTY_ITEMS.map(item => (
           <div key={item.label} className="flex items-center justify-between px-4 py-3 gap-4 opacity-50">
             <div className="min-w-0">
-              <div className="text-[13px] text-text-secondary flex items-center gap-1.5">
+              <div className="text-[14px] text-text-secondary flex items-center gap-1.5">
                 {item.label}
                 {item.locked && <Lock size={10} className="text-text-faint" />}
               </div>
-              {item.desc && <div className="text-[11px] text-text-faint mt-0.5">{item.desc}</div>}
+              {item.desc && <div className="text-[12px] text-text-faint mt-0.5">{item.desc}</div>}
             </div>
-            <span className="text-[12px] text-text-faint shrink-0">{item.value}</span>
+            <span className="text-[13px] text-text-faint shrink-0">{item.value}</span>
           </div>
         ))}
       </div>
@@ -578,7 +683,7 @@ function PtyOptSection({ applyPty, onToggle }: { applyPty: boolean; onToggle: (v
 function SettingRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="bg-bg-surface border border-border-subtle rounded-xl px-4 py-3 flex items-center gap-3">
-      <span className="text-[13px] text-text-secondary shrink-0">{label}</span>
+      <span className="text-[14px] text-text-secondary shrink-0">{label}</span>
       {children}
     </div>
   )
@@ -607,7 +712,7 @@ function ThemePicker({ themes, activeThemeFile, setActiveThemeFile }: {
       <button
         onClick={() => setOpen(v => !v)}
         className={cn(
-          'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] transition-colors min-w-[140px] justify-between',
+          'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[13px] transition-colors min-w-[140px] justify-between',
           'bg-surface-hover border border-border-default text-text-secondary hover:bg-surface-selected hover:border-border-strong',
           open && 'bg-surface-selected border-border-strong',
         )}
@@ -619,7 +724,7 @@ function ThemePicker({ themes, activeThemeFile, setActiveThemeFile }: {
       {open && (
         <div className="absolute left-0 top-full mt-1 bg-bg-elevated border border-border-default rounded-xl shadow-2xl shadow-black/60 z-50 overflow-hidden min-w-[180px] animate-in fade-in zoom-in-95 duration-100 origin-top-left">
           {themes.length === 0 && (
-            <div className="px-3 py-2 text-[12px] text-text-ghost">Темы не найдены</div>
+            <div className="px-3 py-2 text-[13px] text-text-ghost">Темы не найдены</div>
           )}
           {themes.map(t => {
             const isActive = activeThemeFile === t.file
@@ -633,7 +738,7 @@ function ThemePicker({ themes, activeThemeFile, setActiveThemeFile }: {
                   setOpen(false)
                 }}
                 className={cn(
-                  'w-full flex items-center justify-between px-3 py-2 text-left text-[12px] transition-colors',
+                  'w-full flex items-center justify-between px-3 py-2 text-left text-[13px] transition-colors',
                   isActive ? 'text-text-primary bg-surface-selected' : 'text-text-secondary hover:bg-surface-hover',
                 )}
               >
@@ -645,7 +750,7 @@ function ThemePicker({ themes, activeThemeFile, setActiveThemeFile }: {
           <div className="border-t border-border-subtle">
             <button
               onClick={() => { api.openThemesFolder(); setOpen(false) }}
-              className="w-full flex items-center gap-1.5 px-3 py-2 text-[11px] text-text-faint hover:text-text-muted transition-colors"
+              className="w-full flex items-center gap-1.5 px-3 py-2 text-[12px] text-text-faint hover:text-text-muted transition-colors"
             >
               <FolderOpen size={10} />
               Открыть папку
@@ -660,7 +765,7 @@ function ThemePicker({ themes, activeThemeFile, setActiveThemeFile }: {
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="text-[10px] font-medium text-text-faint uppercase tracking-wider mb-2 px-1">{label}</div>
+      <div className="text-[11px] font-medium text-text-faint uppercase tracking-wider mb-2 px-1">{label}</div>
       <div className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden divide-y divide-white/5">
         {children}
       </div>
@@ -674,11 +779,11 @@ function ToggleRow({ label, desc, value, onChange, claude: isClaude }: {
   return (
     <div className="flex items-center justify-between px-4 py-3 gap-4">
       <div className="min-w-0">
-        <div className="flex items-center gap-1.5 text-[13px] text-text-secondary">
+        <div className="flex items-center gap-1.5 text-[14px] text-text-secondary">
           {isClaude && <span className="w-1.5 h-1.5 rounded-full bg-orange-400/70 shrink-0" />}
           {label}
         </div>
-        {desc && <div className="text-[11px] text-text-faint mt-0.5">{desc}</div>}
+        {desc && <div className="text-[12px] text-text-faint mt-0.5">{desc}</div>}
       </div>
       <button
         onClick={() => onChange(!value)}
@@ -692,7 +797,7 @@ function ToggleRow({ label, desc, value, onChange, claude: isClaude }: {
 }
 
 function Dropdown({ value, options, onChange }: {
-  value: string; options: string[]; onChange: (v: string) => void
+  value: string; options: (string | { value: string; label: string })[]; onChange: (v: string) => void
 }) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState({ top: 0, right: 0 })
@@ -725,12 +830,17 @@ function Dropdown({ value, options, onChange }: {
         ref={btnRef}
         onClick={handleOpen}
         className={cn(
-          'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] transition-colors min-w-[90px] justify-between',
+          'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[13px] transition-colors min-w-[90px] justify-between',
           'bg-surface-hover border border-border-default text-text-secondary hover:bg-surface-selected hover:border-border-strong',
           open && 'bg-surface-selected border-border-strong',
         )}
       >
-        <span className="capitalize">{value}</span>
+        <span className="capitalize">
+          {(() => {
+            const opt = options.find(o => typeof o === 'string' ? o === value : o.value === value)
+            return opt ? (typeof opt === 'string' ? opt : opt.label) : value
+          })()}
+        </span>
         <ChevronDown size={11} className={cn('text-text-faint transition-transform duration-150', open && 'rotate-180')} />
       </button>
 
@@ -746,21 +856,25 @@ function Dropdown({ value, options, onChange }: {
           )}
         >
           <div className="p-1">
-            {options.map(o => (
-              <button
-                key={o}
-                onClick={() => { onChange(o); setOpen(false) }}
-                className={cn(
-                  'w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[12px] capitalize transition-colors',
-                  o === value
-                    ? 'text-text-primary bg-surface-selected'
-                    : 'text-text-muted hover:text-text-secondary hover:bg-surface-hover',
-                )}
-              >
-                {o}
-                {o === value && <Check size={11} style={{ color: 'var(--accent)' }} />}
-              </button>
-            ))}
+            {options.map(o => {
+              const val = typeof o === 'string' ? o : o.value
+              const lbl = typeof o === 'string' ? o : o.label
+              return (
+                <button
+                  key={val}
+                  onClick={() => { onChange(val); setOpen(false) }}
+                  className={cn(
+                    'w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[13px] capitalize transition-colors',
+                    val === value
+                      ? 'text-text-primary bg-surface-selected'
+                      : 'text-text-muted hover:text-text-secondary hover:bg-surface-hover',
+                  )}
+                >
+                  {lbl}
+                  {val === value && <Check size={11} style={{ color: 'var(--accent)' }} />}
+                </button>
+              )
+            })}
           </div>
         </div>,
         document.body
@@ -774,7 +888,7 @@ function SelectRow({ label, value, options, onChange, claude: isClaude }: {
 }) {
   return (
     <div className="flex items-center justify-between px-4 py-3">
-      <div className="flex items-center gap-1.5 text-[13px] text-text-secondary">
+      <div className="flex items-center gap-1.5 text-[14px] text-text-secondary">
         {isClaude && <span className="w-1.5 h-1.5 rounded-full bg-orange-400/70 shrink-0" />}
         {label}
       </div>
@@ -787,13 +901,13 @@ function LockedRow({ label, desc, value }: { label: string; desc?: string; value
   return (
     <div className="flex items-center justify-between px-4 py-3 gap-4 opacity-50">
       <div className="min-w-0">
-        <div className="text-[13px] text-text-secondary flex items-center gap-1.5">
+        <div className="text-[14px] text-text-secondary flex items-center gap-1.5">
           {label}
           <Lock size={10} className="text-text-faint" />
         </div>
-        {desc && <div className="text-[11px] text-text-faint mt-0.5">{desc}</div>}
+        {desc && <div className="text-[12px] text-text-faint mt-0.5">{desc}</div>}
       </div>
-      <span className="text-[12px] text-text-faint shrink-0">{value}</span>
+      <span className="text-[13px] text-text-faint shrink-0">{value}</span>
     </div>
   )
 }
@@ -802,8 +916,8 @@ function PendingSection({ label, reason, children }: { label: string; reason: st
   return (
     <div>
       <div className="flex items-baseline gap-2 mb-2 px-1">
-        <div className="text-[10px] font-medium text-text-ghost uppercase tracking-wider">{label}</div>
-        <div className="text-[10px] text-text-ghost normal-case">— {reason}</div>
+        <div className="text-[11px] font-medium text-text-ghost uppercase tracking-wider">{label}</div>
+        <div className="text-[11px] text-text-ghost normal-case">— {reason}</div>
       </div>
       <div className="bg-bg-surface border border-white/4 rounded-xl overflow-hidden divide-y divide-white/4 opacity-45">
         {children}
@@ -816,10 +930,10 @@ function PendingRow({ label, desc }: { label: string; desc?: string }) {
   return (
     <div className="flex items-center justify-between px-4 py-2">
       <div className="min-w-0">
-        <div className="text-[12px] text-text-muted">{label}</div>
-        {desc && <div className="text-[10px] text-text-faint">{desc}</div>}
+        <div className="text-[13px] text-text-muted">{label}</div>
+        {desc && <div className="text-[11px] text-text-faint">{desc}</div>}
       </div>
-      <span className="text-[10px] text-text-ghost shrink-0">—</span>
+      <span className="text-[11px] text-text-ghost shrink-0">—</span>
     </div>
   )
 }
@@ -830,11 +944,11 @@ function TextRow({ label, desc, value, placeholder, onChange, claude: isClaude }
   return (
     <div className="flex items-center justify-between px-4 py-3 gap-4">
       <div className="min-w-0">
-        <div className="flex items-center gap-1.5 text-[13px] text-text-secondary">
+        <div className="flex items-center gap-1.5 text-[14px] text-text-secondary">
           {isClaude && <span className="w-1.5 h-1.5 rounded-full bg-orange-400/70 shrink-0" />}
           {label}
         </div>
-        {desc && <div className="text-[11px] text-text-faint mt-0.5">{desc}</div>}
+        {desc && <div className="text-[12px] text-text-faint mt-0.5">{desc}</div>}
       </div>
       <input
         type="text"
@@ -842,7 +956,7 @@ function TextRow({ label, desc, value, placeholder, onChange, claude: isClaude }
         placeholder={placeholder}
         onChange={e => onChange(e.target.value)}
         onBlur={e => onChange(e.target.value)}
-        className="w-28 bg-surface-selected border border-border-default rounded-lg px-2 py-1 text-[12px] text-text-secondary placeholder:text-text-ghost focus:outline-none focus:border-border-strong"
+        className="w-28 bg-surface-selected border border-border-default rounded-lg px-2 py-1 text-[13px] text-text-secondary placeholder:text-text-ghost focus:outline-none focus:border-border-strong"
       />
     </div>
   )

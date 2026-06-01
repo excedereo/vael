@@ -5,6 +5,7 @@ export interface ElectronAPI {
   getAccounts: () => Promise<Account[]>
   createAccount: (id: string) => Promise<Account>
   deleteAccount: (id: string) => Promise<{ ok: boolean }>
+  logoutAccount: (id: string) => Promise<{ ok: boolean }>
   openAuth: (configDir: string) => Promise<{ ok: boolean }>
   checkCredentials: (configDir: string) => Promise<boolean>
 
@@ -26,6 +27,7 @@ export interface ElectronAPI {
   ptySpawn: (configDir: string, sessionId?: string) => Promise<{ ok: boolean }>
   ptySend: (command: string) => Promise<{ ok: boolean }>
   ptyKill: () => Promise<{ ok: boolean }>
+  sessionCommand: (command: string) => Promise<{ ok: boolean; error?: string }>
 
   pickAvatar: () => Promise<string | null>
 
@@ -63,6 +65,8 @@ export interface ElectronAPI {
 
   updateDownload: () => Promise<void>
   updateInstall: () => Promise<void>
+  getVaelVersion: () => Promise<string>
+  setAutoDownload: (enabled: boolean) => Promise<void>
   onUpdateAvailable: (cb: (version: string) => void) => () => void
   onUpdateProgress: (cb: (progress: number) => void) => () => void
   onUpdateReady: (cb: () => void) => () => void
