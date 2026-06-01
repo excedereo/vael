@@ -13,13 +13,15 @@ interface Props {
   liveEntries: JsonlEntry[]
   isStreaming: boolean
   isThinking: boolean
+  isCompacting?: boolean
+  contentPadding?: number
   liveTool: LiveTool | null
   streamStats?: { seconds: number; tokens: number | null; exact: boolean } | null
   onScrollStateChange?: (atBottom: boolean) => void
   scrollTrigger?: number
 }
 
-type AvatarState = 'default' | 'punching' | 'thinking'
+type AvatarState = 'default' | 'punching' | 'thinking' | 'compacting'
 
 const ICON_W = 80
 const ICON_LEFT = 8
@@ -64,7 +66,7 @@ function LastWrapper({ children, live, animate, extraClass, src }: {
   )
 }
 
-export function ChatView({ session, entries, liveEntries, isStreaming, isThinking, liveTool, streamStats, onScrollStateChange, scrollTrigger }: Props) {
+export function ChatView({ session, entries, liveEntries, isStreaming, isThinking, isCompacting, contentPadding = 104, liveTool, streamStats, onScrollStateChange, scrollTrigger }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const [avatarState, setAvatarState] = useState<AvatarState>('default')
@@ -79,6 +81,12 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
   }, [])
 
   useEffect(() => {
+    if (isCompacting) {
+      if (thinkTimerRef.current) clearTimeout(thinkTimerRef.current)
+      isActiveRef.current = false
+      setAvatarState('compacting')
+      return
+    }
     const active = isThinking || isStreaming
     if (active && !isActiveRef.current) {
       isActiveRef.current = true
@@ -89,7 +97,7 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
       if (thinkTimerRef.current) clearTimeout(thinkTimerRef.current)
       setAvatarState('default')
     }
-  }, [isThinking, isStreaming])
+  }, [isThinking, isStreaming, isCompacting])
 
   // Автоскролл — spring с velocity, плавный разгон и торможение
   const scrollAnimRef = useRef<number | null>(null)
@@ -170,9 +178,12 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
   }, [scrollTrigger, scrollToBottom])
 
   const isActive = isStreaming || isThinking
-  const src = resolveSlotSrc(avatarState, slotOverrides)
+  // For compacting state: use 'compacting' slot if set, otherwise fall back to 'thinking'
+  const src = avatarState === 'compacting'
+    ? (resolveSlotSrc('compacting', slotOverrides) ?? resolveSlotSrc('thinking', slotOverrides))
+    : resolveSlotSrc(avatarState, slotOverrides)
 
-  if (!session && !isActive && entries.length === 0) {
+  if (!session && !isActive && !isCompacting && entries.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-ghost text-base">
         Select a session or start a new one
@@ -198,12 +209,18 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
     if (e.type === 'user') {
       if (text === '') return true
       if (Array.isArray(c) && (c as { type: string }[]).some(b => b.type === 'tool_result')) return true
+      // Hide compact system messages (but NOT the "This session is being continued..." summary — let it render)
+      if (text.includes('<local-command-caveat>')) return true
+      if (text.includes('<command-name>/compact</command-name>')) return true
+      if (text === 'Continue from where you left off.') return true
+      if (text.includes('<local-command-stdout>') && text.includes('Compacted')) return true
     }
     return false
   }
 
   const visibleEntries = entries.filter(e => {
     if (e.type === 'result') return false
+    if (e.type === 'compact_boundary') return true
     if (isHiddenEntry(e)) return false
     if (e.type === 'assistant') {
       const blocks = Array.isArray(e.message?.content) ? e.message.content as { type: string; text?: string; name?: string }[] : []
@@ -220,7 +237,7 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
     }
     return -1
   })()
-  const isLastCommitted = (i: number) => !hasLive && !hasThinking && !hasLiveTool && i === lastAssistantIdx
+  const isLastCommitted = (i: number) => !hasLive && !hasThinking && !hasLiveTool && !isCompacting && i === lastAssistantIdx
 
   const gapBefore = (i: number, arr: { type: string }[]) => {
     if (i === 0) return ''
@@ -250,17 +267,37 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
 
   return (
     <div className="flex-1 overflow-hidden">
-      <div ref={scrollRef} className="h-full overflow-y-auto">
-        <div className="py-6 pr-8" style={{ paddingLeft: ICON_W + 24 }}>
+      <div ref={scrollRef} className="h-full overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
+        <div className="py-6" style={{ paddingLeft: contentPadding, paddingRight: contentPadding }}>
 
-          {visibleEntries.map((entry, i) => wrap(
-            <MessageBubble entry={entry} />,
-            isLastCommitted(i),
-            gapBefore(i, visibleEntries),
-            i === visibleEntries.length - 1 && entry.type === 'user',
-            false,
-            entry.type === 'error_bubble' ? errorSrc : undefined,
-          ))}
+          {visibleEntries.map((entry, i) => {
+            if (entry.type === 'compact_boundary') {
+              const saved = entry.pre_tokens > 0
+                ? Math.round((1 - entry.post_tokens / entry.pre_tokens) * 100)
+                : 0
+              return (
+                <div key={`compact-${i}`} className="flex flex-col items-center gap-1 py-3 px-4 mt-4">
+                  <div className="flex items-center gap-3 w-full">
+                    <div className="flex-1 h-px bg-border-subtle" />
+                    <span className="text-[11px] text-text-faint whitespace-nowrap">Session compacted</span>
+                    <div className="flex-1 h-px bg-border-subtle" />
+                  </div>
+                  <span className="text-[11px] text-text-ghost">
+                    {entry.pre_tokens.toLocaleString()} → {entry.post_tokens.toLocaleString()} tokens · saved{' '}
+                    <span style={{ color: 'color-mix(in srgb, var(--accent) 70%, transparent)' }}>{saved}%</span>
+                  </span>
+                </div>
+              )
+            }
+            return wrap(
+              <MessageBubble entry={entry} />,
+              isLastCommitted(i),
+              gapBefore(i, visibleEntries),
+              i === visibleEntries.length - 1 && entry.type === 'user',
+              false,
+              entry.type === 'error_bubble' ? errorSrc : undefined,
+            )
+          })}
 
           {liveEntries.filter(e => !isHiddenEntry(e)).map((entry, i, arr) => {
             const prevType = i === 0 ? (visibleEntries.at(-1)?.type ?? '') : arr[i - 1].type
@@ -274,7 +311,7 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
             )
           })}
 
-          {hasLiveTool && wrap(
+          {hasLiveTool && !isCompacting && wrap(
             <div style={{ minHeight: 20 }}>
               <div className="flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0" style={{ backgroundColor: 'color-mix(in srgb, var(--accent) 70%, transparent)' }} />
@@ -284,7 +321,7 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
             true, 'mt-6', true, true,
           )}
 
-          {hasThinking && wrap(
+          {hasThinking && !isCompacting && wrap(
             <div style={{ minHeight: 20 }}>
               <div className="flex gap-[6px] items-center">
                 {[0, 1, 2].map(i => (
@@ -298,6 +335,16 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
                     }}
                   />
                 ))}
+              </div>
+            </div>,
+            true, 'mt-6', true, true,
+          )}
+
+          {isCompacting && wrap(
+            <div style={{ minHeight: 20 }}>
+              <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full shrink-0 animate-pulse" style={{ backgroundColor: 'color-mix(in srgb, var(--accent) 60%, transparent)' }} />
+                <span className="text-[13px] text-text-muted font-mono">Compacting conversation...</span>
               </div>
             </div>,
             true, 'mt-6', true, true,

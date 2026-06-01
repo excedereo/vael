@@ -1,73 +1,45 @@
-# React + TypeScript + Vite
+# Vael
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A clean, minimal desktop interface for Claude Code — built for people who want to work with Claude without touching the terminal.
 
-Currently, two official plugins are available:
+![version](https://img.shields.io/badge/version-0.1.5-a78bfa)
+![platform](https://img.shields.io/badge/platform-Windows-blue)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## What is this
 
-## React Compiler
+Vael is an Electron app that wraps Claude Code CLI with a proper chat UI. It handles sessions, accounts, file attachments, and all the settings you'd otherwise configure through config files — presented in a way that actually makes sense.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Features
 
-## Expanding the ESLint configuration
+- **Chat** — clean message view with thinking indicators, tool use display, and compact summaries
+- **Sessions** — persistent history, rename, delete, quick switching
+- **Multiple accounts** — add, switch, log out and back in without losing sessions
+- **Model & effort control** — pick any model including custom IDs, set effort and permission mode per message
+- **Settings** — all relevant Claude CLI options in one place, no config files needed
+- **Themes** — dark by default, customizable via JSON theme files
+- **Custom avatar slots** — replace the default icons with your own
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Requirements
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- [Claude Code CLI](https://github.com/anthropics/claude-code) installed and authenticated
+- Node.js 18+
+- Windows (other platforms untested)
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## Getting started
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+git clone https://github.com/stralitz/vael
+cd vael
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+To build:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run build
 ```
+
+## License
+
+MIT

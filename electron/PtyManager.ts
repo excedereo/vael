@@ -224,6 +224,11 @@ export class PtyManager {
     this.ptyProcess.write(command + '\r')
   }
 
+  writeRaw(command: string): void {
+    if (!this.ptyProcess) return
+    this.ptyProcess.write(command + '\r')
+  }
+
   onOutput(cb: PtyOutputCallback): void {
     this.outputCallback = cb
   }

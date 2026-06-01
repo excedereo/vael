@@ -1,5 +1,19 @@
 @import "tailwindcss";
 @import "highlight.js/styles/atom-one-dark.css";
+
+@font-face {
+  font-family: 'Onest';
+  font-weight: 400;
+  font-style: normal;
+  src: url('./assets/Onest-Regular.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Onest';
+  font-weight: 500;
+  font-style: normal;
+  src: url('./assets/Onest-Medium.ttf') format('truetype');
+}
 @plugin "tailwindcss-animate";
 @plugin "@tailwindcss/typography";
 
@@ -95,11 +109,33 @@
 
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.12) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.22);
 }
 
 body {
   margin: 0;
   background: var(--bg-base);
+  font-family: 'Onest', system-ui, sans-serif;
+  font-weight: 500;
 }
 
 #root {

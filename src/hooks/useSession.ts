@@ -85,11 +85,13 @@ export function useSession(session: Session | null) {
   const [liveTool, setLiveTool] = useState<LiveTool | null>(null)
   // thinking = streaming started but nothing visible yet
   const [isThinking, setIsThinking] = useState(false)
+  const [isCompacting, setIsCompacting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [streamSeconds, setStreamSeconds] = useState(0)
   const [streamTokens, setStreamTokens] = useState<number | null>(null)
   const streamStartRef = useRef<number | null>(null)
   const timerRef2 = useRef<ReturnType<typeof setInterval> | null>(null)
+  const compactTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const liveEntriesRef = useRef<JsonlEntry[]>([])
   const pendingToolsRef = useRef<Array<{ type: string; name?: string; input?: Record<string, unknown> }>>([])
@@ -116,6 +118,23 @@ export function useSession(session: Session | null) {
     const unsubEvent = api.onStreamEvent((event: StreamEvent) => {
       if (event.type === 'system') {
         const sub = (event as unknown as { subtype?: string }).subtype
+        if (sub === 'status') {
+          const se = event as unknown as { status?: string | null; compact_result?: string }
+          if (se.status === 'compacting') {
+            setIsCompacting(true)
+            // Keep timer ticking during compact if main stream timer stopped
+            if (!compactTimerRef.current) {
+              if (!streamStartRef.current) streamStartRef.current = Date.now()
+              compactTimerRef.current = setInterval(() => {
+                if (streamStartRef.current) setStreamSeconds(Math.floor((Date.now() - streamStartRef.current) / 1000))
+              }, 1000)
+            }
+          } else if (se.compact_result === 'success') {
+            setIsCompacting(false)
+            if (compactTimerRef.current) { clearInterval(compactTimerRef.current); compactTimerRef.current = null }
+          }
+          return
+        }
         if (sub === 'api_retry') {
           const e = event as unknown as {
             attempt?: number
@@ -149,7 +168,7 @@ export function useSession(session: Session | null) {
             } else if (errorType === 'billing_error') {
               msg = 'Проблема с оплатой аккаунта Claude.'
             } else if (errorType === 'invalid_request') {
-              msg = 'Некорректный запрос к API Claude.'
+              msg = 'Некорректный запрос к API Claude. Возможно неверный ID модели.'
             } else if (errorType === 'max_output_tokens') {
               msg = 'Достигнут лимит токенов в ответе.'
             } else if (errorType === 'server_error') {
@@ -173,6 +192,43 @@ export function useSession(session: Session | null) {
           setLiveTool({ name: 'retry', label: `Нет соединения, повтор ${attempt}/3...` })
           return
         }
+        if (sub === 'compact_boundary') {
+          const ce = event as unknown as {
+            compact_metadata?: { pre_tokens?: number; post_tokens?: number; trigger?: string }
+          }
+          const meta = ce.compact_metadata ?? {}
+          const compactEntry: JsonlEntry = {
+            type: 'compact_boundary',
+            pre_tokens: meta.pre_tokens ?? 0,
+            post_tokens: meta.post_tokens ?? 0,
+            trigger: meta.trigger ?? 'manual',
+          }
+          setEntries(prev => [...prev, compactEntry])
+          // Poll jsonl after compact until summary bubble appears (max 10 attempts, every 2s)
+          if (session) {
+            const jsonlPath = `${session.projectPath}\\${session.id}.jsonl`
+            let attempts = 0
+            const poll = () => {
+              attempts++
+              api.readSession(jsonlPath).then(raw => {
+                const filtered = filterContextEntries(raw)
+                // Check if summary appeared (user message with "This session is being continued")
+                const hasSummary = filtered.some(e =>
+                  e.type === 'user' && typeof e.message?.content === 'string' &&
+                  e.message.content.includes('This session is being continued')
+                )
+                if (hasSummary || attempts >= 10) {
+                  setEntries(filtered)
+                } else {
+                  setTimeout(poll, 2000)
+                }
+              })
+            }
+            setTimeout(poll, 1500)
+          }
+          return
+        }
+
         // Session started — begin thinking state
         setIsStreaming(true)
         setIsThinking(true)
@@ -307,9 +363,9 @@ export function useSession(session: Session | null) {
     return acc + Math.round(text.length / 4)
   }, 0)
 
-  const streamStats = (isStreaming || isThinking || streamTokens !== null)
+  const streamStats = (isStreaming || isThinking || isCompacting || streamTokens !== null)
     ? { seconds: streamSeconds, tokens: streamTokens ?? (estimatedTokens > 0 ? estimatedTokens : null), exact: streamTokens !== null }
     : null
 
-  return { entries, liveEntries, isStreaming, isThinking, liveTool, appendUserMessage, error, clearError: () => setError(null), streamStats }
+  return { entries, liveEntries, isStreaming, isThinking, isCompacting, liveTool, appendUserMessage, error, clearError: () => setError(null), streamStats }
 }

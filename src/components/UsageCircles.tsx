@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { RefreshCw, ChevronDown, ChevronRight, Check, X } from 'lucide-react'
 import { UsageData, ContextData } from '../types/index'
 import { api } from '../lib/api.js'
@@ -8,8 +9,8 @@ interface Props {
   hasSession?: boolean
 }
 
-const R = 5
-const CIRC = 2 * Math.PI * R // ≈ 31.4
+const R = 6
+const CIRC = 2 * Math.PI * R
 
 function ringColor(pct: number) {
   if (pct >= 85) return '#f87171' // red-400
@@ -20,10 +21,10 @@ function ringColor(pct: number) {
 function Ring({ pct, color }: { pct: number; color: string }) {
   const dash = (pct / 100) * CIRC
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" className="rotate-[-90deg]">
-      <circle cx="7" cy="7" r={R} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="1.5" />
+    <svg width="16" height="16" viewBox="0 0 16 16" className="rotate-[-90deg]">
+      <circle cx="8" cy="8" r={R} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="1.5" />
       <circle
-        cx="7" cy="7" r={R} fill="none"
+        cx="8" cy="8" r={R} fill="none"
         stroke={color}
         strokeWidth="1.5"
         strokeDasharray={`${dash} ${CIRC}`}
@@ -312,8 +313,8 @@ export function UsageCircles({ hasSession }: Props) {
         onClick={() => setOpenPopup(v => v === 'usage' ? null : 'usage')}
         title="Plan usage"
         className={cn(
-          'flex items-center justify-center w-5 h-5 rounded-md transition-colors',
-          'hover:bg-surface-selected active:bg-surface-active',
+          'flex items-center justify-center w-6 h-6 rounded-md transition-all duration-150',
+          'hover:bg-surface-selected active:bg-surface-active active:scale-90',
           openPopup === 'usage' && 'bg-surface-selected',
           loadingUsage && 'animate-pulse',
         )}
@@ -326,8 +327,8 @@ export function UsageCircles({ hasSession }: Props) {
         onClick={() => setOpenPopup(v => v === 'context' ? null : 'context')}
         title="Context window"
         className={cn(
-          'flex items-center justify-center w-5 h-5 rounded-md transition-colors',
-          'hover:bg-surface-selected active:bg-surface-active',
+          'flex items-center justify-center w-6 h-6 rounded-md transition-all duration-150',
+          'hover:bg-surface-selected active:bg-surface-active active:scale-90',
           openPopup === 'context' && 'bg-surface-selected',
           loadingContext && 'animate-pulse',
         )}
@@ -336,34 +337,38 @@ export function UsageCircles({ hasSession }: Props) {
       </button>
 
       {/* Popups */}
-      {openPopup === 'usage' && usage && (
-        <div className="absolute bottom-full right-0 mb-2 bg-bg-elevated border border-border-default rounded-xl shadow-2xl z-50 overflow-hidden">
-          <UsagePopup usage={usage} onRefresh={handleRefreshUsage} loading={loadingUsage} />
-        </div>
-      )}
-      {openPopup === 'context' && context && (
-        <div className="absolute bottom-full right-0 mb-2 bg-bg-elevated border border-border-default rounded-xl shadow-2xl z-50 overflow-hidden">
-          <ContextPopup ctx={context} onRefresh={handleRefreshContext} loading={loadingContext} />
-        </div>
-      )}
-
-      {/* Empty states */}
-      {openPopup === 'usage' && !usage && (
-        <div className="absolute bottom-full right-0 mb-2 bg-bg-elevated border border-border-default rounded-xl shadow-2xl z-50 p-3">
-          <button onClick={handleRefreshUsage} className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-text-secondary transition-colors">
-            <RefreshCw size={11} className={loadingUsage ? 'animate-spin' : ''} />
-            Load usage
-          </button>
-        </div>
-      )}
-      {openPopup === 'context' && !context && (
-        <div className="absolute bottom-full right-0 mb-2 bg-bg-elevated border border-border-default rounded-xl shadow-2xl z-50 p-3">
-          <button onClick={handleRefreshContext} className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-text-secondary transition-colors">
-            <RefreshCw size={11} className={loadingContext ? 'animate-spin' : ''} />
-            Load context
-          </button>
-        </div>
-      )}
+      <AnimatePresence>
+        {openPopup === 'usage' && (
+          <motion.div
+            key="usage-popup"
+            initial={{ opacity: 0, y: 4, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.97 }}
+            transition={{ duration: 0.12, ease: 'easeOut' }}
+            className="absolute bottom-full right-0 mb-2 bg-bg-elevated border border-border-default rounded-xl shadow-2xl z-50 overflow-hidden"
+          >
+            {usage
+              ? <UsagePopup usage={usage} onRefresh={handleRefreshUsage} loading={loadingUsage} />
+              : <div className="p-3"><button onClick={handleRefreshUsage} className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-text-secondary transition-colors"><RefreshCw size={11} className={loadingUsage ? 'animate-spin' : ''} />Load usage</button></div>
+            }
+          </motion.div>
+        )}
+        {openPopup === 'context' && (
+          <motion.div
+            key="context-popup"
+            initial={{ opacity: 0, y: 4, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.97 }}
+            transition={{ duration: 0.12, ease: 'easeOut' }}
+            className="absolute bottom-full right-0 mb-2 bg-bg-elevated border border-border-default rounded-xl shadow-2xl z-50 overflow-hidden"
+          >
+            {context
+              ? <ContextPopup ctx={context} onRefresh={handleRefreshContext} loading={loadingContext} />
+              : <div className="p-3"><button onClick={handleRefreshContext} className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-text-secondary transition-colors"><RefreshCw size={11} className={loadingContext ? 'animate-spin' : ''} />Load context</button></div>
+            }
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

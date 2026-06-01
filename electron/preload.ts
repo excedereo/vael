@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('api', {
   getAccounts: () => ipcRenderer.invoke('accounts:get'),
   createAccount: (id: string) => ipcRenderer.invoke('accounts:create', id),
   deleteAccount: (id: string) => ipcRenderer.invoke('accounts:delete', id),
+  logoutAccount: (id: string) => ipcRenderer.invoke('accounts:logout', id),
   openAuth: (configDir: string) => ipcRenderer.invoke('accounts:openAuth', configDir),
   checkCredentials: (configDir: string) => ipcRenderer.invoke('accounts:checkCredentials', configDir),
 
@@ -33,6 +34,7 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('pty:spawn', configDir, sessionId),
   ptySend: (command: string) => ipcRenderer.invoke('pty:send', command),
   ptyKill: () => ipcRenderer.invoke('pty:kill'),
+  sessionCommand: (command: string) => ipcRenderer.invoke('session:command', command),
 
   // Event listeners
   onStreamEvent: (cb: (event: unknown) => void) => {
@@ -120,6 +122,8 @@ contextBridge.exposeInMainWorld('api', {
   // Auto-updater
   updateDownload: () => ipcRenderer.invoke('update:download'),
   updateInstall: () => ipcRenderer.invoke('update:install'),
+  getVaelVersion: () => ipcRenderer.invoke('update:getVaelVersion'),
+  setAutoDownload: (enabled: boolean) => ipcRenderer.invoke('update:setAutoDownload', enabled),
   onUpdateAvailable: (cb: (version: string) => void) => {
     const handler = (_: unknown, version: string) => cb(version)
     ipcRenderer.on('update:available', handler)

@@ -1,7 +1,7 @@
 {
   "name": "vael",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.5",
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -34,8 +34,8 @@
       "icon": "public/icon.png"
     },
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
+      "oneClick": true,
+      "installerSidebar": false,
       "shortcutName": "Vael"
     },
     "publish": {

@@ -331,6 +331,11 @@ app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) creat
 
 ipcMain.handle('update:download', () => autoUpdater.downloadUpdate())
 ipcMain.handle('update:install', () => autoUpdater.quitAndInstall())
+ipcMain.handle('update:getVaelVersion', () => app.getVersion())
+ipcMain.handle('update:setAutoDownload', (_: unknown, enabled: boolean) => {
+  autoUpdater.autoDownload = enabled
+  autoUpdater.autoInstallOnAppQuit = enabled
+})
 
 ipcMain.handle('accounts:get', () => accountManager.getAccounts())
 
@@ -418,6 +423,15 @@ ipcMain.handle('accounts:checkCredentials', (_, configDir: string) => {
 ipcMain.handle('accounts:delete', (_, id: string) => {
   try {
     accountManager.deleteAccount(id)
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+})
+
+ipcMain.handle('accounts:logout', (_, id: string) => {
+  try {
+    accountManager.logoutAccount(id)
     return { ok: true }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
@@ -694,6 +708,24 @@ ipcMain.handle('pty:spawn', (_, configDir: string, sessionId?: string) => {
 
 ipcMain.handle('pty:send', (_, command: string) => {
   usagePty.sendCommand(command)
+  return { ok: true }
+})
+
+ipcMain.handle('session:command', (_, command: string) => {
+  console.log('[session:command] received:', command, 'lastSessionId:', lastSessionId)
+  if (!lastSessionId || !lastConfigDir) {
+    console.log('[session:command] no active session, ignoring')
+    return { ok: false, error: 'no active session' }
+  }
+  claudeRunner.sendMessage(
+    lastSessionId, command, lastConfigDir, 'claude-sonnet-4-5', '', 'bypassPermissions',
+    (event) => { trackCacheFromEvent(event); mainWindow?.webContents.send('stream:event', event) },
+    (code) => {
+      mainWindow?.webContents.send('stream:done', code)
+      fetchAndSendUsage(lastSessionId ?? undefined)
+      if (lastSessionId && lastConfigDir) fetchContextForSession(lastSessionId, lastConfigDir)
+    },
+  )
   return { ok: true }
 })
 

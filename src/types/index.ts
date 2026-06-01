@@ -22,11 +22,19 @@ export type JsonlEntry =
   | ResultEntry
   | SystemEntry
   | ErrorEntry
+  | CompactBoundaryEntry
 
 export interface ErrorEntry {
   type: 'error_bubble'
   message: string
   known: boolean
+}
+
+export interface CompactBoundaryEntry {
+  type: 'compact_boundary'
+  pre_tokens: number
+  post_tokens: number
+  trigger: string
 }
 
 export interface UserEntry {
