@@ -119,6 +119,41 @@ contextBridge.exposeInMainWorld('api', {
   windowClose: () => ipcRenderer.invoke('window:close'),
   windowIsMaximized: () => ipcRenderer.invoke('window:isMaximized'),
 
+  // Memory
+  memoryListDir: (dirPath?: string) => ipcRenderer.invoke('memory:listDir', dirPath),
+  memoryReadFile: (filePath: string) => ipcRenderer.invoke('memory:readFile', filePath),
+  memoryWriteFile: (filePath: string, content: string) => ipcRenderer.invoke('memory:writeFile', filePath, content),
+  memoryCreateFile: (name: string, dirPath?: string) => ipcRenderer.invoke('memory:createFile', name, dirPath),
+  memoryCreateDir: (name: string, dirPath?: string) => ipcRenderer.invoke('memory:createDir', name, dirPath),
+  memoryDeleteFile: (filePath: string) => ipcRenderer.invoke('memory:deleteFile', filePath),
+  memoryGetClaudeMd: () => ipcRenderer.invoke('memory:getClaudeMd'),
+  memoryGetDir: () => ipcRenderer.invoke('memory:getMemoryDir'),
+  memoryRename: (oldPath: string, newName: string) => ipcRenderer.invoke('memory:rename', oldPath, newName),
+  memoryGetMeta: () => ipcRenderer.invoke('memory:getMeta'),
+  memoryGetTokens: () => ipcRenderer.invoke('memory:getTokens'),
+  memorySetMeta: (relativePath: string, data: { auto: boolean }) => ipcRenderer.invoke('memory:setMeta', relativePath, data),
+  memoryRebuildAll: () => ipcRenderer.invoke('memory:rebuildAll'),
+
+  // Telegram integration
+  tgGetSettings: () => ipcRenderer.invoke('tg:getSettings'),
+  tgSetSettings: (settings: { botToken: string; chatId: string; enabled: boolean }) => ipcRenderer.invoke('tg:setSettings', settings),
+  tgStart: () => ipcRenderer.invoke('tg:start'),
+  tgStop: () => ipcRenderer.invoke('tg:stop'),
+  tgReply: (chatId: string, text: string) => ipcRenderer.invoke('tg:reply', chatId, text),
+  onTgMessage: (cb: (chatId: string, text: string, filePath?: string) => void) => {
+    const handler = (_: unknown, chatId: string, text: string, filePath?: string) => cb(chatId, text, filePath)
+    ipcRenderer.on('tg:message', handler)
+    return () => ipcRenderer.removeListener('tg:message', handler)
+  },
+  onSessionReload: (cb: (sessionId: string) => void) => {
+    const handler = (_: unknown, sessionId: string) => cb(sessionId)
+    ipcRenderer.on('session:reload', handler)
+    return () => ipcRenderer.removeListener('session:reload', handler)
+  },
+
+  // Stats
+  getStats: () => ipcRenderer.invoke('stats:get'),
+
   // Auto-updater
   updateDownload: () => ipcRenderer.invoke('update:download'),
   updateInstall: () => ipcRenderer.invoke('update:install'),
