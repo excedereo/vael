@@ -15,9 +15,11 @@ import { AccountSwitchModal } from './components/AccountSwitchModal.js'
 import { FirstLaunch } from './components/FirstLaunch.js'
 import { ErrorToast } from './components/ErrorToast.js'
 import { ConsoleView } from './components/ConsoleView.js'
+import { MemoryPage } from './components/MemoryPage.js'
 import { NavControls } from './components/NavControls.js'
 import { WindowControls } from './components/WindowControls.js'
 import { UpdateBanner, UpdateState } from './components/UpdateBanner.js'
+import { TgPanel } from './components/TgPanel.js'
 import { api } from './lib/api.js'
 import { Session } from './types/index'
 import { restoreSavedTheme } from './lib/theme.js'
@@ -44,8 +46,8 @@ export default function App() {
   const [activeModel, setActiveModel] = useState<ModelId>('claude-sonnet-4-6')
   const [activeEffort, setActiveEffort] = useState<EffortLevel>('medium')
   const [activePermission, setActivePermission] = useState<PermissionMode>('bypassPermissions')
-  const [page, setPage] = useState<'chat' | 'accounts' | 'settings'>('chat')
-  const [sidebarTab, setSidebarTab] = useState<'sessions' | 'pyre' | 'console'>('sessions')
+  const [page, setPage] = useState<'chat' | 'accounts' | 'settings' | 'memory'>('chat')
+  const [sidebarTab, setSidebarTab] = useState<'sessions' | 'pyre' | 'console' | 'memory'>('sessions')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const { push: navPush, goBack, goForward, canGoBack, canGoForward } = useNavHistory()
   const [updateState, setUpdateState] = useState<UpdateState | null>(null)
@@ -169,6 +171,18 @@ export default function App() {
     }
   }, [])
 
+  const [memoryTokens, setMemoryTokens] = useState<{ auto: number; total: number } | undefined>()
+
+  useEffect(() => {
+    const fetchTokens = async () => {
+      const r = await api.memoryGetTokens()
+      if (r) setMemoryTokens(r)
+    }
+    fetchTokens()
+    const interval = setInterval(fetchTokens, 5000)
+    return () => clearInterval(interval)
+  }, [])
+
   const [chatAtBottom, setChatAtBottom] = useState(true)
   const [scrollTrigger, setScrollTrigger] = useState(0)
   const [contentPadding, setContentPadding] = useState<number>(() => {
@@ -242,7 +256,15 @@ export default function App() {
     }
   }, [accountsLoaded, accounts.length])
   const activeSession = sessions.find(s => s.id === activeSessionId) || null
-  const { entries, liveEntries, isStreaming, isThinking, isCompacting, liveTool, appendUserMessage, error, clearError, streamStats } = useSession(activeSession)
+  const { entries, liveEntries, isStreaming, isThinking, isCompacting, liveTool, appendUserMessage, error, clearError, streamStats, reloadEntries } = useSession(activeSession)
+
+  useEffect(() => {
+    const unsub = api.onSessionReload((sessionId) => {
+      refreshSessions()
+      if (sessionId === activeSessionId) reloadEntries()
+    })
+    return unsub
+  }, [activeSessionId, reloadEntries, refreshSessions])
 
   const handleSelectSession = useCallback((session: Session) => {
     setActiveSessionId(session.id)
@@ -250,7 +272,7 @@ export default function App() {
     navPush({ sessionId: session.id, tab: sidebarTab })
   }, [setActiveSessionId, sidebarTab, navPush])
 
-  const handleTabChange = useCallback((tab: 'sessions' | 'pyre' | 'console') => {
+  const handleTabChange = useCallback((tab: 'sessions' | 'pyre' | 'console' | 'memory') => {
     setSidebarTab(tab)
     navPush({ sessionId: activeSessionId, tab })
   }, [activeSessionId, navPush])
@@ -314,6 +336,7 @@ export default function App() {
     if (!activeSessionId && (name === 'compact' || name === 'context')) return
     api.sessionCommand(fullText)
   }, [activeSessionId])
+
 
   const handleDeleteSession = useCallback(async (session: import('./types/index').Session) => {
     const sessionPath = `${session.projectPath}\\${session.id}.jsonl`
@@ -451,6 +474,7 @@ export default function App() {
             activeTab={sidebarTab}
             onTabChange={handleTabChange}
             devConsole={devConsole}
+            memoryTokens={memoryTokens}
           />
         </div>
         {updateState && <UpdateBanner state={updateState} onClick={handleUpdateClick} onDismiss={() => setUpdateState(null)} />}
@@ -460,6 +484,7 @@ export default function App() {
           onSwitch={(id) => setSwitchTarget(id)}
           onManage={() => setPage('accounts')}
           onSettings={() => setPage('settings')}
+          onMemory={() => setPage('memory')}
         />
       </div>
 
@@ -521,24 +546,20 @@ export default function App() {
           </AnimatePresence>
         </div>
 
-        <AnimatePresence mode="wait" initial={false}>
-          {sidebarTab === 'console' && (
-            <motion.div key="console" className="flex-1 overflow-hidden"
-              initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.15, ease: 'easeOut' }}
-            >
-              <ConsoleView logs={consoleLogs} onClear={() => setConsoleLogs([])} />
-            </motion.div>
-          )}
-          {sidebarTab === 'pyre' && (
-            <motion.div key="pyre" className="flex-1 flex items-center justify-center text-text-ghost text-sm"
-              initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.15, ease: 'easeOut' }}
-            >
-              Coming soon
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* Console */}
+        {sidebarTab === 'console' && (
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            <ConsoleView logs={consoleLogs} onClear={() => setConsoleLogs([])} />
+          </div>
+        )}
+        {/* Pyre */}
+        {sidebarTab === 'pyre' && (
+          <TgPanel sessions={sessions} />
+        )}
+        {/* Memory — always mounted to preserve state */}
+        <div className="no-drag" style={{ flex: 1, overflow: 'hidden', display: sidebarTab === 'memory' ? 'flex' : 'none', flexDirection: 'column', minHeight: 0 }}>
+          <MemoryPage onBack={() => setSidebarTab('sessions')} />
+        </div>
 
         {sidebarTab === 'sessions' && (
           <div>
@@ -579,6 +600,11 @@ export default function App() {
       {page === 'settings' && (
         <div className="fixed inset-0 z-40 bg-bg-base">
           <SettingsPage onBack={() => setPage('chat')} />
+        </div>
+      )}
+      {page === 'memory' && (
+        <div className="fixed inset-0 z-40 bg-bg-base">
+          <MemoryPage onBack={() => setPage('chat')} />
         </div>
       )}
       {/* Account switch modal */}

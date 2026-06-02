@@ -1,5 +1,38 @@
 import { Account, Session, JsonlEntry, StreamEvent, UsageData, ContextData } from '../types/index'
 
+export interface FsEntry {
+  name: string
+  path: string
+  type: 'file' | 'dir'
+  size?: number
+  mtime?: number
+  auto?: boolean
+  tag?: string
+}
+
+export interface StatsDailyActivity {
+  date: string
+  messageCount: number
+  sessionCount: number
+  toolCallCount: number
+}
+
+export interface StatsModelUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheReadInputTokens: number
+  cacheCreationInputTokens: number
+  webSearchRequests?: number
+}
+
+export interface StatsCache {
+  version: number
+  lastComputedDate: string
+  dailyActivity: StatsDailyActivity[]
+  modelUsage: Record<string, StatsModelUsage>
+  dailyModelTokens?: Record<string, Record<string, number>>
+}
+
 // Type-safe wrapper around window.api exposed by preload
 export interface ElectronAPI {
   getAccounts: () => Promise<Account[]>
@@ -65,6 +98,30 @@ export interface ElectronAPI {
 
   updateDownload: () => Promise<void>
   updateInstall: () => Promise<void>
+  memoryListDir: (dirPath?: string) => Promise<{ ok: boolean; entries: FsEntry[]; rootDir: string }>
+  memoryReadFile: (filePath: string) => Promise<{ ok: boolean; content: string }>
+  memoryWriteFile: (filePath: string, content: string) => Promise<{ ok: boolean }>
+  memoryCreateFile: (name: string, dirPath?: string) => Promise<{ ok: boolean; path?: string; error?: string }>
+  memoryCreateDir: (name: string, dirPath?: string) => Promise<{ ok: boolean; path?: string; error?: string }>
+  memoryDeleteFile: (filePath: string) => Promise<{ ok: boolean }>
+  memoryGetClaudeMd: () => Promise<{ ok: boolean; path: string; content: string }>
+  memoryGetDir: () => Promise<string>
+  memoryRename: (oldPath: string, newName: string) => Promise<{ ok: boolean; path?: string; error?: string }>
+  memoryGetMeta: () => Promise<Record<string, { auto: boolean }>>
+  memoryGetTokens: () => Promise<{ auto: number; total: number }>
+  memorySetMeta: (relativePath: string, data: { auto: boolean }) => Promise<{ ok: boolean }>
+  memoryRebuildAll: () => Promise<{ ok: boolean }>
+
+  // Telegram integration
+  tgGetSettings: () => Promise<{ botToken: string; chatId: string; enabled: boolean; sessionId?: string; model?: string; effort?: string }>
+  tgSetSettings: (settings: { botToken: string; chatId: string; enabled: boolean; sessionId?: string; model?: string; effort?: string }) => Promise<{ ok: boolean }>
+  tgStart: () => Promise<{ ok: boolean }>
+  tgStop: () => Promise<{ ok: boolean }>
+  tgReply: (chatId: string, text: string) => Promise<{ ok: boolean }>
+  onTgMessage: (cb: (chatId: string, text: string, filePath?: string) => void) => () => void
+  onSessionReload: (cb: (sessionId: string) => void) => () => void
+
+  getStats: () => Promise<{ ok: boolean; data: StatsCache | null }>
   getVaelVersion: () => Promise<string>
   setAutoDownload: (enabled: boolean) => Promise<void>
   onUpdateAvailable: (cb: (version: string) => void) => () => void

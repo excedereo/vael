@@ -78,6 +78,7 @@ function toolLabel(name: string, input: Record<string, unknown>): string {
 }
 
 export function useSession(session: Session | null) {
+  const [reloadKey, setReloadKey] = useState(0)
   const [entries, setEntries] = useState<JsonlEntry[]>([])
   // liveEntries: accumulated assistant messages during streaming
   const [liveEntries, setLiveEntries] = useState<JsonlEntry[]>([])
@@ -112,7 +113,7 @@ export function useSession(session: Session | null) {
     pendingToolsRef.current = []
     setIsStreaming(false)
     setIsThinking(false)
-  }, [session?.id])
+  }, [session?.id, reloadKey])
 
   useEffect(() => {
     const unsubEvent = api.onStreamEvent((event: StreamEvent) => {
@@ -367,5 +368,5 @@ export function useSession(session: Session | null) {
     ? { seconds: streamSeconds, tokens: streamTokens ?? (estimatedTokens > 0 ? estimatedTokens : null), exact: streamTokens !== null }
     : null
 
-  return { entries, liveEntries, isStreaming, isThinking, isCompacting, liveTool, appendUserMessage, error, clearError: () => setError(null), streamStats }
+  return { entries, liveEntries, isStreaming, isThinking, isCompacting, liveTool, appendUserMessage, error, clearError: () => setError(null), streamStats, reloadEntries: () => setReloadKey(k => k + 1) }
 }

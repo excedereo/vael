@@ -332,12 +332,7 @@ export class AccountManager {
         const srcFile = path.join(srcProjDir, file)
         const dstFile = path.join(dstProjDir, file)
 
-        const srcMtime = fs.statSync(srcFile).mtimeMs
-        const dstMtime = fs.existsSync(dstFile) ? fs.statSync(dstFile).mtimeMs : 0
-
-        if (srcMtime > dstMtime) {
-          fs.copyFileSync(srcFile, dstFile)
-        }
+        fs.copyFileSync(srcFile, dstFile)
       }
     }
   }

@@ -297,7 +297,7 @@ app.whenReady().then(() => {
       const at = (meta.lastContextAt as number) ?? 0
       if (!lastSessionId || at > ((contextCache.get(lastSessionId) as unknown as { _at?: number })?._at ?? 0)) {
         lastSessionId = sid
-        lastConfigDir = meta.configDir as string ?? ''
+        setLastConfigDir(meta.configDir as string ?? '')
       }
     }
   }
@@ -327,7 +327,483 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 
+// ── Memory watcher — rebuild indexes on external file changes ─────────────
+let watchDebounce: ReturnType<typeof setTimeout> | null = null
+function startMemoryWatcher() {
+  const memDir = path.join(os.homedir(), '.vael', 'memory')
+  if (!fs.existsSync(memDir)) return
+  try {
+    fs.watch(memDir, { recursive: true }, (_, filename) => {
+      if (!filename || filename.endsWith('INDEX.md')) return
+      if (watchDebounce) clearTimeout(watchDebounce)
+      watchDebounce = setTimeout(() => { rebuildAllIndexes() }, 500)
+    })
+  } catch {}
+}
+app.whenReady().then(() => {
+  setTimeout(startMemoryWatcher, 2000)
+  setTimeout(() => rebuildAllIndexes(), 3000)
+})
+
 // ── IPC Handlers ──────────────────────────────────────────────────────────────
+
+// ── Memory / file system ──────────────────────────────────────
+const VAEL_DIR = path.join(os.homedir(), '.vael')
+const MEMORY_DIR = path.join(VAEL_DIR, 'memory')
+const GLOBAL_CLAUDE_MD = path.join(os.homedir(), '.claude', 'CLAUDE.md')
+
+function ensureMemoryDir() {
+  if (!fs.existsSync(MEMORY_DIR)) fs.mkdirSync(MEMORY_DIR, { recursive: true })
+}
+
+interface FsEntry {
+  name: string
+  path: string
+  type: 'file' | 'dir'
+  size?: number
+  mtime?: number
+  auto?: boolean
+  tag?: string
+}
+
+ipcMain.handle('memory:listDir', async (_, dirPath?: string) => {
+  ensureMemoryDir()
+  const target = dirPath ?? MEMORY_DIR
+  try {
+    const entries = fs.readdirSync(target, { withFileTypes: true })
+    const result: FsEntry[] = entries.map(e => {
+      const fullPath = path.join(target, e.name)
+      const stat = fs.statSync(fullPath)
+      const isDir = e.isDirectory()
+      let auto = false
+      let tag: string | undefined
+      if (!isDir) {
+        try {
+          const content = fs.readFileSync(fullPath, 'utf-8')
+          const fm = parseFrontmatter(content)
+          auto = fm?.auto ?? false
+          tag = fm?.tag
+        } catch {}
+      }
+      return { name: e.name, path: fullPath, type: isDir ? 'dir' : 'file', size: stat.size, mtime: stat.mtimeMs, auto, tag }
+    }).sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'dir' ? -1 : 1
+      return a.name.localeCompare(b.name)
+    })
+    return { ok: true, entries: result, rootDir: target }
+  } catch {
+    return { ok: false, entries: [], rootDir: target }
+  }
+})
+
+ipcMain.handle('memory:readFile', async (_, filePath: string) => {
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8')
+    return { ok: true, content }
+  } catch {
+    return { ok: false, content: '' }
+  }
+})
+
+ipcMain.handle('memory:writeFile', async (_, filePath: string, content: string) => {
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true })
+    fs.writeFileSync(filePath, content, 'utf-8')
+    // Rebuild indexes so desc from frontmatter stays fresh
+    if (filePath.startsWith(MEMORY_DIR) && !filePath.endsWith('INDEX.md')) {
+      rebuildAllIndexes()
+    }
+    return { ok: true }
+  } catch {
+    return { ok: false }
+  }
+})
+
+ipcMain.handle('memory:createFile', async (_, name: string, dirPath?: string) => {
+  ensureMemoryDir()
+  const target = dirPath ?? MEMORY_DIR
+  const filePath = path.join(target, name)
+  try {
+    if (fs.existsSync(filePath)) return { ok: false, error: 'exists' }
+    fs.writeFileSync(filePath, '', 'utf-8')
+    rebuildAllIndexes()
+    return { ok: true, path: filePath }
+  } catch {
+    return { ok: false }
+  }
+})
+
+ipcMain.handle('memory:deleteFile', async (_, filePath: string) => {
+  try {
+    const stat = fs.statSync(filePath)
+    if (stat.isDirectory()) {
+      fs.rmSync(filePath, { recursive: true, force: true })
+    } else {
+      fs.unlinkSync(filePath)
+    }
+    rebuildAllIndexes()
+    return { ok: true }
+  } catch {
+    return { ok: false }
+  }
+})
+
+ipcMain.handle('memory:getClaudeMd', async () => {
+  try {
+    const content = fs.existsSync(GLOBAL_CLAUDE_MD) ? fs.readFileSync(GLOBAL_CLAUDE_MD, 'utf-8') : ''
+    return { ok: true, path: GLOBAL_CLAUDE_MD, content }
+  } catch {
+    return { ok: false, path: GLOBAL_CLAUDE_MD, content: '' }
+  }
+})
+
+ipcMain.handle('memory:createDir', async (_, name: string, dirPath?: string) => {
+  ensureMemoryDir()
+  const target = dirPath ?? MEMORY_DIR
+  const dirFullPath = path.join(target, name)
+  try {
+    if (fs.existsSync(dirFullPath)) return { ok: false, error: 'exists' }
+    fs.mkdirSync(dirFullPath, { recursive: true })
+    rebuildAllIndexes()
+    return { ok: true, path: dirFullPath }
+  } catch {
+    return { ok: false }
+  }
+})
+
+ipcMain.handle('memory:getMemoryDir', () => MEMORY_DIR)
+
+// ── Memory metadata & index system ───────────────────────────────────────
+
+// Forward declaration — will be defined after rebuildClaudeMdBlock
+function rebuildAllIndexes() {
+  try {
+    const meta = loadMeta()
+    function walkDirs(dirPath: string) {
+      try {
+        for (const name of fs.readdirSync(dirPath)) {
+          const full = path.join(dirPath, name)
+          if (fs.statSync(full).isDirectory()) {
+            const indexContent = buildIndexContent(full, meta)
+            if (indexContent) fs.writeFileSync(path.join(full, 'INDEX.md'), indexContent, 'utf-8')
+            walkDirs(full)
+          }
+        }
+      } catch {}
+    }
+    walkDirs(MEMORY_DIR)
+    rebuildClaudeMdBlock(meta)
+  } catch {}
+}
+
+const MEMORY_META_FILE = path.join(VAEL_DIR, 'memory-meta.json')
+const VAEL_BLOCK_START = '<!-- [VAEL MEMORY] -->'
+const VAEL_BLOCK_END = '<!-- [/VAEL MEMORY] -->'
+
+let lastMemoryTokens = { auto: 0, total: 0 }
+
+interface MemoryMeta {
+  [relativePath: string]: { auto: boolean }
+}
+
+function loadMeta(): MemoryMeta {
+  try {
+    if (fs.existsSync(MEMORY_META_FILE)) return JSON.parse(fs.readFileSync(MEMORY_META_FILE, 'utf-8'))
+  } catch {}
+  return {}
+}
+
+function saveMeta(meta: MemoryMeta) {
+  fs.mkdirSync(VAEL_DIR, { recursive: true })
+  fs.writeFileSync(MEMORY_META_FILE, JSON.stringify(meta, null, 2), 'utf-8')
+}
+
+// Parse ### Title\nDescription\nauto (optional)\n--- from file content
+function parseFrontmatter(content: string): { title: string; desc: string; auto: boolean; tag?: string } | null {
+  const lines = content.split('\n')
+  if (!lines[0]?.startsWith('### ')) return null
+  const title = lines[0].slice(4).trim()
+  const descLines: string[] = []
+  let auto = false
+  let tag: string | undefined
+  let i = 1
+  while (i < lines.length && lines[i].trim() !== '---') {
+    const line = lines[i].trim()
+    if (line === 'auto') { auto = true }
+    else if (line.startsWith('tag: ')) { tag = line.slice(5).trim() }
+    else if (line) descLines.push(lines[i])
+    i++
+  }
+  return { title, desc: descLines.join(' ').trim(), auto, tag }
+}
+
+// Check if file has auto flag in frontmatter
+function isFileAuto(filePath: string): boolean {
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8')
+    const fm = parseFrontmatter(content)
+    return fm?.auto ?? false
+  } catch { return false }
+}
+
+// Get relative path from memory root
+function relPath(absPath: string): string {
+  return path.relative(MEMORY_DIR, absPath).replace(/\\/g, '/')
+}
+
+// Build INDEX.md content for a directory
+function buildIndexContent(dirPath: string, meta: MemoryMeta): string {
+  const dirName = path.basename(dirPath)
+
+  let entries: string[]
+  try {
+    entries = fs.readdirSync(dirPath)
+  } catch { return '' }
+
+  // Preserve existing header (everything before and including ---)
+  const indexPath = path.join(dirPath, 'INDEX.md')
+  let header = `### ${dirName}\n\n---\n`
+  if (fs.existsSync(indexPath)) {
+    try {
+      const existing = fs.readFileSync(indexPath, 'utf-8')
+      const sepIdx = existing.indexOf('\n---')
+      if (sepIdx !== -1) {
+        header = existing.slice(0, sepIdx + 4) // keep everything up to and including ---
+      }
+    } catch {}
+  }
+
+  const lines: string[] = [header, '']
+
+  // Sort: dirs first, then files
+  const sorted = entries
+    .filter(e => !e.startsWith('.') && e !== 'INDEX.md')
+    .map(e => ({ name: e, fullPath: path.join(dirPath, e), isDir: fs.statSync(path.join(dirPath, e)).isDirectory() }))
+    .sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
+      return a.name.localeCompare(b.name)
+    })
+
+  for (const entry of sorted) {
+    const entryRel = relPath(entry.fullPath)
+    const entryMeta = meta[entryRel] || {}
+    let desc = entryMeta.desc || ''
+
+    // Try to read desc from frontmatter if not in meta
+    if (!desc && !entry.isDir) {
+      try {
+        const content = fs.readFileSync(entry.fullPath, 'utf-8')
+        const fm = parseFrontmatter(content)
+        if (fm) desc = fm.desc
+      } catch {}
+    }
+
+    if (entry.isDir) {
+      lines.push(`- [${entry.name}/](${entry.name}/INDEX.md)${desc ? ' — ' + desc : ''}`)
+    } else {
+      lines.push(`- [${entry.name}](${entry.name})${desc ? ' — ' + desc : ''}`)
+    }
+  }
+
+  return lines.join('\n') + '\n'
+}
+
+// Rebuild INDEX.md for a dir and all parent dirs up to MEMORY_DIR
+function rebuildIndexChain(startDir: string, meta: MemoryMeta) {
+  let current = startDir
+  while (true) {
+    // Don't write INDEX.md in root — root is handled by CLAUDE.md block
+    if (current !== MEMORY_DIR) {
+      const indexPath = path.join(current, 'INDEX.md')
+      const content = buildIndexContent(current, meta)
+      if (content) fs.writeFileSync(indexPath, content, 'utf-8')
+    }
+    if (current === MEMORY_DIR) break
+    current = path.dirname(current)
+  }
+}
+
+// Rebuild the [VAEL MEMORY] block in CLAUDE.md
+function rebuildClaudeMdBlock(meta: MemoryMeta) {
+  if (!fs.existsSync(GLOBAL_CLAUDE_MD)) return
+
+  const existing = fs.readFileSync(GLOBAL_CLAUDE_MD, 'utf-8')
+
+  // Collect always-loaded files
+  const alwaysLines: string[] = []
+  const onDemandLines: string[] = []
+  const tagMap: Record<string, string[]> = {}
+
+  function scanDir(dirPath: string, dirRel: string) {
+    let entries: string[]
+    try { entries = fs.readdirSync(dirPath) } catch { return }
+
+    for (const name of entries.sort()) {
+      if (name.startsWith('.') || name === 'INDEX.md') continue
+      const fullPath = path.join(dirPath, name)
+      const rel = dirRel ? dirRel + '/' + name : name
+      const isDir = fs.statSync(fullPath).isDirectory()
+
+      if (isDir) {
+        scanDir(fullPath, rel)
+      } else {
+        try {
+          const content = fs.readFileSync(fullPath, 'utf-8')
+          const fm = parseFrontmatter(content)
+          if (fm?.auto) {
+            alwaysLines.push(`### ${rel}\n${content.trim()}`)
+          } else if (fm?.tag) {
+            if (!tagMap[fm.tag]) tagMap[fm.tag] = []
+            tagMap[fm.tag].push(rel)
+          } else {
+            const desc = fm?.desc || ''
+            onDemandLines.push(`- ${rel}${desc ? ' — ' + desc : ''}`)
+          }
+        } catch {}
+      }
+    }
+  }
+
+  scanDir(MEMORY_DIR, '')
+
+  // Build top-level on-demand structure (dirs with INDEX.md links)
+  const topDirs: string[] = []
+  try {
+    for (const name of fs.readdirSync(MEMORY_DIR)) {
+      const fullPath = path.join(MEMORY_DIR, name)
+      if (!fs.statSync(fullPath).isDirectory()) continue
+      // Try to get desc from INDEX.md frontmatter
+      let desc = ''
+      const indexPath = path.join(fullPath, 'INDEX.md')
+      if (fs.existsSync(indexPath)) {
+        try {
+          const fm = parseFrontmatter(fs.readFileSync(indexPath, 'utf-8'))
+          if (fm) desc = fm.desc
+        } catch {}
+      }
+      topDirs.push(`- ${name}/ — ${desc || name}. Read ${name}/INDEX.md for details.`)
+    }
+  } catch {}
+
+  const claudeMdPath2 = path.join(os.homedir(), '.claude', 'CLAUDE.md')
+
+  const tagLines: string[] = []
+  for (const [tag, paths] of Object.entries(tagMap).sort()) {
+    for (const p of paths) {
+      tagLines.push(`[${tag}] - ${p}`)
+    }
+  }
+
+  // Count tokens (approx 4 chars = 1 token)
+  const alwaysContent = alwaysLines.join('\n\n')
+  const autoTokens = Math.round(alwaysContent.length / 4)
+
+  // Total = scan all files in memory dir
+  let totalChars = 0
+  function countDir(dirPath: string) {
+    try {
+      for (const name of fs.readdirSync(dirPath)) {
+        if (name.startsWith('.') || name === 'INDEX.md') continue
+        const fullPath = path.join(dirPath, name)
+        if (fs.statSync(fullPath).isDirectory()) countDir(fullPath)
+        else { try { totalChars += fs.readFileSync(fullPath, 'utf-8').length } catch {} }
+      }
+    } catch {}
+  }
+  countDir(MEMORY_DIR)
+  const totalTokens = Math.round(totalChars / 4)
+  lastMemoryTokens = { auto: autoTokens, total: totalTokens }
+
+  function fmtTokens(n: number) {
+    if (n >= 1000) return Math.round(n / 100) / 10 + 'k'
+    return String(n)
+  }
+
+  const block = [
+    VAEL_BLOCK_START,
+    `Memory root: ${MEMORY_DIR}`,
+    '',
+    alwaysLines.length > 0 ? '## Always loaded:\n' + alwaysLines.join('\n\n') : '',
+    topDirs.length > 0 ? '## Available on demand (read INDEX.md of category first):\n' + topDirs.join('\n') : '',
+    onDemandLines.length > 0 ? '## Individual files on demand:\n' + onDemandLines.join('\n') : '',
+    tagLines.length > 0 ? '## Tags:\nФайлы с тегами загружаются только когда в сообщении встречается соответствующий тег в скобках, например [TG]. При виде тега — прочитать соответствующий файл.\n' + tagLines.join('\n') : '',
+  ].filter(Boolean).join('\n') + '\n' + VAEL_BLOCK_END
+
+  // Replace or append block
+  const startIdx = existing.indexOf(VAEL_BLOCK_START)
+  const endIdx = existing.indexOf(VAEL_BLOCK_END)
+  let updated: string
+  if (startIdx !== -1 && endIdx !== -1) {
+    // Skip everything after VAEL_BLOCK_END until next newline that isn't the token line
+    let afterEnd = endIdx + VAEL_BLOCK_END.length
+    // Skip the token stats line if it follows (line starting with -----------)
+    const rest = existing.slice(afterEnd)
+    const tokenLineMatch = rest.match(/^\n-{3,}[^\n]*-{3,}/)
+    if (tokenLineMatch) afterEnd += tokenLineMatch[0].length
+    updated = existing.slice(0, startIdx) + block + existing.slice(afterEnd)
+  } else {
+    updated = existing.trimEnd() + '\n\n' + block + '\n'
+  }
+
+  fs.writeFileSync(claudeMdPath2, updated, 'utf-8')
+}
+
+ipcMain.handle('memory:getMeta', () => loadMeta())
+ipcMain.handle('memory:getTokens', () => lastMemoryTokens)
+
+ipcMain.handle('memory:setMeta', async (_, relativePath: string, data: { auto?: boolean; desc?: string }) => {
+  const meta = loadMeta()
+  meta[relativePath] = { ...meta[relativePath], ...data }
+  saveMeta(meta)
+  rebuildClaudeMdBlock(meta)
+  // Rebuild index chain for affected dir
+  const absPath = path.join(MEMORY_DIR, relativePath)
+  const isDir = fs.existsSync(absPath) && fs.statSync(absPath).isDirectory()
+  rebuildIndexChain(isDir ? absPath : path.dirname(absPath), meta)
+  return { ok: true }
+})
+
+ipcMain.handle('memory:rebuildAll', async () => {
+  const meta = loadMeta()
+  // Rebuild all INDEX.md files
+  function walkDirs(dirPath: string) {
+    try {
+      for (const name of fs.readdirSync(dirPath)) {
+        const full = path.join(dirPath, name)
+        if (fs.statSync(full).isDirectory()) {
+          const indexContent = buildIndexContent(full, meta)
+          if (indexContent) fs.writeFileSync(path.join(full, 'INDEX.md'), indexContent, 'utf-8')
+          walkDirs(full)
+        }
+      }
+    } catch {}
+  }
+  walkDirs(MEMORY_DIR)
+  rebuildClaudeMdBlock(meta)
+  return { ok: true }
+})
+
+ipcMain.handle('memory:rename', async (_, oldPath: string, newName: string) => {
+  try {
+    const newPath = path.join(path.dirname(oldPath), newName)
+    if (fs.existsSync(newPath)) return { ok: false, error: 'exists' }
+    fs.renameSync(oldPath, newPath)
+    rebuildAllIndexes()
+    return { ok: true, path: newPath }
+  } catch {
+    return { ok: false }
+  }
+})
+
+ipcMain.handle('stats:get', async () => {
+  try {
+    const statsPath = path.join(os.homedir(), '.claude', 'stats-cache.json')
+    const raw = fs.readFileSync(statsPath, 'utf-8')
+    return { ok: true, data: JSON.parse(raw) }
+  } catch {
+    return { ok: false, data: null }
+  }
+})
 
 ipcMain.handle('update:download', () => autoUpdater.downloadUpdate())
 ipcMain.handle('update:install', () => autoUpdater.quitAndInstall())
@@ -513,6 +989,7 @@ ipcMain.handle('account:setActive', async (_, id: string) => {
   accountManager.setActiveAccountId(id)
   const account = accountManager.getAccount(id)
   if (account) {
+    setLastConfigDir(account.configDir)
     // Respawn usagePty if account changed or not yet started
     const currentDir = usagePty.getConfigDir()
     if (currentDir !== account.configDir) {
@@ -535,6 +1012,7 @@ ipcMain.handle('account:switch', async (_, fromId: string, toId: string) => {
     // Respawn usagePty for new account
     const toAccount = accountManager.getAccount(toId)
     if (toAccount) {
+      setLastConfigDir(toAccount.configDir)
       spawnUsagePty(toId, toAccount.configDir)
       await new Promise(r => setTimeout(r, 3000))
       fetchAndSendUsage(lastSessionId ?? undefined)
@@ -548,7 +1026,12 @@ ipcMain.handle('account:switch', async (_, fromId: string, toId: string) => {
 let tempCleanupCancelled = false
 let lastUsageData: { usage: unknown; context: unknown } | null = null
 let lastSessionId: string | null = null
-let lastConfigDir: string = ''
+let lastConfigDir: string = (loadVaeliSettings().lastConfigDir as string) || ''
+
+function setLastConfigDir(dir: string) {
+  lastConfigDir = dir
+  const s = loadVaeliSettings(); s.lastConfigDir = dir; saveVaeliSettings(s)
+}
 let lastCacheHit: boolean | null = null
 let lastCacheReadTokens = 0
 let lastCacheCreatedTokens = 0
@@ -650,7 +1133,7 @@ ipcMain.handle('claude:send', (_, sessionId: string, text: string, accountId: st
     (code) => {
       mainWindow?.webContents.send('stream:done', code)
       lastSessionId = sessionId
-      lastConfigDir = configDir
+      setLastConfigDir(configDir)
       fetchAndSendUsage(sessionId)
       fetchContextForSession(sessionId, configDir)
     },
@@ -675,7 +1158,7 @@ ipcMain.handle('claude:new', (_, text: string, accountId: string, model: string,
       mainWindow?.webContents.send('stream:done', code)
       if (newSessionId) {
         lastSessionId = newSessionId
-        lastConfigDir = configDir
+        setLastConfigDir(configDir)
         // Write initial meta so session is discoverable on restart
         accountManager.setSessionMeta(newSessionId, configDir, { configDir, accountId })
       }
@@ -757,6 +1240,251 @@ ipcMain.handle('context:fetch', async () => {
   }
   return { ok: true }
 })
+
+// ── Telegram polling ──────────────────────────────────────────────────────────
+
+const TG_SETTINGS_PATH = path.join(os.homedir(), '.vael', 'tg-settings.json')
+
+interface TgSettings {
+  botToken: string
+  chatId: string
+  enabled: boolean
+  sessionId?: string
+  model?: string
+  effort?: string
+}
+
+function loadTgSettings(): TgSettings {
+  try {
+    if (fs.existsSync(TG_SETTINGS_PATH)) {
+      return JSON.parse(fs.readFileSync(TG_SETTINGS_PATH, 'utf-8'))
+    }
+  } catch {}
+  return { botToken: '', chatId: '', enabled: false }
+}
+
+function saveTgSettings(s: TgSettings) {
+  fs.mkdirSync(path.dirname(TG_SETTINGS_PATH), { recursive: true })
+  fs.writeFileSync(TG_SETTINGS_PATH, JSON.stringify(s, null, 2), 'utf-8')
+}
+
+let tgPollInterval: ReturnType<typeof setInterval> | null = null
+let tgOffset = 0
+let tgConflictUntil = 0
+
+async function tgApiFetch(botToken: string, method: string, body?: Record<string, unknown>): Promise<unknown> {
+  const url = `https://api.telegram.org/bot${botToken}/${method}`
+  const res = await fetch(url, {
+    method: body ? 'POST' : 'GET',
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  return res.json()
+}
+
+async function tgSendMessage(botToken: string, chatId: string, text: string) {
+  const limit = 4096
+  const parts: string[] = []
+  let remaining = text
+  while (remaining.length > limit) {
+    const idx = remaining.lastIndexOf('\n', limit) !== -1 ? remaining.lastIndexOf('\n', limit) : limit
+    parts.push(remaining.slice(0, idx))
+    remaining = remaining.slice(idx).trimStart()
+  }
+  if (remaining) parts.push(remaining)
+  for (const part of parts) {
+    try { await tgApiFetch(botToken, 'sendMessage', { chat_id: chatId, text: part }) }
+    catch (e) { console.error('[TG] sendMessage error:', e) }
+  }
+}
+
+async function tgSendFile(botToken: string, chatId: string, filePath: string) {
+  try {
+    const buf = fs.readFileSync(filePath)
+    const ext = path.extname(filePath).toLowerCase()
+    const isImage = ['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext)
+    const formData = new FormData()
+    formData.append('chat_id', chatId)
+    formData.append(isImage ? 'photo' : 'document', new Blob([buf]), path.basename(filePath))
+    await fetch(`https://api.telegram.org/bot${botToken}/${isImage ? 'sendPhoto' : 'sendDocument'}`, {
+      method: 'POST', body: formData,
+    })
+  } catch (e) {
+    console.error('[TG] sendFile error:', e)
+    await tgSendMessage(botToken, chatId, `[файл: ${path.basename(filePath)}]`)
+  }
+}
+
+function startTgPolling() {
+  if (tgPollInterval) return
+  const settings = loadTgSettings()
+  if (!settings.botToken || !settings.enabled) return
+  console.log('[TG] polling started')
+  tgPollInterval = setInterval(async () => {
+    const s = loadTgSettings()
+    if (!s.botToken || !s.enabled) { stopTgPolling(); return }
+    if (Date.now() < tgConflictUntil) return
+    try {
+      const data = await tgApiFetch(s.botToken, 'getUpdates', { offset: tgOffset, timeout: 0, limit: 10 }) as {
+        ok: boolean; error_code?: number; result: {
+          update_id: number
+          message?: {
+            chat: { id: number }
+            text?: string
+            caption?: string
+            photo?: { file_id: string; file_size?: number }[]
+            document?: { file_id: string; file_name?: string }
+          }
+        }[]
+      }
+      if (!data.ok) {
+        if (data.error_code === 409) {
+          tgConflictUntil = Date.now() + 15000
+          console.warn('[TG] 409 conflict, backing off 15s')
+        } else {
+          console.warn('[TG] getUpdates not ok:', JSON.stringify(data))
+        }
+        return
+      }
+      if (!data.result?.length) return
+      console.log('[TG] got', data.result.length, 'updates, offset was', tgOffset)
+      for (const update of data.result) {
+        tgOffset = update.update_id + 1
+        const msg = update.message
+        if (!msg) continue
+        const chatId = String(msg.chat.id)
+        if (s.chatId && chatId !== s.chatId) continue
+
+        // Download photo or document if present
+        let filePath: string | null = null
+        try {
+          let fileId: string | null = null
+          let fileName: string | null = null
+          if (msg.photo?.length) {
+            // Pick largest photo
+            fileId = msg.photo[msg.photo.length - 1].file_id
+            fileName = `tg_photo_${Date.now()}.jpg`
+          } else if (msg.document) {
+            fileId = msg.document.file_id
+            fileName = msg.document.file_name || `tg_doc_${Date.now()}`
+          }
+          if (fileId && fileName) {
+            const fileInfo = await tgApiFetch(s.botToken, 'getFile', { file_id: fileId }) as { ok: boolean; result?: { file_path?: string } }
+            if (fileInfo.ok && fileInfo.result?.file_path) {
+              const fileUrl = `https://api.telegram.org/file/bot${s.botToken}/${fileInfo.result.file_path}`
+              const resp = await fetch(fileUrl)
+              const buf = Buffer.from(await resp.arrayBuffer())
+              ensureTempDir()
+              filePath = path.join(TEMP_DIR, `${Date.now()}_${fileName}`)
+              fs.writeFileSync(filePath, buf)
+              console.log('[TG] downloaded file:', filePath)
+            }
+          }
+        } catch (e) { console.error('[TG] file download error:', e) }
+
+        const text = msg.text || msg.caption || ''
+        if (!text && !filePath) continue
+
+        console.log('[TG] incoming:', (text || '[file]').slice(0, 80))
+        // Handle in main process — no UI involvement
+        handleTgMessage(s, chatId, text, filePath).catch(e => console.error('[TG] handleTgMessage error:', e))
+      }
+    } catch (e) { console.error('[TG] poll error:', e) }
+  }, 2000)
+}
+
+function stopTgPolling() {
+  if (tgPollInterval) { clearInterval(tgPollInterval); tgPollInterval = null; console.log('[TG] polling stopped') }
+}
+
+const tgClaudeRunner = new ClaudeRunner()
+
+async function handleTgMessage(s: TgSettings, chatId: string, text: string, filePath: string | null) {
+  // Build prompt: file path as attachment reference + text
+  let prompt = text || ''
+  if (filePath) prompt = filePath + (text ? `\n${text}` : '')
+  if (!prompt) return
+
+  // Determine session and configDir
+  const sessionId = s.sessionId || lastSessionId || null
+  const model = s.model || 'claude-sonnet-4-6'
+  const effort = s.effort || null
+  const accounts = accountManager.getAccounts()
+  if (!accounts.length) { console.warn('[TG] no accounts'); return }
+
+  // Always use lastConfigDir (active account)
+  const configDir = lastConfigDir || (accounts[0] ? accountManager.getConfigDir(accounts[0].id) : '')
+
+  console.log('[TG] sending to Claude, session:', sessionId || 'new', 'configDir:', configDir, 'model:', model, 'effort:', effort)
+
+  // Abort main runner to avoid two processes on the same session
+  claudeRunner.abort()
+
+  const chunks: string[] = []
+
+  await new Promise<void>((resolve) => {
+    const onEvent = (event: import('../shared/types.js').StreamEvent) => {
+      if (event.type === 'assistant') {
+        const content = (event as unknown as { message?: { content?: { type: string; text: string }[] } }).message?.content
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block.type === 'text') chunks.push(block.text)
+          }
+        }
+      }
+    }
+    const onDone = () => resolve()
+
+    if (sessionId) {
+      tgClaudeRunner.sendMessage(sessionId, prompt, configDir, model, effort, 'bypassPermissions', onEvent, onDone)
+    } else {
+      tgClaudeRunner.startNewSession(prompt, configDir, model, effort, 'bypassPermissions', onEvent, onDone)
+    }
+  })
+
+  const reply = chunks.join('')
+  console.log('[TG] reply:', reply.slice(0, 80))
+  if (reply) await tgSendMessage(s.botToken, chatId, reply)
+
+  // Tell UI to reload session so new messages appear
+  if (sessionId) mainWindow?.webContents.send('session:reload', sessionId)
+}
+
+ipcMain.handle('tg:getSettings', () => loadTgSettings())
+
+ipcMain.handle('tg:setSettings', (_, settings: TgSettings) => {
+  saveTgSettings(settings)
+  stopTgPolling()
+  if (settings.enabled) startTgPolling()
+  return { ok: true }
+})
+
+ipcMain.handle('tg:start', () => {
+  const s = loadTgSettings(); s.enabled = true; saveTgSettings(s); startTgPolling(); return { ok: true }
+})
+
+ipcMain.handle('tg:stop', () => {
+  const s = loadTgSettings(); s.enabled = false; saveTgSettings(s); stopTgPolling(); return { ok: true }
+})
+
+ipcMain.handle('tg:reply', async (_, chatId: string, text: string) => {
+  const settings = loadTgSettings()
+  if (!settings.botToken) return { ok: false }
+  const filePattern = /\[SEND_FILE:\s*(.+?)\]/g
+  const filePaths: string[] = []
+  let match
+  while ((match = filePattern.exec(text)) !== null) filePaths.push(match[1].trim())
+  const cleanText = text.replace(/\[SEND_FILE:\s*.+?\]/g, '').trim()
+  if (cleanText) await tgSendMessage(settings.botToken, chatId, cleanText)
+  for (const fp of filePaths) {
+    if (fs.existsSync(fp)) await tgSendFile(settings.botToken, chatId, fp)
+    else await tgSendMessage(settings.botToken, chatId, `[файл не найден: ${fp}]`)
+  }
+  return { ok: true }
+})
+
+// Auto-start polling if was enabled
+setTimeout(() => { const s = loadTgSettings(); if (s.enabled && s.botToken) startTgPolling() }, 3500)
 
 // ── Temp dir IPC ─────────────────────────────────────────────────────────────
 
