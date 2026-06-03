@@ -71,7 +71,7 @@ function stripAnsiLocal(s: string): string {
 // ── PTY output parser — xterm-headless delta streaming ───────────────────────
 
 const COLS = 120
-const ROWS = 50
+const ROWS = 60
 
 const SPINNER_CHARS = new Set(['✻', '✽', '✶', '·', '✢', '⠂', '⠐', '⠄'])
 const THINKING_WORDS = ['Smooshing', 'Brewing', 'Baking', 'Cooking', 'Cogitating', 'Churning', 'Sautéed', 'Cooked', 'Brewed', 'Hashing', 'Propagating', 'Calculating', 'Unravelling', 'Worked', 'Crunched', 'Processed']
@@ -101,6 +101,7 @@ class PtyParser {
   private diffAdded: string[] = []
   private streamingTextEmitted = false
   // Дедупликация: не эмитим одну и ту же строку дважды
+  private _lastTokenCount = 0
   private emittedTools = new Set<string>()
   private emittedResults = new Set<string>()  // дедупликация tool_result по toolId+content
   private emittedTexts = new Set<string>()
@@ -112,7 +113,7 @@ class PtyParser {
     for (let i = 0; i < ROWS; i++) {
       const line = this.term.buffer.active.getLine(i)
       if (line) {
-        const text = line.translateToString(true).trimEnd()
+        const text = line.translateToString(false)
         lines.push(text)
       }
     }
@@ -141,6 +142,20 @@ class PtyParser {
           }
           break
         }
+      }
+    }
+
+    // Читаем счётчик токенов — ищем по всему экрану строку с XXXXX tokens
+    // TUI рисует их через абсолютное позиционирование, место непредсказуемо
+    for (let i = 0; i < screen.length; i++) {
+      const m = screen[i].match(/(\d{4,})\s+tokens/)
+      if (m && !/[↓↑]/.test(screen[i])) {
+        const count = parseInt(m[1], 10)
+        if (count !== this._lastTokenCount) {
+          this._lastTokenCount = count
+          this.onEvent({ type: 'pty_tokens', count } as unknown as StreamEvent)
+        }
+        break
       }
     }
 
@@ -176,10 +191,22 @@ class PtyParser {
   }
 
   private processLine(line: string, sessionKey: string): void {
-    // токены контекста — "29666 tokens"
-    const tokensMatch = line.match(/^(\d+)\s+tokens$/)
-    if (tokensMatch) {
-      this.onEvent({ type: 'pty_tokens', count: parseInt(tokensMatch[1]) } as unknown as StreamEvent)
+    // контекстные токены — "32720 tokens" (без ↓/↑ перед числом)
+    const tokensLineMatch = line.match(/(?<![↓↑·]\s*)(\d+)\s+tokens$/)
+    if (tokensLineMatch && !/[↓↑]/.test(line)) {
+      const count = parseInt(tokensLineMatch[1], 10)
+      if (!isNaN(count) && count > 0) {
+        this.onEvent({ type: 'pty_tokens', count } as unknown as StreamEvent)
+      }
+      return
+    }
+
+    // голое число — контекстные токены если > 1000, иначе фильтруем
+    if (/^\d+$/.test(line.trim())) {
+      const count = parseInt(line.trim(), 10)
+      if (count > 1000) {
+        this.onEvent({ type: 'pty_tokens', count } as unknown as StreamEvent)
+      }
       return
     }
 
@@ -329,7 +356,7 @@ class PtyParser {
       if (isSpinnerLine(line)) return
       if (READY_RE.test(line)) return
       if (/^\d[\d\s]*tokens?/.test(line)) return  // "29666 tokens" — счётчик контекста
-      if (/^\d+$/.test(line.trim())) return        // голое число — строка из файла или токены
+      if (/^\d+$/.test(line.trim())) return        // голое число — перехвачено выше или строка файла
       if (/^esc to interrupt/.test(line)) return
       if (/^globalVersion/.test(line)) return
       // это continuation строка
@@ -364,6 +391,7 @@ class PtyParser {
     this.diffRemoved = []
     this.diffAdded = []
     this.streamingTextEmitted = false
+    this._lastTokenCount = 0
     this.emittedTools.clear()
     this.emittedResults.clear()
     this.emittedTexts.clear()
@@ -417,11 +445,15 @@ export class PtySessionManager {
       if (!sess) return
       sess.onEvent?.(event)
       if (event.type === 'result') {
-        sess.busy = false
+        // держим busy ещё 600мс чтобы поймать "31783 tokens" который приходит после ready
         const done = sess.onDone
-        sess.onEvent = null
+        const onEv = sess.onEvent
         sess.onDone = null
-        done?.(0)
+        setTimeout(() => {
+          const s = this.sessions.get(key)
+          if (s) { s.busy = false; s.onEvent = null }
+          done?.(0)
+        }, 600)
       }
     })
 
@@ -478,6 +510,15 @@ export class PtySessionManager {
 
       if (sess.busy) {
         sess.parser.feed(data, key)
+      }
+
+      // ловим "31783 tokens" всегда — приходит после ready prompt
+      const plainStripped = stripAnsiLocal(data)
+      const tokMatch = plainStripped.match(/^(\d+)\s+tokens$/m)
+      if (tokMatch && !/[↓↑]/.test(plainStripped)) {
+        const count = parseInt(tokMatch[1], 10)
+        console.log(`[PtySession:${key}] tokens: ${count}`)
+        sess.onEvent?.({ type: 'pty_tokens', count } as unknown as StreamEvent)
       }
     })
 
