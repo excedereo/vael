@@ -310,6 +310,7 @@ export function useSession(session: Session | null) {
 
       if (event.type === 'pty_tokens') {
         const count = (event as unknown as { count: number }).count
+        console.log('[useSession] pty_tokens:', count)
         if (prevPtyTokensRef.current !== null) {
           setPtyTokensDelta(count - prevPtyTokensRef.current)
         }

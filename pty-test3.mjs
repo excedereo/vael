@@ -1,9 +1,5 @@
-// pty-test3.mjs — PTY + xterm-headless
-// xterm эмулирует экран правильно, мы читаем строки как пользователь видит
-
+// pty-test3.mjs — multi-turn session, raw dump
 import * as pty from 'node-pty'
-import pkg from '@xterm/headless'
-const { Terminal } = pkg
 import { execSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
@@ -27,97 +23,96 @@ function findClaudeExe() {
   return 'claude.cmd'
 }
 
-const COLS = 120
-const ROWS = 50
+function strip(s) {
+  return s
+    .replace(/\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g, '')
+    .replace(/\x1B\[(\d+)C/g, (_, n) => ' '.repeat(parseInt(n) || 1))
+    .replace(/\x1B\[[0-9;]*[HfABDEFGST]/g, '\n')
+    .replace(/\x1B\[[0-9;?]*[a-zA-Z]/g, '')
+    .replace(/\x1B[()][AB012UK]/g, '')
+    .replace(/\x1B[MNOPRST78=><FEDM]/g, '')
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+    .replace(/\r/g, '')
+}
+
 const SESSION_ID = 'f012424c-6648-4356-a02e-2a11e502b3f5'
 const CONFIG_DIR = path.join(os.homedir(), '.claude-accounts', 'proton')
-const MESSAGE = 'допиши в файл C:/Users/reaya/Documents/test.txt число 5555'
+
+const MESSAGES = [
+  'привет',
+  'допиши в файл C:/Users/reaya/Documents/test.txt число 8888',
+  'умничка',
+  'допиши туда же число 9999',
+]
 
 const exe = findClaudeExe()
-console.log('exe:', exe)
-
-// xterm terminal emulator
-const term = new Terminal({ cols: COLS, rows: ROWS, allowProposedApi: true })
-
-function getScreen() {
-  const lines = []
-  for (let i = 0; i < ROWS; i++) {
-    const line = term.buffer.active.getLine(i)
-    if (line) lines.push(line.translateToString(true))
-  }
-  return lines
-}
-
-function getVisibleText() {
-  return getScreen().filter(l => l.trim()).join('\n')
-}
+console.log('exe:', exe, '| session:', SESSION_ID)
 
 const proc = pty.spawn(exe, ['--dangerously-skip-permissions', '--resume', SESSION_ID], {
-  name: 'xterm-256color', cols: COLS, rows: ROWS,
+  name: 'xterm-256color', cols: 120, rows: 50,
   cwd: os.homedir(),
   env: { ...process.env, CLAUDE_CONFIG_DIR: CONFIG_DIR },
 })
 
 let rawBuf = ''
 let phase = 'boot'
-let chunkN = 0
+let msgIdx = 0
 let t0 = Date.now()
-const ts = () => `+${Date.now()-t0}ms`
+const ts = () => `+${String(Date.now() - t0).padStart(5)}ms`
 
-let lastScreen = ''
+function isReady(s) {
+  return s.includes('? for shortcuts') || s.includes('for agents') || s.includes('← for agents')
+}
 
 function autoAnswer() {
-  const s = rawBuf.replace(/\x1B\[[0-9;?]*[a-zA-Z]/g, '').replace(/\s+/g, '')
-  if (s.includes('trustthisfolder')) { proc.write('1'); return }
-  if (s.includes('dangerously-skip-permissions') && s.includes('Iaccept')) { proc.write('2'); return }
-  if (s.includes('Darkmode') && s.includes('Lightmode')) { proc.write('1'); return }
+  const s = strip(rawBuf).replace(/\s+/g, '')
+  if (s.includes('trustthisfolder') || s.includes('Isthisaproject')) { proc.write('1') }
+  if (s.includes('dangerously-skip-permissions') && s.includes('Iaccept')) { proc.write('2') }
+  if (s.includes('Darkmode') && s.includes('Lightmode')) { proc.write('1') }
+}
+
+function sendNext() {
+  if (msgIdx >= MESSAGES.length) {
+    console.log('\n=== DONE ===')
+    setTimeout(() => { proc.kill(); process.exit(0) }, 500)
+    return
+  }
+  const msg = MESSAGES[msgIdx++]
+  t0 = Date.now()
+  phase = 'sent'
+  console.log(`\n${'─'.repeat(70)}`)
+  console.log(`SEND #${msgIdx}: ${msg}`)
+  console.log('─'.repeat(70))
+  proc.write(msg + '\r')
 }
 
 proc.onData((data) => {
   rawBuf += data
-  chunkN++
   autoAnswer()
 
-  // feed to xterm
-  term.write(data)
+  const stripped = strip(data)
+  const lines = stripped.split('\n').map(l => l.trimEnd()).filter(l => l.trim())
 
-  const screen = getVisibleText()
-  const isReady = screen.includes('? for shortcuts') || screen.includes('for agents') || screen.includes('← for agents')
-
-  if (phase === 'boot' && isReady) {
-    phase = 'ready'
-    console.log(`[${ts()}] === READY ===`)
-    console.log('screen:\n' + getScreen().filter(l => l.trim()).map(l => '  |' + l).join('\n'))
-    setTimeout(() => {
-      phase = 'sent'
-      t0 = Date.now()
-      chunkN = 0
-      lastScreen = ''
-      // reset terminal to clean state
-      term.reset()
-      proc.write(MESSAGE + '\r')
-      console.log(`\n[+0ms] === SENT: ${MESSAGE} ===\n`)
-    }, 300)
+  if (phase === 'boot') {
+    if (isReady(stripped)) {
+      phase = 'ready'
+      console.log('READY — starting')
+      setTimeout(sendNext, 200)
+    }
     return
   }
 
   if (phase === 'sent') {
-    const newScreen = getScreen().filter(l => l.trim()).join('\n')
-    if (newScreen !== lastScreen) {
-      lastScreen = newScreen
-      console.log(`[${ts()}] chunk #${chunkN} screen:`)
-      getScreen().filter(l => l.trim()).forEach(l => console.log('  |' + l))
-      console.log()
+    if (lines.length) {
+      lines.forEach(l => console.log(`[${ts()}] | ${JSON.stringify(l)}`))
     }
-
-    if (isReady) {
-      phase = 'done'
-      console.log(`[${ts()}] === READY AGAIN ===`)
-      proc.kill()
-      process.exit(0)
+    if (isReady(stripped)) {
+      phase = 'ready'
+      console.log(`[${ts()}] === READY ===`)
+      setTimeout(sendNext, 300)
     }
   }
 })
 
 proc.onExit(() => process.exit(0))
-setTimeout(() => { console.log('TIMEOUT'); proc.kill(); process.exit(1) }, 60000)
+setTimeout(() => { console.log('TIMEOUT'); proc.kill(); process.exit(1) }, 120000)
