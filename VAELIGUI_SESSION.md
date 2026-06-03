@@ -12,13 +12,13 @@ Build: `npm run build` (vite + electron-build.mjs)
 ## Архитектура
 
 ```
-electron/main.ts           — главный процесс, IPC хендлеры
+electron/main.ts               — главный процесс, IPC хендлеры
 electron/PtySessionManager.ts  — PTY + xterm-headless парсер (ГЛАВНЫЙ ФАЙЛ)
-electron/PtyManager.ts     — contextPty (для /context команды)
-electron/usageParser.ts    — парсинг usage из jsonl
-shared/types.ts            — StreamEvent и другие типы
-src/App.tsx                — главный компонент, useSession хук
-src/hooks/useSession.ts    — обработка stream событий, состояние
+electron/PtyManager.ts         — contextPty (для /context команды)
+electron/usageParser.ts        — парсинг usage из jsonl
+shared/types.ts                — StreamEvent и другие типы
+src/App.tsx                    — главный компонент, useSession хук
+src/hooks/useSession.ts        — обработка stream событий, состояние
 src/components/ChatView.tsx    — рендер чата
 src/components/MessageBubble.tsx  — рендер блоков (text, tool_use, diff)
 src/components/InputBar.tsx    — поле ввода
@@ -26,15 +26,16 @@ src/components/InputBar.tsx    — поле ввода
 
 ## PTY парсер — как работает
 
-`PtySessionManager` = `claudeRunner` в main.ts (переименован).
+`PtySessionManager` содержит `PtyParser` — xterm-headless delta парсер.
 
 **Ключевая идея:**
 1. Спавним `claude.exe --dangerously-skip-permissions --resume <sessionId>`
-2. PTY данные → `xterm-headless Terminal` (cols=120, rows=50)
-3. После каждого чанка читаем экран через `term.buffer.active.getLine(i)`
-4. Находим последнее вхождение нашего echo (`> наше_сообщение`) — всё ниже него это контент текущего ответа
-5. Сравниваем с `prevScreen` — берём только изменившиеся строки (delta)
-6. Парсим delta построчно
+2. PTY данные → `xterm-headless Terminal` (cols=120, rows=60)
+3. После каждого чанка (`term.write(data, callback)` — async!) читаем экран
+4. Сканируем весь экран на `XXXXX tokens` → `pty_tokens` event (до echo check)
+5. Находим последнее вхождение нашего echo (`> наше_сообщение`)
+6. Сравниваем строки ниже echo с prevScreen — берём delta
+7. Парсим delta построчно
 
 **Паттерны в delta:**
 - `✻ Churning…` / `* Baking…` → spinner → `assistant_streaming_start`
@@ -44,11 +45,16 @@ src/components/InputBar.tsx    — поле ввода
 - `17 -старое` / `17 +новое` → diff строки → `pty_tool_update` event
 - `● текст` (не tool) → `assistant_streaming_text` event
 - `← for agents` / `? for shortcuts` → `result` event (финализация)
-- `31149 tokens` → `pty_tokens` event
+- `32720 tokens` в дельте → `pty_tokens` event (backup)
 
-**Дедупликация:** `emittedTools`, `emittedResults`, `emittedTexts` — Set'ы для предотвращения дублей при перерисовке экрана.
+**Токены контекста:** `_lastTokenCount` — дедупликация, эмитим только при изменении.
+TUI рисует токены через абсолютное позиционирование — ищем по всему экрану.
+После `result` event держим `busy=true` ещё 600мс чтобы поймать токены.
+В `onData` также ловим `^(\d+)\s+tokens$` независимо от парсера.
 
-**Echo детекция:** `sentMessage.slice(-15)` — последние 15 символов уникальны, ищем снизу вверх.
+**Дедупликация:** `emittedTools`, `emittedResults`, `emittedTexts` — Set'ы.
+
+**Echo детекция:** `sentMessage.slice(-15)` — последние 15 символов, ищем снизу вверх.
 
 **reset(sentMessage):** `term.reset()` + сброс всех полей — вызывается перед каждым send.
 
@@ -73,13 +79,6 @@ src/components/InputBar.tsx    — поле ввода
 
 `ptyTokens` + `ptyTokensDelta` + `prevPtyTokensRef` — счётчик токенов с дельтой.
 
-## Проблема ptyTokens не отображается
-
-Добавлен `console.log('[useSession] pty_tokens:', count)` в обработчик.
-Нужно запустить и проверить в DevTools → Console появляется ли лог.
-Если нет — событие не доходит до фронта.
-Токены в delta выглядят как `31149 tokens` (regex: `/^(\d+)\s+tokens$/`).
-
 ## UI над InputBar
 
 ```tsx
@@ -99,10 +98,12 @@ src/components/InputBar.tsx    — поле ввода
 
 Находится в `src/App.tsx` прямо над `<InputBar>` внутри `{sidebarTab === 'sessions' && ...}`.
 
+Токены обновляются не на каждый запрос — TUI показывает их не всегда (зависит от длины контекста и перерисовки). Последнее известное значение сохраняется.
+
 ## Тестовые скрипты
 
-- `pty-test3.mjs` — xterm-headless тест, показывает экран после каждого чанка
-- `pty-test2.mjs` — raw chunk dump с таймстампами
+- `pty-test2.mjs` — raw chunk dump с таймстампами (один запрос)
+- `pty-test3.mjs` — multi-turn сессия, 4 сообщения подряд, raw dump
 
 ## Tool рендеринг в MessageBubble
 
@@ -110,7 +111,13 @@ src/components/InputBar.tsx    — поле ввода
 `diffStats` — тоже поддерживает `Update`.
 Input для tool_use: `{ command, file_path, pattern, query, url, args }` — все поля для всех инструментов.
 
+## Live tool indicator (ChatView.tsx)
+
+Анимированная строка пока инструмент работает:
+- Пульсирующая точка + `Editing file...` / `Running cmd...` + три анимированных точки
+- `liveTool` state в useSession, сбрасывается при tool_result
+
 ## Git
 
-Последний коммит: `feat: xterm-headless PTY parser with real-time tool streaming`
-Branch: main, ahead of origin/main by 2 commits.
+Последний коммит: `feat: context token counter above InputBar`
+Branch: main, ahead of origin/main by 3 commits.
