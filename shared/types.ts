@@ -102,6 +102,7 @@ export interface StreamEvent {
   usage?: UsageInfo
   session_id?: string
   error?: string
+  text?: string  // for assistant_streaming_text
 }
 
 export type SyncStatus = 'idle' | 'syncing' | 'running' | 'error'

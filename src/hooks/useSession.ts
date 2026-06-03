@@ -52,6 +52,7 @@ function filterContextEntries(entries: JsonlEntry[]): JsonlEntry[] {
 export interface LiveTool {
   name: string
   label: string
+  input?: Record<string, unknown>
 }
 
 function toolLabel(name: string, input: Record<string, unknown>): string {
@@ -62,14 +63,15 @@ function toolLabel(name: string, input: Record<string, unknown>): string {
   }
   switch (name) {
     case 'Read':       return `Reading ${short(input.file_path)}`
-    case 'Edit':       return `Editing ${short(input.file_path)}`
+    case 'Edit':
+    case 'Update':     return `Editing ${short(input.file_path)}`
     case 'Write':      return `Writing ${short(input.file_path)}`
     case 'Grep':       return `Searching "${String(input.pattern || '').slice(0, 30)}"`
     case 'Glob':       return `Globbing ${String(input.pattern || '')}`
     case 'Bash':       return `Running ${String(input.command || '').slice(0, 40)}`
-    case 'PowerShell': return `PowerShell ${String(input.command || '').slice(0, 35)}`
-    case 'WebSearch':  return `Searching web for "${String(input.query || '').slice(0, 30)}"`
-    case 'WebFetch':   return `Fetching ${String(input.url || '').slice(0, 40)}`
+    case 'PowerShell': return `Running ${short(input.file_path) || String(input.command || '').slice(0, 35)}`
+    case 'WebSearch':  return `Searching "${String(input.query || '').slice(0, 30)}"`
+    case 'WebFetch':   return `Fetching ${short(input.url)}`
     case 'Agent':      return `Spawning ${String(input.subagent_type || 'agent')}…`
     case 'Task':
     case 'TaskCreate': return `Creating task…`
@@ -90,6 +92,19 @@ export function useSession(session: Session | null) {
   const [error, setError] = useState<string | null>(null)
   const [streamSeconds, setStreamSeconds] = useState(0)
   const [streamTokens, setStreamTokens] = useState<number | null>(null)
+  const [streamInputTokens, setStreamInputTokens] = useState<number | null>(null)
+  const [streamCacheRead, setStreamCacheRead] = useState<number | null>(null)
+  const [ptyTokens, setPtyTokens] = useState<number | null>(null)
+  const [ptyTokensDelta, setPtyTokensDelta] = useState<number | null>(null)
+  const prevPtyTokensRef = useRef<number | null>(null)
+  const streamingTextCommittedRef = useRef(false)  // был ли streaming text зафиксирован
+  const [streamCacheCreated, setStreamCacheCreated] = useState<number | null>(null)
+  const [contextPct, setContextPct] = useState<number | null>(null)
+  const [usagePct, setUsagePct] = useState<number | null>(null)
+  const prevContextPctRef = useRef<number | null>(null)
+  const prevUsagePctRef = useRef<number | null>(null)
+  const contextPctRef = useRef<number | null>(null)
+  const usagePctRef = useRef<number | null>(null)
   const streamStartRef = useRef<number | null>(null)
   const timerRef2 = useRef<ReturnType<typeof setInterval> | null>(null)
   const compactTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -117,6 +132,19 @@ export function useSession(session: Session | null) {
 
   useEffect(() => {
     const unsubEvent = api.onStreamEvent((event: StreamEvent) => {
+      if (event.type === 'assistant_streaming_start') {
+        streamingTextCommittedRef.current = false
+        setIsStreaming(true)
+        setIsThinking(true)
+        setStreamSeconds(0)
+        streamStartRef.current = Date.now()
+        if (timerRef2.current) clearInterval(timerRef2.current)
+        timerRef2.current = setInterval(() => {
+          if (streamStartRef.current) setStreamSeconds(Math.floor((Date.now() - streamStartRef.current) / 1000))
+        }, 1000)
+        return
+      }
+
       if (event.type === 'system') {
         const sub = (event as unknown as { subtype?: string }).subtype
         if (sub === 'status') {
@@ -235,11 +263,85 @@ export function useSession(session: Session | null) {
         setIsThinking(true)
         setStreamSeconds(0)
         setStreamTokens(null)
+        setStreamInputTokens(null)
+        setStreamCacheRead(null)
+        setStreamCacheCreated(null)
+        prevContextPctRef.current = contextPctRef.current
+        prevUsagePctRef.current = usagePctRef.current
+        setStreamTokens(null)
         streamStartRef.current = Date.now()
         if (timerRef2.current) clearInterval(timerRef2.current)
         timerRef2.current = setInterval(() => {
           if (streamStartRef.current) setStreamSeconds(Math.floor((Date.now() - streamStartRef.current) / 1000))
         }, 1000)
+        return
+      }
+
+      if (event.type === 'pty_tool_update') {
+        const { tool_use_id, patch } = event as unknown as { tool_use_id: string; patch: Record<string, string> }
+        // обновляем input в liveEntries для нужного tool_use блока
+        liveEntriesRef.current = liveEntriesRef.current.map(e => {
+          if (e.type !== 'assistant' || !Array.isArray(e.message?.content)) return e
+          const blocks = e.message.content as Array<{type: string; id?: string; input?: Record<string, unknown>}>
+          const hasTarget = blocks.some(b => b.type === 'tool_use' && b.id === tool_use_id)
+          if (!hasTarget) return e
+          return {
+            ...e,
+            message: {
+              ...e.message,
+              content: blocks.map(b =>
+                b.type === 'tool_use' && b.id === tool_use_id
+                  ? { ...b, input: { ...b.input, ...patch } }
+                  : b
+              ),
+            },
+          }
+        })
+        setLiveEntries([...liveEntriesRef.current])
+        return
+      }
+
+      if (event.type === 'commit_streaming_text') {
+        // Фиксируем streaming text entry — следующий streaming_text будет новым entry
+        // Помечаем через добавление sentinel чтобы streaming_text не перезаписал предыдущий
+        streamingTextCommittedRef.current = true
+        return
+      }
+
+      if (event.type === 'pty_tokens') {
+        const count = (event as unknown as { count: number }).count
+        if (prevPtyTokensRef.current !== null) {
+          setPtyTokensDelta(count - prevPtyTokensRef.current)
+        }
+        prevPtyTokensRef.current = count
+        setPtyTokens(count)
+        return
+      }
+
+      // Real-time text streaming from PTY parser (xterm-headless delta)
+      if (event.type === 'assistant_streaming_text') {
+        setIsThinking(false)
+        setIsStreaming(true)
+        const text = (event as unknown as { text: string }).text
+        if (text) {
+          const streamEntry: JsonlEntry = {
+            type: 'assistant' as const,
+            message: { role: 'assistant' as const, content: [{ type: 'text', text }] as JsonlEntry['message']['content'] },
+          }
+          const cur = liveEntriesRef.current
+          const lastIdx = cur.length - 1
+          // Если текст был зафиксирован (commit_streaming_text) или последний entry не text — добавляем новый
+          const lastIsText = lastIdx >= 0 && cur[lastIdx].type === 'assistant' &&
+              Array.isArray(cur[lastIdx].message?.content) &&
+              (cur[lastIdx].message.content as Array<{type:string}>)[0]?.type === 'text'
+          if (lastIsText && !streamingTextCommittedRef.current) {
+            liveEntriesRef.current = [...cur.slice(0, lastIdx), streamEntry]
+          } else {
+            liveEntriesRef.current = [...cur, streamEntry]
+            streamingTextCommittedRef.current = false
+          }
+          setLiveEntries([...liveEntriesRef.current])
+        }
         return
       }
 
@@ -259,7 +361,7 @@ export function useSession(session: Session | null) {
         // ToolBlock will be added when tool_result arrives
         if (toolBlocks.length > 0) {
           const t = toolBlocks[0]
-          setLiveTool({ name: t.name!, label: toolLabel(t.name!, t.input || {}) })
+          setLiveTool({ name: t.name!, label: toolLabel(t.name!, t.input || {}), input: t.input || {} })
           // store pending tool blocks to commit on tool_result
           pendingToolsRef.current = [...pendingToolsRef.current, ...toolBlocks]
         }
@@ -335,8 +437,11 @@ export function useSession(session: Session | null) {
         setLiveTool(null)
         if (timerRef2.current) { clearInterval(timerRef2.current); timerRef2.current = null }
         // Extract token count from result
-        const r = event as unknown as { usage?: { output_tokens?: number }; cost_usd?: number }
+        const r = event as unknown as { usage?: { output_tokens?: number; input_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }; cost_usd?: number }
         if (r.usage?.output_tokens) setStreamTokens(r.usage.output_tokens)
+        if (r.usage?.input_tokens) setStreamInputTokens(r.usage.input_tokens)
+        if (r.usage?.cache_read_input_tokens != null) setStreamCacheRead(r.usage.cache_read_input_tokens)
+        if (r.usage?.cache_creation_input_tokens != null) setStreamCacheCreated(r.usage.cache_creation_input_tokens)
       }
     })
 
@@ -345,7 +450,12 @@ export function useSession(session: Session | null) {
       setIsThinking(false)
     })
 
-    return () => { unsubEvent(); unsubDone() }
+    const unsubUsage = api.onUsageData((data) => {
+      if (data.context?.pct != null) { contextPctRef.current = data.context.pct; setContextPct(data.context.pct) }
+      if (data.usage?.sessionPct != null) { usagePctRef.current = data.usage.sessionPct; setUsagePct(data.usage.sessionPct) }
+    })
+
+    return () => { unsubEvent(); unsubDone(); unsubUsage() }
   }, [])
 
   const appendUserMessage = useCallback((text: string) => {
@@ -365,8 +475,8 @@ export function useSession(session: Session | null) {
   }, 0)
 
   const streamStats = (isStreaming || isThinking || isCompacting || streamTokens !== null)
-    ? { seconds: streamSeconds, tokens: streamTokens ?? (estimatedTokens > 0 ? estimatedTokens : null), exact: streamTokens !== null }
+    ? { seconds: streamSeconds, tokens: streamTokens ?? (estimatedTokens > 0 ? estimatedTokens : null), exact: streamTokens !== null, inputTokens: streamInputTokens, cacheRead: streamCacheRead, cacheCreated: streamCacheCreated, contextPct, prevContextPct: prevContextPctRef.current, usagePct, prevUsagePct: prevUsagePctRef.current }
     : null
 
-  return { entries, liveEntries, isStreaming, isThinking, isCompacting, liveTool, appendUserMessage, error, clearError: () => setError(null), streamStats, reloadEntries: () => setReloadKey(k => k + 1) }
+  return { entries, liveEntries, isStreaming, isThinking, isCompacting, liveTool, appendUserMessage, error, clearError: () => setError(null), streamStats, ptyTokens, ptyTokensDelta, reloadEntries: () => setReloadKey(k => k + 1) }
 }

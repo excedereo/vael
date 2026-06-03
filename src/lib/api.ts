@@ -60,6 +60,7 @@ export interface ElectronAPI {
   ptySpawn: (configDir: string, sessionId?: string) => Promise<{ ok: boolean }>
   ptySend: (command: string) => Promise<{ ok: boolean }>
   ptyKill: () => Promise<{ ok: boolean }>
+  ptySessionKill: (sessionId?: string) => Promise<{ ok: boolean }>
   sessionCommand: (command: string) => Promise<{ ok: boolean; error?: string }>
 
   pickAvatar: () => Promise<string | null>
@@ -120,6 +121,14 @@ export interface ElectronAPI {
   tgReply: (chatId: string, text: string) => Promise<{ ok: boolean }>
   onTgMessage: (cb: (chatId: string, text: string, filePath?: string) => void) => () => void
   onSessionReload: (cb: (sessionId: string) => void) => () => void
+  onSessionCreated: (cb: (sessionId: string) => void) => () => void
+
+  // Pyre modules
+  modulesList: () => Promise<{ id: string; name: string; icon?: string; running: boolean }[]>
+  modulesGetSettings: (id: string) => Promise<Record<string, unknown> | null>
+  modulesSetSettings: (id: string, settings: Record<string, unknown>) => Promise<{ ok: boolean }>
+  modulesStart: (id: string) => Promise<{ ok: boolean }>
+  modulesStop: (id: string) => Promise<{ ok: boolean }>
 
   getStats: () => Promise<{ ok: boolean; data: StatsCache | null }>
   getVaelVersion: () => Promise<string>

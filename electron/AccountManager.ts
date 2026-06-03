@@ -283,6 +283,32 @@ export class AccountManager {
     return sessions.sort((a, b) => b.lastModified - a.lastModified)
   }
 
+  // Scan configDir for the newest .jsonl files not in excludeIds, return up to limit sessionIds
+  findNewSessions(configDir: string, excludeIds: Set<string>, limit = 3): string[] {
+    const projectsDir = path.join(configDir, 'projects')
+    if (!fs.existsSync(projectsDir)) return []
+
+    const entries: { sessionId: string; mtime: number }[] = []
+    for (const proj of fs.readdirSync(projectsDir, { withFileTypes: true })) {
+      if (!proj.isDirectory()) continue
+      const projPath = path.join(projectsDir, proj.name)
+      for (const file of fs.readdirSync(projPath)) {
+        if (!file.endsWith('.jsonl')) continue
+        const sessionId = file.replace('.jsonl', '')
+        if (excludeIds.has(sessionId)) continue
+        try {
+          const mtime = fs.statSync(path.join(projPath, file)).mtimeMs
+          entries.push({ sessionId, mtime })
+        } catch {}
+      }
+    }
+
+    return entries
+      .sort((a, b) => b.mtime - a.mtime)
+      .slice(0, limit)
+      .map(e => e.sessionId)
+  }
+
   // Read latest context from a session's isMeta user entries (written by /context all)
   getLatestContextMarkdown(sessionId: string, configDir: string): string | null {
     const jsonlPath = this.findSessionFile(sessionId, configDir)

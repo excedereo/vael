@@ -10,18 +10,17 @@ import { fileURLToPath } from 'url'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 import { AccountManager } from './AccountManager.js'
-import { ClaudeRunner } from './ClaudeRunner.js'
+import { PtySessionManager } from './PtySessionManager.js'
 import { PtyManager } from './PtyManager.js'
 import { parseUsage, parseContextFromMarkdown } from './usageParser.js'
 import type { ContextData } from './usageParser.js'
+import { ModuleRegistry } from './ModuleRegistry.js'
 
 const accountManager = new AccountManager()
-const claudeRunner = new ClaudeRunner()
+const claudeRunner = new PtySessionManager()
+const moduleRegistry = new ModuleRegistry()
 
-// Two separate PTY instances:
-// usagePty  — fixed per-account "vaeli-usage" session, only /usage queries
-// contextPty — spawned with current user session after stream:done, only /context queries
-const usagePty = new PtyManager()
+// contextPty — spawned on /context command to query context size
 const contextPty = new PtyManager()
 
 // Per-session context cache: sessionId → ContextData
@@ -102,75 +101,6 @@ function createWindow() {
   }
 }
 
-// ── Usage PTY setup ───────────────────────────────────────────────────────────
-
-// Create an empty JSONL session file for claude to resume into.
-// Claude stores sessions as <configDir>/projects/<encoded-cwd>/<sessionId>.jsonl
-// We create the file ourselves — no LLM request, works at 100% usage limit.
-function createUsageSession(configDir: string): string {
-  const cwd = os.homedir() // claude's cwd when spawned
-  // Encode path the same way claude does: drive colon → nothing, slashes → dashes
-  const encoded = cwd.replace(/^([A-Za-z]):/, '$1').replace(/[\\/]/g, '-')
-  const projectsDir = path.join(configDir, 'projects', encoded)
-  fs.mkdirSync(projectsDir, { recursive: true })
-  const sessionId = randomUUID()
-  fs.writeFileSync(path.join(projectsDir, `${sessionId}.jsonl`), '')
-  return sessionId
-}
-
-// Ensure a stable "vaeli-usage" session exists for the account.
-function ensureUsageSession(accountId: string, configDir: string): string {
-  const existing = accountManager.getUsageSessionId(accountId)
-  if (existing) return existing
-
-  const sessionId = createUsageSession(configDir)
-  accountManager.setUsageSessionId(accountId, sessionId)
-  console.log('[usagePty] usage session created:', sessionId)
-  return sessionId
-}
-
-async function spawnUsagePty(accountId: string, configDir: string) {
-  // Try to resume existing usage session — avoids startup notifications from claude
-  const existingSessionId = accountManager.getUsageSessionId(accountId)
-  if (existingSessionId) {
-    console.log('[usagePty] resuming existing usage session:', existingSessionId)
-    usagePty.spawn(configDir, existingSessionId)
-    return
-  }
-
-  // No existing session — create one via ClaudeRunner (stream-json, no PTY needed)
-  console.log('[usagePty] creating usage session via ClaudeRunner')
-  const { ClaudeRunner } = await import('./ClaudeRunner.js')
-  const tempRunner = new ClaudeRunner()
-  let createdSessionId: string | null = null
-
-  await new Promise<void>((resolve) => {
-    tempRunner.startNewSession(
-      'hi',
-      configDir,
-      'claude-haiku-4-5',
-      null,
-      'bypassPermissions',
-      (event) => {
-        const e = event as Record<string, unknown>
-        if (e.type === 'system' && e.session_id) {
-          createdSessionId = e.session_id as string
-        }
-      },
-      () => resolve(),
-    )
-    setTimeout(resolve, 20000)
-  })
-
-  if (createdSessionId) {
-    console.log('[usagePty] created usage session:', createdSessionId)
-    accountManager.setUsageSessionId(accountId, createdSessionId)
-    usagePty.spawn(configDir, createdSessionId)
-  } else {
-    console.log('[usagePty] failed to create usage session, spawning without resume')
-    usagePty.spawn(configDir)
-  }
-}
 
 // ── Themes ────────────────────────────────────────────────────────────────────
 
@@ -302,7 +232,16 @@ app.whenReady().then(() => {
     }
   }
 
-  // usagePty is spawned on first account:setActive IPC from renderer
+  // Init module registry
+  moduleRegistry.init({
+    claudeRunner,
+    accountManager,
+    getLastConfigDir: () => lastConfigDir,
+    getLastSessionId: () => lastSessionId,
+    sendToWindow: (channel, ...args) => mainWindow?.webContents.send(channel, ...args),
+    userData: app.getPath('userData'),
+  })
+
 
   // ── Auto-updater ────────────────────────────────────────────────────────────
   autoUpdater.autoDownload = false
@@ -324,6 +263,7 @@ app.whenReady().then(() => {
   // Check for updates after window is ready (delay to not block startup)
   setTimeout(() => { autoUpdater.checkForUpdates().catch(() => {}) }, 3000)
 })
+app.on('before-quit', () => moduleRegistry.destroy())
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 
@@ -990,17 +930,6 @@ ipcMain.handle('account:setActive', async (_, id: string) => {
   const account = accountManager.getAccount(id)
   if (account) {
     setLastConfigDir(account.configDir)
-    // Respawn usagePty if account changed or not yet started
-    const currentDir = usagePty.getConfigDir()
-    if (currentDir !== account.configDir) {
-      spawnUsagePty(id, account.configDir)
-      await new Promise(r => setTimeout(r, 3000))
-      fetchAndSendUsage(lastSessionId ?? undefined)
-    } else if (!usagePty.isAlive()) {
-      spawnUsagePty(id, account.configDir)
-      await new Promise(r => setTimeout(r, 3000))
-      fetchAndSendUsage(lastSessionId ?? undefined)
-    }
   }
   return { ok: true }
 })
@@ -1009,14 +938,8 @@ ipcMain.handle('account:switch', async (_, fromId: string, toId: string) => {
   try {
     accountManager.setActiveAccountId(toId)
     accountManager.syncSessionsTo(fromId, toId)
-    // Respawn usagePty for new account
     const toAccount = accountManager.getAccount(toId)
-    if (toAccount) {
-      setLastConfigDir(toAccount.configDir)
-      spawnUsagePty(toId, toAccount.configDir)
-      await new Promise(r => setTimeout(r, 3000))
-      fetchAndSendUsage(lastSessionId ?? undefined)
-    }
+    if (toAccount) setLastConfigDir(toAccount.configDir)
     return { ok: true }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
@@ -1121,49 +1044,58 @@ async function fetchContextForSession(sessionId: string, configDir: string) {
 
 }
 
-// Poll usage every 5 minutes
-setInterval(() => fetchAndSendUsage(), 5 * 60 * 1000)
+// usage/context fetched only on explicit user request (/usage, /context commands)
 
-ipcMain.handle('claude:send', (_, sessionId: string, text: string, accountId: string, model: string, effort: string, permissionMode: string) => {
+ipcMain.handle('claude:send', async (_, sessionId: string, text: string, accountId: string, model: string, effort: string, permissionMode: string) => {
   const configDir = accountManager.getConfigDir(accountId)
 
   claudeRunner.sendMessage(
-    sessionId, text, configDir, model, effort, permissionMode || 'bypassPermissions',
+    sessionId, text, configDir, model, effort || null, permissionMode || 'bypassPermissions',
     (event) => { trackCacheFromEvent(event); mainWindow?.webContents.send('stream:event', event) },
     (code) => {
       mainWindow?.webContents.send('stream:done', code)
       lastSessionId = sessionId
       setLastConfigDir(configDir)
-      fetchAndSendUsage(sessionId)
-      fetchContextForSession(sessionId, configDir)
     },
   )
   return { ok: true }
 })
 
-ipcMain.handle('claude:new', (_, text: string, accountId: string, model: string, effort: string, permissionMode: string) => {
+ipcMain.handle('claude:new', async (_, text: string, accountId: string, model: string, effort: string, permissionMode: string) => {
   const configDir = accountManager.getConfigDir(accountId)
-  let newSessionId: string | null = null
+
+  // snapshot existing sessions before sending so we can detect the new one after
+  const existingIds = new Set(
+    accountManager.findNewSessions(configDir, new Set(), 100).concat(
+      // also include currently known sessions
+      Array.from({ length: 0 })
+    )
+  )
 
   claudeRunner.startNewSession(
-    text, configDir, model, effort, permissionMode || 'bypassPermissions',
+    text, configDir, model, effort || null, permissionMode || 'bypassPermissions',
     (event) => {
       trackCacheFromEvent(event)
-      if (event.type === 'system' && (event as { session_id?: string }).session_id) {
-        newSessionId = (event as { session_id: string }).session_id
-      }
       mainWindow?.webContents.send('stream:event', event)
     },
-    (code) => {
+    async (code) => {
       mainWindow?.webContents.send('stream:done', code)
+
+      // small delay — claude may not have flushed the .jsonl yet
+      await new Promise(r => setTimeout(r, 800))
+
+      // find which new .jsonl appeared since we sent
+      const newIds = accountManager.findNewSessions(configDir, existingIds, 3)
+      const newSessionId = newIds[0] ?? null
+      console.log('[claude:new] detected new sessionId:', newSessionId)
+
       if (newSessionId) {
         lastSessionId = newSessionId
         setLastConfigDir(configDir)
-        // Write initial meta so session is discoverable on restart
         accountManager.setSessionMeta(newSessionId, configDir, { configDir, accountId })
+        // notify renderer so sidebar updates
+        mainWindow?.webContents.send('session:created', newSessionId)
       }
-      fetchAndSendUsage(newSessionId ?? undefined)
-      if (newSessionId) fetchContextForSession(newSessionId, configDir)
     },
   )
   return { ok: true }
@@ -1184,36 +1116,34 @@ ipcMain.handle('claude:abort', () => {
 })
 
 ipcMain.handle('pty:spawn', (_, configDir: string, sessionId?: string) => {
-  usagePty.spawn(configDir, sessionId)
-  usagePty.onOutput((data) => mainWindow?.webContents.send('pty:output', data))
+  contextPty.spawn(configDir, sessionId)
+  contextPty.onOutput((data) => mainWindow?.webContents.send('pty:output', data))
   return { ok: true }
 })
 
 ipcMain.handle('pty:send', (_, command: string) => {
-  usagePty.sendCommand(command)
+  contextPty.sendCommand(command)
   return { ok: true }
 })
 
-ipcMain.handle('session:command', (_, command: string) => {
+ipcMain.handle('session:command', async (_, command: string) => {
   console.log('[session:command] received:', command, 'lastSessionId:', lastSessionId)
   if (!lastSessionId || !lastConfigDir) {
     console.log('[session:command] no active session, ignoring')
     return { ok: false, error: 'no active session' }
   }
   claudeRunner.sendMessage(
-    lastSessionId, command, lastConfigDir, 'claude-sonnet-4-5', '', 'bypassPermissions',
+    lastSessionId, command, lastConfigDir, 'claude-sonnet-4-5', null, 'bypassPermissions',
     (event) => { trackCacheFromEvent(event); mainWindow?.webContents.send('stream:event', event) },
     (code) => {
       mainWindow?.webContents.send('stream:done', code)
-      fetchAndSendUsage(lastSessionId ?? undefined)
-      if (lastSessionId && lastConfigDir) fetchContextForSession(lastSessionId, lastConfigDir)
     },
   )
   return { ok: true }
 })
 
 ipcMain.handle('pty:kill', () => {
-  usagePty.kill()
+  contextPty.kill()
   return { ok: true }
 })
 
@@ -1222,6 +1152,12 @@ ipcMain.handle('session:select', (_, sessionId: string) => {
   // Send cached context immediately if available
   const context = contextCache.get(sessionId) ?? null
   mainWindow?.webContents.send('usage:data', { usage: lastUsageData?.usage ?? null, context })
+})
+
+ipcMain.handle('pty:session:kill', (_, sessionId?: string) => {
+  if (sessionId) claudeRunner.killSession(sessionId)
+  else claudeRunner.killAll()
+  return { ok: true }
 })
 
 ipcMain.handle('console:flush', () => {
@@ -1241,250 +1177,29 @@ ipcMain.handle('context:fetch', async () => {
   return { ok: true }
 })
 
-// ── Telegram polling ──────────────────────────────────────────────────────────
+// ── Pyre Module Registry ──────────────────────────────────────────────────────
 
-const TG_SETTINGS_PATH = path.join(os.homedir(), '.vael', 'tg-settings.json')
+// modules:list — список всех модулей и их статус
+ipcMain.handle('modules:list', () => moduleRegistry.list())
 
-interface TgSettings {
-  botToken: string
-  chatId: string
-  enabled: boolean
-  sessionId?: string
-  model?: string
-  effort?: string
-}
-
-function loadTgSettings(): TgSettings {
-  try {
-    if (fs.existsSync(TG_SETTINGS_PATH)) {
-      return JSON.parse(fs.readFileSync(TG_SETTINGS_PATH, 'utf-8'))
-    }
-  } catch {}
-  return { botToken: '', chatId: '', enabled: false }
-}
-
-function saveTgSettings(s: TgSettings) {
-  fs.mkdirSync(path.dirname(TG_SETTINGS_PATH), { recursive: true })
-  fs.writeFileSync(TG_SETTINGS_PATH, JSON.stringify(s, null, 2), 'utf-8')
-}
-
-let tgPollInterval: ReturnType<typeof setInterval> | null = null
-let tgOffset = 0
-let tgConflictUntil = 0
-
-async function tgApiFetch(botToken: string, method: string, body?: Record<string, unknown>): Promise<unknown> {
-  const url = `https://api.telegram.org/bot${botToken}/${method}`
-  const res = await fetch(url, {
-    method: body ? 'POST' : 'GET',
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  })
-  return res.json()
-}
-
-async function tgSendMessage(botToken: string, chatId: string, text: string) {
-  const limit = 4096
-  const parts: string[] = []
-  let remaining = text
-  while (remaining.length > limit) {
-    const idx = remaining.lastIndexOf('\n', limit) !== -1 ? remaining.lastIndexOf('\n', limit) : limit
-    parts.push(remaining.slice(0, idx))
-    remaining = remaining.slice(idx).trimStart()
-  }
-  if (remaining) parts.push(remaining)
-  for (const part of parts) {
-    try { await tgApiFetch(botToken, 'sendMessage', { chat_id: chatId, text: part }) }
-    catch (e) { console.error('[TG] sendMessage error:', e) }
-  }
-}
-
-async function tgSendFile(botToken: string, chatId: string, filePath: string) {
-  try {
-    const buf = fs.readFileSync(filePath)
-    const ext = path.extname(filePath).toLowerCase()
-    const isImage = ['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext)
-    const formData = new FormData()
-    formData.append('chat_id', chatId)
-    formData.append(isImage ? 'photo' : 'document', new Blob([buf]), path.basename(filePath))
-    await fetch(`https://api.telegram.org/bot${botToken}/${isImage ? 'sendPhoto' : 'sendDocument'}`, {
-      method: 'POST', body: formData,
-    })
-  } catch (e) {
-    console.error('[TG] sendFile error:', e)
-    await tgSendMessage(botToken, chatId, `[файл: ${path.basename(filePath)}]`)
-  }
-}
-
-function startTgPolling() {
-  if (tgPollInterval) return
-  const settings = loadTgSettings()
-  if (!settings.botToken || !settings.enabled) return
-  console.log('[TG] polling started')
-  tgPollInterval = setInterval(async () => {
-    const s = loadTgSettings()
-    if (!s.botToken || !s.enabled) { stopTgPolling(); return }
-    if (Date.now() < tgConflictUntil) return
-    try {
-      const data = await tgApiFetch(s.botToken, 'getUpdates', { offset: tgOffset, timeout: 0, limit: 10 }) as {
-        ok: boolean; error_code?: number; result: {
-          update_id: number
-          message?: {
-            chat: { id: number }
-            text?: string
-            caption?: string
-            photo?: { file_id: string; file_size?: number }[]
-            document?: { file_id: string; file_name?: string }
-          }
-        }[]
-      }
-      if (!data.ok) {
-        if (data.error_code === 409) {
-          tgConflictUntil = Date.now() + 15000
-          console.warn('[TG] 409 conflict, backing off 15s')
-        } else {
-          console.warn('[TG] getUpdates not ok:', JSON.stringify(data))
-        }
-        return
-      }
-      if (!data.result?.length) return
-      console.log('[TG] got', data.result.length, 'updates, offset was', tgOffset)
-      for (const update of data.result) {
-        tgOffset = update.update_id + 1
-        const msg = update.message
-        if (!msg) continue
-        const chatId = String(msg.chat.id)
-        if (s.chatId && chatId !== s.chatId) continue
-
-        // Download photo or document if present
-        let filePath: string | null = null
-        try {
-          let fileId: string | null = null
-          let fileName: string | null = null
-          if (msg.photo?.length) {
-            // Pick largest photo
-            fileId = msg.photo[msg.photo.length - 1].file_id
-            fileName = `tg_photo_${Date.now()}.jpg`
-          } else if (msg.document) {
-            fileId = msg.document.file_id
-            fileName = msg.document.file_name || `tg_doc_${Date.now()}`
-          }
-          if (fileId && fileName) {
-            const fileInfo = await tgApiFetch(s.botToken, 'getFile', { file_id: fileId }) as { ok: boolean; result?: { file_path?: string } }
-            if (fileInfo.ok && fileInfo.result?.file_path) {
-              const fileUrl = `https://api.telegram.org/file/bot${s.botToken}/${fileInfo.result.file_path}`
-              const resp = await fetch(fileUrl)
-              const buf = Buffer.from(await resp.arrayBuffer())
-              ensureTempDir()
-              filePath = path.join(TEMP_DIR, `${Date.now()}_${fileName}`)
-              fs.writeFileSync(filePath, buf)
-              console.log('[TG] downloaded file:', filePath)
-            }
-          }
-        } catch (e) { console.error('[TG] file download error:', e) }
-
-        const text = msg.text || msg.caption || ''
-        if (!text && !filePath) continue
-
-        console.log('[TG] incoming:', (text || '[file]').slice(0, 80))
-        // Handle in main process — no UI involvement
-        handleTgMessage(s, chatId, text, filePath).catch(e => console.error('[TG] handleTgMessage error:', e))
-      }
-    } catch (e) { console.error('[TG] poll error:', e) }
-  }, 2000)
-}
-
-function stopTgPolling() {
-  if (tgPollInterval) { clearInterval(tgPollInterval); tgPollInterval = null; console.log('[TG] polling stopped') }
-}
-
-const tgClaudeRunner = new ClaudeRunner()
-
-async function handleTgMessage(s: TgSettings, chatId: string, text: string, filePath: string | null) {
-  // Build prompt: file path as attachment reference + text
-  let prompt = text || ''
-  if (filePath) prompt = filePath + (text ? `\n${text}` : '')
-  if (!prompt) return
-
-  // Determine session and configDir
-  const sessionId = s.sessionId || lastSessionId || null
-  const model = s.model || 'claude-sonnet-4-6'
-  const effort = s.effort || null
-  const accounts = accountManager.getAccounts()
-  if (!accounts.length) { console.warn('[TG] no accounts'); return }
-
-  // Always use lastConfigDir (active account)
-  const configDir = lastConfigDir || (accounts[0] ? accountManager.getConfigDir(accounts[0].id) : '')
-
-  console.log('[TG] sending to Claude, session:', sessionId || 'new', 'configDir:', configDir, 'model:', model, 'effort:', effort)
-
-  // Abort main runner to avoid two processes on the same session
-  claudeRunner.abort()
-
-  const chunks: string[] = []
-
-  await new Promise<void>((resolve) => {
-    const onEvent = (event: import('../shared/types.js').StreamEvent) => {
-      if (event.type === 'assistant') {
-        const content = (event as unknown as { message?: { content?: { type: string; text: string }[] } }).message?.content
-        if (Array.isArray(content)) {
-          for (const block of content) {
-            if (block.type === 'text') chunks.push(block.text)
-          }
-        }
-      }
-    }
-    const onDone = () => resolve()
-
-    if (sessionId) {
-      tgClaudeRunner.sendMessage(sessionId, prompt, configDir, model, effort, 'bypassPermissions', onEvent, onDone)
-    } else {
-      tgClaudeRunner.startNewSession(prompt, configDir, model, effort, 'bypassPermissions', onEvent, onDone)
-    }
-  })
-
-  const reply = chunks.join('')
-  console.log('[TG] reply:', reply.slice(0, 80))
-  if (reply) await tgSendMessage(s.botToken, chatId, reply)
-
-  // Tell UI to reload session so new messages appear
-  if (sessionId) mainWindow?.webContents.send('session:reload', sessionId)
-}
-
-ipcMain.handle('tg:getSettings', () => loadTgSettings())
-
-ipcMain.handle('tg:setSettings', (_, settings: TgSettings) => {
-  saveTgSettings(settings)
-  stopTgPolling()
-  if (settings.enabled) startTgPolling()
+// modules:getSettings / modules:setSettings — проксируют в модуль
+ipcMain.handle('modules:getSettings', (_, id: string) => moduleRegistry.getSettings(id))
+ipcMain.handle('modules:setSettings', (_, id: string, settings: Record<string, unknown>) => {
+  moduleRegistry.setSettings(id, settings)
   return { ok: true }
 })
 
-ipcMain.handle('tg:start', () => {
-  const s = loadTgSettings(); s.enabled = true; saveTgSettings(s); startTgPolling(); return { ok: true }
-})
+ipcMain.handle('modules:start', (_, id: string) => ({ ok: moduleRegistry.start(id) }))
+ipcMain.handle('modules:stop', (_, id: string) => ({ ok: moduleRegistry.stop(id) }))
 
-ipcMain.handle('tg:stop', () => {
-  const s = loadTgSettings(); s.enabled = false; saveTgSettings(s); stopTgPolling(); return { ok: true }
-})
-
-ipcMain.handle('tg:reply', async (_, chatId: string, text: string) => {
-  const settings = loadTgSettings()
-  if (!settings.botToken) return { ok: false }
-  const filePattern = /\[SEND_FILE:\s*(.+?)\]/g
-  const filePaths: string[] = []
-  let match
-  while ((match = filePattern.exec(text)) !== null) filePaths.push(match[1].trim())
-  const cleanText = text.replace(/\[SEND_FILE:\s*.+?\]/g, '').trim()
-  if (cleanText) await tgSendMessage(settings.botToken, chatId, cleanText)
-  for (const fp of filePaths) {
-    if (fs.existsSync(fp)) await tgSendFile(settings.botToken, chatId, fp)
-    else await tgSendMessage(settings.botToken, chatId, `[файл не найден: ${fp}]`)
-  }
+// Backward-compat aliases for TgPanel (tg:* → modules:* telegram)
+ipcMain.handle('tg:getSettings', () => moduleRegistry.getSettings('telegram'))
+ipcMain.handle('tg:setSettings', (_, settings: Record<string, unknown>) => {
+  moduleRegistry.setSettings('telegram', settings)
   return { ok: true }
 })
-
-// Auto-start polling if was enabled
-setTimeout(() => { const s = loadTgSettings(); if (s.enabled && s.botToken) startTgPolling() }, 3500)
+ipcMain.handle('tg:start', () => ({ ok: moduleRegistry.start('telegram') }))
+ipcMain.handle('tg:stop', () => ({ ok: moduleRegistry.stop('telegram') }))
 
 // ── Temp dir IPC ─────────────────────────────────────────────────────────────
 
@@ -1568,19 +1283,5 @@ ipcMain.handle('temp:getDirSize', async () => {
 
 ipcMain.handle('usage:fetch', async () => {
   if (lastUsageData) mainWindow?.webContents.send('usage:data', lastUsageData)
-  // Always respawn PTY on explicit refresh — ensures fresh data after 5h window reset
-  const accounts = accountManager.getAccounts()
-  if (accounts.length > 0) {
-    const activeId = accountManager.getActiveAccountId?.() ?? accounts[0].id
-    const activeAccount = accountManager.getAccount(activeId) ?? accounts[0]
-    if (usagePty.isAlive()) usagePty.kill()
-    spawnUsagePty(activeAccount.id, activeAccount.configDir)
-    await new Promise(r => setTimeout(r, 2500))
-  }
-  await fetchAndSendUsage(lastSessionId ?? undefined)
-  // Also refresh context if we have a session
-  if (lastSessionId && lastConfigDir) {
-    fetchContextForSession(lastSessionId, lastConfigDir)
-  }
   return { ok: true }
 })

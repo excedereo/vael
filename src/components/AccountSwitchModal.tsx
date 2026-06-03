@@ -107,8 +107,7 @@ export function AccountSwitchModal({ from, to, onConfirm, onCancel }: Props) {
             <div className="w-full h-1 bg-surface-selected rounded-full overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-500 ease-out"
-                    style={{ backgroundColor: 'var(--accent)' }}
-                style={{ width: `${(step / STEPS.length) * 100}%` }}
+                style={{ backgroundColor: 'var(--accent)', width: `${(step / STEPS.length) * 100}%` }}
               />
             </div>
 

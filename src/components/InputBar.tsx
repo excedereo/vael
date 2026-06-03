@@ -1,7 +1,7 @@
 ﻿import { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '../lib/utils.js'
-import { CornerDownLeft, Square, Check, Terminal } from 'lucide-react'
+import { CornerDownLeft, Square, Check, Terminal, X } from 'lucide-react'
 import { UsageCircles } from './UsageCircles.js'
 import { AttachedFiles, AttachedFile } from './AttachedFiles.js'
 import { api } from '../lib/api.js'
@@ -56,6 +56,7 @@ export function getMaxEffort(model: ModelId): EffortLevel | null {
 
 export interface InputBarHandle {
   addFiles: (files: FileList | File[]) => void
+  injectAndSend: (text: string) => void
 }
 
 interface Props {
@@ -67,11 +68,20 @@ interface Props {
   onPermissionChange: (p: PermissionMode) => void
   onSend: (text: string) => void
   onAbort: () => void
+  onKillPty?: () => void
   onCommand: (name: CommandName, fullText: string) => void
   isLocked: boolean
   isRunning: boolean
   hasSession: boolean
+  sessionId: string | null
 }
+
+interface DraftState {
+  html: string
+  files: AttachedFile[]
+}
+
+const drafts = new Map<string, DraftState>()
 
 // Insert chip at caret, place cursor after it using ZWSP text node trick
 // (works in all Chromium versions incl. old Electron)
@@ -156,11 +166,14 @@ export const InputBar = forwardRef<InputBarHandle, Props>(function InputBar({
   onPermissionChange,
   onSend,
   onAbort,
+  onKillPty,
   onCommand,
   isLocked,
   isRunning,
   hasSession,
+  sessionId,
 }, ref) {
+  const prevSessionIdRef = useRef<string | null>(null)
   const [popupOpen, setPopupOpen] = useState(false)
   const [permPopupOpen, setPermPopupOpen] = useState(false)
   const [effortPopupOpen, setEffortPopupOpen] = useState(false)
@@ -214,6 +227,32 @@ export const InputBar = forwardRef<InputBarHandle, Props>(function InputBar({
     return () => document.removeEventListener('mousedown', handler)
   }, [effortPopupOpen])
 
+
+  useEffect(() => {
+    const el = editRef.current
+    if (!el) return
+    const prev = prevSessionIdRef.current
+    const next = sessionId
+
+    if (prev === next) return
+
+    // Save draft for previous session
+    if (prev !== null && hasContent(el)) {
+      drafts.set(prev, { html: el.innerHTML, files: attachedFiles })
+    } else if (prev !== null) {
+      drafts.delete(prev)
+    }
+
+    // Restore draft for new session
+    const draft = next ? drafts.get(next) : undefined
+    suppressObserverRef.current = true
+    el.innerHTML = draft?.html ?? ''
+    suppressObserverRef.current = false
+    setAttachedFiles(draft?.files ?? [])
+    setIsEmpty(!hasContent(el))
+
+    prevSessionIdRef.current = next
+  }, [sessionId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateEmpty = useCallback(() => {
     const el = editRef.current
@@ -479,7 +518,26 @@ export const InputBar = forwardRef<InputBarHandle, Props>(function InputBar({
         await processFile(file)
       }
     },
-  }), [processFile])
+    injectAndSend: (text: string) => {
+      const el = editRef.current
+      if (!el || isLocked) return
+      suppressObserverRef.current = true
+      el.textContent = text
+      suppressObserverRef.current = false
+      setIsEmpty(false)
+      // fire send on next tick so state settles
+      setTimeout(() => {
+        const trimmed = extractText(el).trim()
+        if (!trimmed) return
+        el.innerHTML = ''
+        setIsEmpty(true)
+        setAttachedFiles([])
+        setCmdSuggestions([])
+        setCurrentText('')
+        onSend(trimmed)
+      }, 0)
+    },
+  }), [processFile, isLocked, onSend])
 
   const handlePaste = useCallback(async (e: React.ClipboardEvent<HTMLDivElement>) => {
     const items = Array.from(e.clipboardData.items)
@@ -677,6 +735,17 @@ export const InputBar = forwardRef<InputBarHandle, Props>(function InputBar({
           )}
           </AnimatePresence>
         </div>
+
+        {/* Kill PTY button */}
+        {onKillPty && (
+          <button
+            onClick={onKillPty}
+            title="Kill PTY session"
+            className="text-sm px-2 py-1.5 rounded-lg transition-all duration-150 text-text-faint hover:text-red-400 hover:bg-red-400/10 active:bg-red-400/20 active:scale-95"
+          >
+            <X size={13} />
+          </button>
+        )}
 
         {/* Right: Usage + Model + Effort */}
         <div className="flex items-center gap-1.5">

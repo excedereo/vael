@@ -19,7 +19,7 @@ import { MemoryPage } from './components/MemoryPage.js'
 import { NavControls } from './components/NavControls.js'
 import { WindowControls } from './components/WindowControls.js'
 import { UpdateBanner, UpdateState } from './components/UpdateBanner.js'
-import { TgPanel } from './components/TgPanel.js'
+import { PyrePage } from './components/PyrePage.js'
 import { api } from './lib/api.js'
 import { Session } from './types/index'
 import { restoreSavedTheme } from './lib/theme.js'
@@ -49,6 +49,8 @@ export default function App() {
   const [page, setPage] = useState<'chat' | 'accounts' | 'settings' | 'memory'>('chat')
   const [sidebarTab, setSidebarTab] = useState<'sessions' | 'pyre' | 'console' | 'memory'>('sessions')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [modules, setModules] = useState<{ id: string; name: string; icon?: string; running: boolean }[]>([])
+  const [activeModuleId, setActiveModuleId] = useState<string | null>(null)
   const { push: navPush, goBack, goForward, canGoBack, canGoForward } = useNavHistory()
   const [updateState, setUpdateState] = useState<UpdateState | null>(null)
   const handleUpdateClick = useCallback(() => {
@@ -60,6 +62,13 @@ export default function App() {
       api.updateInstall()
     }
   }, [updateState])
+
+  useEffect(() => {
+    api.modulesList().then(list => {
+      setModules(list)
+      if (list.length > 0) setActiveModuleId(list[0].id)
+    })
+  }, [])
 
   useEffect(() => {
     const u1 = api.onUpdateAvailable(v => setUpdateState({ status: 'available', version: v }))
@@ -256,7 +265,7 @@ export default function App() {
     }
   }, [accountsLoaded, accounts.length])
   const activeSession = sessions.find(s => s.id === activeSessionId) || null
-  const { entries, liveEntries, isStreaming, isThinking, isCompacting, liveTool, appendUserMessage, error, clearError, streamStats, reloadEntries } = useSession(activeSession)
+  const { entries, liveEntries, isStreaming, isThinking, isCompacting, liveTool, appendUserMessage, error, clearError, streamStats, ptyTokens, ptyTokensDelta, reloadEntries } = useSession(activeSession)
 
   useEffect(() => {
     const unsub = api.onSessionReload((sessionId) => {
@@ -265,6 +274,15 @@ export default function App() {
     })
     return unsub
   }, [activeSessionId, reloadEntries, refreshSessions])
+
+  useEffect(() => {
+    const unsub = api.onSessionCreated((sessionId) => {
+      refreshSessions()
+      setActiveSessionId(sessionId)
+      api.selectSession(sessionId)
+    })
+    return unsub
+  }, [refreshSessions, setActiveSessionId])
 
   const handleSelectSession = useCallback((session: Session) => {
     setActiveSessionId(session.id)
@@ -475,6 +493,9 @@ export default function App() {
             onTabChange={handleTabChange}
             devConsole={devConsole}
             memoryTokens={memoryTokens}
+            modules={modules}
+            activeModuleId={activeModuleId}
+            onSelectModule={setActiveModuleId}
           />
         </div>
         {updateState && <UpdateBanner state={updateState} onClick={handleUpdateClick} onDismiss={() => setUpdateState(null)} />}
@@ -484,7 +505,6 @@ export default function App() {
           onSwitch={(id) => setSwitchTarget(id)}
           onManage={() => setPage('accounts')}
           onSettings={() => setPage('settings')}
-          onMemory={() => setPage('memory')}
         />
       </div>
 
@@ -554,7 +574,7 @@ export default function App() {
         )}
         {/* Pyre */}
         {sidebarTab === 'pyre' && (
-          <TgPanel sessions={sessions} />
+          <PyrePage sessions={sessions} activeModuleId={activeModuleId} onModulesChange={setModules} />
         )}
         {/* Memory — always mounted to preserve state */}
         <div className="no-drag" style={{ flex: 1, overflow: 'hidden', display: sidebarTab === 'memory' ? 'flex' : 'none', flexDirection: 'column', minHeight: 0 }}>
@@ -565,6 +585,18 @@ export default function App() {
           <div>
           <div style={{ height: 24, background: 'linear-gradient(to bottom, transparent, var(--bg-base))', marginTop: -24, pointerEvents: 'none', position: 'relative', zIndex: 1 }} />
           <div style={{ paddingLeft: contentPadding, paddingRight: contentPadding }}>
+          {ptyTokens !== null && (
+            <div className="flex items-center gap-1.5 mb-1.5 px-0.5">
+              <span className="text-[11px] font-mono text-text-faint tabular-nums">
+                {ptyTokens.toLocaleString()} ctx
+              </span>
+              {ptyTokensDelta !== null && ptyTokensDelta > 0 && (
+                <span className="text-[11px] font-mono text-emerald-400/70 tabular-nums">
+                  +{ptyTokensDelta.toLocaleString()}
+                </span>
+              )}
+            </div>
+          )}
           <InputBar
             ref={inputBarRef}
             activeModel={activeModel}
@@ -575,10 +607,12 @@ export default function App() {
             onPermissionChange={setActivePermission}
             onSend={handleSend}
             onAbort={handleAbort}
+            onKillPty={() => api.ptySessionKill(activeSessionId ?? undefined)}
             onCommand={handleCommand}
             isLocked={isLocked}
             isRunning={isRunning}
             hasSession={!!activeSessionId}
+            sessionId={activeSessionId}
           />
           </div>
           </div>

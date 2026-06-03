@@ -1,6 +1,6 @@
 import { JsonlEntry, ContentBlock } from '../types/index'
 import { cn } from '../lib/utils.js'
-import { ChevronDown, ChevronRight, Copy, Check } from 'lucide-react'
+import { ChevronDown, ChevronRight, Copy, Check, Bot } from 'lucide-react'
 import { useState, useMemo, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { diffLines } from 'diff'
@@ -42,10 +42,20 @@ function CopyButton({ getText }: { getText: () => string }) {
   )
 }
 
+function looksLikeAsciiArt(text: string): boolean {
+  const lines = text.split('\n').filter(l => l.trim())
+  if (lines.length < 2) return false
+  // если больше половины строк состоят только из одного повторяющегося символа
+  const artLines = lines.filter(l => /^([*#@+\-=|/\\^~<>]{1,3})\1*$/.test(l.trim()))
+  return artLines.length >= Math.ceil(lines.length * 0.5)
+}
+
 function TextContent({ text, plain }: { text: string; plain?: boolean }) {
   if (plain) {
     return <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">{text}</pre>
   }
+  // wrap ascii-art in code block so markdown doesn't mangle it
+  const safeText = looksLikeAsciiArt(text) ? `\`\`\`\n${text}\n\`\`\`` : text
   return (
     <div className="prose prose-sm max-w-none
         prose-p:!mt-0 prose-p:!mb-1 prose-p:leading-relaxed
@@ -97,7 +107,7 @@ function TextContent({ text, plain }: { text: string; plain?: boolean }) {
         },
       }}
     >
-      {preserveEmptyLines(text)}
+      {preserveEmptyLines(safeText)}
     </ReactMarkdown>
     </div>
   )
@@ -133,7 +143,7 @@ function highlightCode(code: string, lang: string): string[] {
 
 // Compute +added / -removed line counts using real diff
 function diffStats(name: string, input: Record<string, unknown>): { added: number; removed: number } | null {
-  if (name === 'Edit') {
+  if (name === 'Edit' || name === 'Update') {
     const chunks = diffLines(String(input.old_string || ''), String(input.new_string || ''))
     let added = 0, removed = 0
     for (const c of chunks) {
@@ -155,7 +165,8 @@ function toolHeading(name: string, input: Record<string, unknown>): { verb: stri
   const fullPath = (p: unknown) => String(p || '').replace(/\\/g, '/')
   switch (name) {
     case 'Read':       return { verb: 'Read',    subject: fullPath(input.file_path) }
-    case 'Edit':       return { verb: 'Edited',  subject: fullPath(input.file_path) }
+    case 'Edit':
+    case 'Update':     return { verb: 'Edited',  subject: fullPath(input.file_path) }
     case 'Write':      return { verb: 'Created', subject: fullPath(input.file_path) }
     case 'Grep':       return { verb: 'Searched', subject: `"${String(input.pattern || '').slice(0, 35)}"` }
     case 'Glob':       return { verb: 'Globbed', subject: String(input.pattern || '') }
@@ -170,7 +181,7 @@ function toolHeading(name: string, input: Record<string, unknown>): { verb: stri
 
 // Expandable content depending on tool type
 function ToolDetail({ name, input }: { name: string; input: Record<string, unknown> }) {
-  if (name === 'Edit') {
+  if (name === 'Edit' || name === 'Update') {
     const lang = getLangFromPath(input.file_path)
     const oldCode = String(input.old_string || '')
     const newCode = String(input.new_string || '')
@@ -235,6 +246,37 @@ function ToolDetail({ name, input }: { name: string; input: Record<string, unkno
     <pre className="px-3 py-2 text-[12px] text-text-faint font-mono overflow-x-auto leading-relaxed">
       {JSON.stringify(input, null, 2)}
     </pre>
+  )
+}
+
+export function AgentBlock({ input, done }: { input: Record<string, unknown>; done?: boolean }) {
+  const type = String(input.subagent_type || 'agent')
+  const desc = String(input.description || input.prompt || '')
+  const short = desc.length > 80 ? desc.slice(0, 80) + '…' : desc
+
+  return (
+    <div className={cn(
+      'flex items-start gap-3 px-3.5 py-2.5 rounded-xl border transition-colors',
+      done
+        ? 'bg-surface-hover border-border-default'
+        : 'bg-surface-hover border-border-default',
+    )}>
+      <div className={cn(
+        'mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center',
+        done ? 'bg-accent/20' : 'bg-accent/20',
+      )}>
+        <Bot size={11} className={cn(done ? 'text-accent' : 'text-accent', !done && 'animate-pulse')} />
+      </div>
+      <div className="flex flex-col gap-0.5 min-w-0">
+        <span className="text-[12px] font-medium text-text-muted">
+          {done ? 'Agent · ' : 'Agent running · '}
+          <span className="text-text-faint font-normal">{type}</span>
+        </span>
+        {short && (
+          <span className="text-[12px] text-text-ghost leading-snug truncate">{short}</span>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -348,13 +390,14 @@ export function MessageBubble({ entry }: Props) {
           if (block.type === 'text' && block.text) {
             return (
               <div key={i} className="text-sm text-text-primary leading-relaxed">
-                <CollapsibleContent>
-                  <TextContent text={block.text} />
-                </CollapsibleContent>
+                <TextContent text={block.text} />
               </div>
             )
           }
           if (block.type === 'tool_use' && block.name) {
+            if (block.name === 'Agent') {
+              return <AgentBlock key={i} input={block.input || {}} done />
+            }
             return (
               <ToolBlock key={i} name={block.name} input={block.input || {}} />
             )
