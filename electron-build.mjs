@@ -14,6 +14,7 @@ const shared = {
       external: [
         'electron',
         'node-pty',
+        '@xterm/headless',
         'fs',
         'path',
         'child_process',

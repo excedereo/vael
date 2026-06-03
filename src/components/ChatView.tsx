@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
 import { Session, JsonlEntry } from '../types/index'
-import { MessageBubble } from './MessageBubble.js'
+import { MessageBubble, AgentBlock } from './MessageBubble.js'
 import { LiveTool } from '../hooks/useSession.js'
 import { cn } from '../lib/utils.js'
 import { loadSlotOverrides, resolveSlotSrc, SlotOverrides } from '../lib/avatarSlots.js'
@@ -66,8 +66,14 @@ function LastWrapper({ children, live, animate, extraClass, src }: {
   )
 }
 
+const PAGE_SIZE = 100
+
 export function ChatView({ session, entries, liveEntries, isStreaming, isThinking, isCompacting, contentPadding = 104, liveTool, streamStats, onScrollStateChange, scrollTrigger }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [visibleLimit, setVisibleLimit] = useState(PAGE_SIZE)
+
+  // Reset limit when session changes
+  useEffect(() => { setVisibleLimit(PAGE_SIZE) }, [session?.id])
 
   const [avatarState, setAvatarState] = useState<AvatarState>('default')
   const [slotOverrides, setSlotOverrides] = useState<SlotOverrides>(() => loadSlotOverrides())
@@ -231,13 +237,17 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
 
   const errorSrc = resolveSlotSrc('error', slotOverrides) ?? src
 
+  const hiddenCount = Math.max(0, visibleEntries.length - visibleLimit)
+  const pagedEntries = visibleEntries.slice(-visibleLimit)
+
   const lastAssistantIdx = (() => {
-    for (let i = visibleEntries.length - 1; i >= 0; i--) {
-      if (visibleEntries[i].type === 'assistant' || visibleEntries[i].type === 'error_bubble') return i
+    for (let i = pagedEntries.length - 1; i >= 0; i--) {
+      if (pagedEntries[i].type === 'assistant' || pagedEntries[i].type === 'error_bubble') return i
     }
     return -1
   })()
   const isLastCommitted = (i: number) => !hasLive && !hasThinking && !hasLiveTool && !isCompacting && i === lastAssistantIdx
+
 
   const gapBefore = (i: number, arr: { type: string }[]) => {
     if (i === 0) return ''
@@ -270,7 +280,27 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
       <div ref={scrollRef} className="h-full overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
         <div className="py-6" style={{ paddingLeft: contentPadding, paddingRight: contentPadding }}>
 
-          {visibleEntries.map((entry, i) => {
+          {hiddenCount > 0 && (
+            <div className="flex justify-center py-3">
+              <button
+                onClick={() => {
+                  setVisibleLimit(l => l + PAGE_SIZE)
+                  // Keep scroll position by saving current offset from top before re-render
+                  const el = scrollRef.current
+                  if (!el) return
+                  const prevHeight = el.scrollHeight
+                  requestAnimationFrame(() => {
+                    el.scrollTop += el.scrollHeight - prevHeight
+                  })
+                }}
+                className="text-[12px] text-text-muted hover:text-text-primary bg-surface-hover hover:bg-surface-active border border-border-default rounded-xl px-4 py-1.5 transition-colors"
+              >
+                Загрузить ещё ({hiddenCount})
+              </button>
+            </div>
+          )}
+
+          {pagedEntries.map((entry, i) => {
             if (entry.type === 'compact_boundary') {
               const saved = entry.pre_tokens > 0
                 ? Math.round((1 - entry.post_tokens / entry.pre_tokens) * 100)
@@ -300,7 +330,7 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
           })}
 
           {liveEntries.filter(e => !isHiddenEntry(e)).map((entry, i, arr) => {
-            const prevType = i === 0 ? (visibleEntries.at(-1)?.type ?? '') : arr[i - 1].type
+            const prevType = i === 0 ? (pagedEntries.at(-1)?.type ?? '') : arr[i - 1].type
             const gap = i === 0 && visibleEntries.length === 0 ? '' : prevType !== entry.type ? 'mt-6' : 'mt-1'
             return wrap(
               <MessageBubble entry={entry} />,
@@ -313,10 +343,18 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
 
           {hasLiveTool && !isCompacting && wrap(
             <div style={{ minHeight: 20 }}>
-              <div className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0" style={{ backgroundColor: 'color-mix(in srgb, var(--accent) 70%, transparent)' }} />
-                <span className="text-[13px] text-text-muted font-mono truncate">{liveTool!.label}</span>
-              </div>
+              {liveTool!.name === 'Agent'
+                ? <AgentBlock input={liveTool!.input || {}} done={false} />
+                : <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0" style={{ backgroundColor: 'color-mix(in srgb, var(--accent) 70%, transparent)' }} />
+                    <span className="text-[13px] text-text-muted font-mono truncate italic">{liveTool!.label}</span>
+                    <span className="text-[13px] text-text-faint font-mono" aria-hidden>
+                      <span className="animate-[pulse_1s_ease-in-out_0s_infinite]">.</span>
+                      <span className="animate-[pulse_1s_ease-in-out_0.2s_infinite]">.</span>
+                      <span className="animate-[pulse_1s_ease-in-out_0.4s_infinite]">.</span>
+                    </span>
+                  </div>
+              }
             </div>,
             true, 'mt-6', true, true,
           )}
@@ -357,7 +395,28 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
               <span className="text-[12px] text-text-faint font-mono">
                 {streamStats.seconds}s
                 {streamStats.tokens !== null && (
-                  <> · {streamStats.exact ? '' : '~'}{streamStats.tokens} tokens</>
+                  <> · {streamStats.exact ? '' : '~'}{streamStats.tokens} out</>
+                )}
+                {streamStats.inputTokens !== null && streamStats.inputTokens != null && (
+                  <> · {streamStats.inputTokens.toLocaleString()} in</>
+                )}
+                {streamStats.cacheRead != null && streamStats.cacheRead > 0 && (
+                  <> · <span style={{ color: 'color-mix(in srgb, var(--accent) 80%, transparent)' }}>{streamStats.cacheRead.toLocaleString()} hit</span></>
+                )}
+                {streamStats.cacheCreated != null && streamStats.cacheCreated > 0 && (
+                  <> · {streamStats.cacheCreated.toLocaleString()} saved</>
+                )}
+                {streamStats.usagePct != null && (
+                  <> · usg {streamStats.prevUsagePct != null && streamStats.prevUsagePct !== streamStats.usagePct
+                    ? <>{Math.round(streamStats.prevUsagePct)} → {Math.round(streamStats.usagePct)}%</>
+                    : <>{Math.round(streamStats.usagePct)}%</>
+                  }</>
+                )}
+                {streamStats.contextPct != null && (
+                  <> · ctx {streamStats.prevContextPct != null && streamStats.prevContextPct !== streamStats.contextPct
+                    ? <>{Math.round(streamStats.prevContextPct)} → {Math.round(streamStats.contextPct)}%</>
+                    : <>{Math.round(streamStats.contextPct)}%</>
+                  }</>
                 )}
               </span>
             </div>

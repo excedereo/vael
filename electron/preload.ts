@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('pty:spawn', configDir, sessionId),
   ptySend: (command: string) => ipcRenderer.invoke('pty:send', command),
   ptyKill: () => ipcRenderer.invoke('pty:kill'),
+  ptySessionKill: (sessionId?: string) => ipcRenderer.invoke('pty:session:kill', sessionId),
   sessionCommand: (command: string) => ipcRenderer.invoke('session:command', command),
 
   // Event listeners
@@ -150,6 +151,18 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('session:reload', handler)
     return () => ipcRenderer.removeListener('session:reload', handler)
   },
+  onSessionCreated: (cb: (sessionId: string) => void) => {
+    const handler = (_: unknown, sessionId: string) => cb(sessionId)
+    ipcRenderer.on('session:created', handler)
+    return () => ipcRenderer.removeListener('session:created', handler)
+  },
+
+  // Pyre modules
+  modulesList: () => ipcRenderer.invoke('modules:list'),
+  modulesGetSettings: (id: string) => ipcRenderer.invoke('modules:getSettings', id),
+  modulesSetSettings: (id: string, settings: Record<string, unknown>) => ipcRenderer.invoke('modules:setSettings', id, settings),
+  modulesStart: (id: string) => ipcRenderer.invoke('modules:start', id),
+  modulesStop: (id: string) => ipcRenderer.invoke('modules:stop', id),
 
   // Stats
   getStats: () => ipcRenderer.invoke('stats:get'),

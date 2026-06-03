@@ -1,10 +1,12 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { api } from '../lib/api.js'
 import { cn } from '../lib/utils.js'
 import { Session } from '../types/index.js'
+import { ChevronDown } from 'lucide-react'
 
 interface Props {
   sessions: Session[]
+  onStatusChange?: () => void
 }
 
 const MODELS = [
@@ -15,7 +17,58 @@ const MODELS = [
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 
-export function TgPanel({ sessions }: Props) {
+function Dropdown<T extends string>({ value, onChange, options }: {
+  value: T
+  onChange: (v: T) => void
+  options: { value: T; label: string }[]
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const label = options.find(o => o.value === value)?.label ?? value
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between gap-2 bg-surface-hover border border-border-default rounded-lg px-3 py-2 text-[13px] text-text-primary outline-none hover:border-border-strong focus:border-border-strong transition-colors cursor-pointer"
+      >
+        <span className="truncate">{label}</span>
+        <ChevronDown size={13} className={cn('text-text-faint flex-shrink-0 transition-transform duration-150', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="absolute z-50 top-full mt-1 w-full bg-bg-elevated border border-border-default rounded-lg shadow-2xl shadow-black/60 overflow-hidden">
+          {options.map(o => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => { onChange(o.value); setOpen(false) }}
+              className={cn(
+                'w-full text-left px-3 py-1.5 text-[13px] transition-colors',
+                value === o.value
+                  ? 'text-text-primary bg-surface-active'
+                  : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover',
+              )}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function TgPanel({ sessions, onStatusChange }: Props) {
   const [botToken, setBotToken] = useState('')
   const [chatId, setChatId] = useState('')
   const [enabled, setEnabled] = useState(false)
@@ -47,7 +100,8 @@ export function TgPanel({ sessions }: Props) {
     const next = !enabled
     setEnabled(next)
     await api.tgSetSettings({ botToken, chatId, enabled: next, sessionId, model, effort })
-  }, [enabled, botToken, chatId, sessionId, model, effort])
+    onStatusChange?.()
+  }, [enabled, botToken, chatId, sessionId, model, effort, onStatusChange])
 
   if (loading) return (
     <div className="flex-1 flex items-center justify-center text-text-ghost text-sm">
@@ -57,6 +111,11 @@ export function TgPanel({ sessions }: Props) {
 
   const getLabel = (s: Session) => s.title || s.id.slice(0, 8)
 
+  const sessionOptions = [
+    { value: '' as string, label: '— последняя активная —' },
+    ...sessions.map(s => ({ value: s.id, label: getLabel(s) })),
+  ]
+
   return (
     <div className="flex-1 flex flex-col gap-3 p-4 overflow-y-auto">
       <div className="flex items-center justify-between">
@@ -64,55 +123,42 @@ export function TgPanel({ sessions }: Props) {
         <button
           onClick={handleToggle}
           className={cn(
-            'relative w-9 h-5 rounded-full transition-colors duration-200',
+            'relative w-10 h-5 rounded-full transition-colors duration-200 flex-shrink-0',
             enabled ? 'bg-accent' : 'bg-surface-active',
           )}
         >
           <span className={cn(
-            'absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200',
-            enabled ? 'translate-x-4' : 'translate-x-0.5',
+            'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200',
+            enabled ? 'translate-x-5' : 'translate-x-0',
           )} />
         </button>
       </div>
 
       <div className="flex flex-col gap-1.5">
         <label className="text-[11px] text-text-faint uppercase tracking-wider">Сессия</label>
-        <select
+        <Dropdown
           value={sessionId}
-          onChange={e => setSessionId(e.target.value)}
-          className="bg-surface-hover border border-border-default rounded-lg px-3 py-2 text-[13px] text-text-primary outline-none focus:border-border-strong transition-colors appearance-none cursor-pointer"
-        >
-          <option value="">— последняя активная —</option>
-          {sessions.map(s => (
-            <option key={s.id} value={s.id}>{getLabel(s)}</option>
-          ))}
-        </select>
+          onChange={setSessionId}
+          options={sessionOptions}
+        />
       </div>
 
       <div className="flex gap-2">
         <div className="flex flex-col gap-1.5 flex-1">
           <label className="text-[11px] text-text-faint uppercase tracking-wider">Модель</label>
-          <select
+          <Dropdown
             value={model}
-            onChange={e => setModel(e.target.value)}
-            className="bg-surface-hover border border-border-default rounded-lg px-3 py-2 text-[13px] text-text-primary outline-none focus:border-border-strong transition-colors appearance-none cursor-pointer"
-          >
-            {MODELS.map(m => (
-              <option key={m.id} value={m.id}>{m.label}</option>
-            ))}
-          </select>
+            onChange={setModel}
+            options={MODELS.map(m => ({ value: m.id, label: m.label }))}
+          />
         </div>
         <div className="flex flex-col gap-1.5 w-24">
           <label className="text-[11px] text-text-faint uppercase tracking-wider">Effort</label>
-          <select
+          <Dropdown
             value={effort}
-            onChange={e => setEffort(e.target.value)}
-            className="bg-surface-hover border border-border-default rounded-lg px-3 py-2 text-[13px] text-text-primary outline-none focus:border-border-strong transition-colors appearance-none cursor-pointer"
-          >
-            {EFFORTS.map(e => (
-              <option key={e} value={e}>{e}</option>
-            ))}
-          </select>
+            onChange={setEffort}
+            options={EFFORTS.map(e => ({ value: e, label: e }))}
+          />
         </div>
       </div>
 

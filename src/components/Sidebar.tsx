@@ -5,12 +5,19 @@ import { Session } from '../types/index'
 import { cn } from '../lib/utils.js'
 import { Plus, Zap, Settings, Trash2, Pencil } from 'lucide-react'
 
-type SidebarTab = 'sessions' | 'pyre' | 'console'
+type SidebarTab = 'sessions' | 'pyre' | 'console' | 'memory'
 
 interface ContextMenu {
   x: number
   y: number
   session: Session
+}
+
+interface ModuleInfo {
+  id: string
+  name: string
+  icon?: string
+  running: boolean
 }
 
 interface Props {
@@ -23,6 +30,10 @@ interface Props {
   activeTab: SidebarTab
   onTabChange: (tab: SidebarTab) => void
   devConsole: boolean
+  memoryTokens?: { auto: number; total: number }
+  modules?: ModuleInfo[]
+  activeModuleId?: string | null
+  onSelectModule?: (id: string) => void
 }
 
 function SessionItem({ session, active, onClick, onContextMenu, isRenaming, renameValue, onRenameChange, onRenameCommit, displayTitle }: {
@@ -79,7 +90,7 @@ function SessionItem({ session, active, onClick, onContextMenu, isRenaming, rena
 }
 
 
-export function Sidebar({ sessions, activeSessionId, onSelect, onNew, onDelete, isLocked, activeTab: tab, onTabChange: setTab, devConsole }: Props) {
+export function Sidebar({ sessions, activeSessionId, onSelect, onNew, onDelete, isLocked, activeTab: tab, onTabChange: setTab, devConsole, memoryTokens, modules = [], activeModuleId, onSelectModule }: Props) {
   const [ctxMenu, setCtxMenu] = useState<ContextMenu | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -140,7 +151,7 @@ export function Sidebar({ sessions, activeSessionId, onSelect, onNew, onDelete, 
       {/* Tab switcher */}
       <div className="px-2.5 pt-2.5 pb-2.5">
         {(() => {
-          const tabs = ['sessions', 'pyre', ...(devConsole ? ['console'] : [])] as SidebarTab[]
+          const tabs = ['sessions', 'memory', 'pyre', ...(devConsole ? ['console'] : [])] as SidebarTab[]
           const activeIdx = tabs.indexOf(tab)
           const pct = 100 / tabs.length
           return (
@@ -165,13 +176,22 @@ export function Sidebar({ sessions, activeSessionId, onSelect, onNew, onDelete, 
                     tab === t ? 'text-text-primary' : 'text-text-faint hover:text-text-muted',
                   )}
                 >
-                  {t === 'sessions' ? 'Sessions' : t === 'pyre' ? 'Pyre' : 'Console'}
+                  {t === 'sessions' ? 'Sessions' : t === 'pyre' ? 'Pyre' : t === 'memory' ? 'Memory' : 'Console'}
                 </button>
               ))}
             </div>
           )
         })()}
       </div>
+
+      {/* Memory token stats */}
+      {tab === 'memory' && memoryTokens && (
+        <div style={{ padding: '0 12px 8px', textAlign: 'center' }}>
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>
+            {memoryTokens.auto >= 1000 ? (Math.round(memoryTokens.auto / 100) / 10) + 'k' : memoryTokens.auto} auto / {memoryTokens.total >= 1000 ? (Math.round(memoryTokens.total / 100) / 10) + 'k' : memoryTokens.total} total tok
+          </span>
+        </div>
+      )}
 
       {/* Sessions tab */}
       {tab === 'sessions' && (
@@ -207,7 +227,7 @@ export function Sidebar({ sessions, activeSessionId, onSelect, onNew, onDelete, 
                 key={session.id}
                 session={session}
                 active={activeSessionId === session.id}
-                onClick={() => !isLocked && !renamingId && onSelect(session)}
+                onClick={() => !renamingId && onSelect(session)}
                 onContextMenu={e => handleContextMenu(e, session)}
                 isRenaming={renamingId === session.id}
                 renameValue={renameValue}
@@ -220,11 +240,38 @@ export function Sidebar({ sessions, activeSessionId, onSelect, onNew, onDelete, 
         </div>
       )}
 
-      {/* Pyre tab — placeholder */}
+      {/* Pyre tab — modules */}
       {tab === 'pyre' && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-2 text-text-ghost">
-          <Zap size={20} strokeWidth={1.5} />
-          <span className="text-[13px]">Coming soon</span>
+        <div className="flex flex-col flex-1 min-h-0 overflow-y-auto">
+          <div className="flex items-center justify-between px-3 pb-1.5">
+            <span className="text-[11px] text-text-faint uppercase tracking-widest">Modules</span>
+          </div>
+          <div className="flex flex-col gap-0.5 px-2">
+            {modules.length === 0 && (
+              <div className="flex items-center justify-center gap-2 py-8 text-text-ghost">
+                <Zap size={16} strokeWidth={1.5} />
+                <span className="text-[13px]">No modules</span>
+              </div>
+            )}
+            {modules.map(m => (
+              <button
+                key={m.id}
+                onClick={() => onSelectModule?.(m.id)}
+                className={cn(
+                  'flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] transition-colors text-left w-full',
+                  activeModuleId === m.id
+                    ? 'bg-surface-active text-text-primary'
+                    : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+                )}
+              >
+                <span className={cn(
+                  'w-1.5 h-1.5 rounded-full flex-shrink-0 transition-colors',
+                  m.running ? 'bg-emerald-400' : 'bg-text-ghost',
+                )} />
+                {m.name}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

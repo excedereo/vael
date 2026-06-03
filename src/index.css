@@ -25,6 +25,19 @@
   30%            { transform: translateY(-5px); opacity: 1; }
 }
 
+@keyframes flash-green {
+  0%   { border-color: rgba(52,211,153,0.8); box-shadow: 0 0 0 1px rgba(52,211,153,0.3); }
+  100% { border-color: rgba(255,255,255,0.08); box-shadow: none; }
+}
+
+@keyframes flash-white {
+  0%   { border-color: rgba(255,255,255,0.4); box-shadow: 0 0 0 1px rgba(255,255,255,0.1); }
+  100% { border-color: rgba(255,255,255,0.08); box-shadow: none; }
+}
+
+.flash-green { animation: flash-green 1s ease-out forwards; }
+.flash-white { animation: flash-white 1s ease-out forwards; }
+
 
 :root {
   interpolate-size: allow-keywords;
