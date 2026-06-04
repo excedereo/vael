@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename)
 import { AccountManager } from './AccountManager.js'
 import { PtySessionManager } from './PtySessionManager.js'
 import { PtyManager } from './PtyManager.js'
-import { parseUsage, parseContextFromMarkdown } from './usageParser.js'
+import { parseUsage, parseContextFromMarkdown, readLastContextTokens } from './usageParser.js'
 import type { ContextData } from './usageParser.js'
 import { ModuleRegistry } from './ModuleRegistry.js'
 
@@ -1051,7 +1051,30 @@ ipcMain.handle('claude:send', async (_, sessionId: string, text: string, account
 
   claudeRunner.sendMessage(
     sessionId, text, configDir, model, effort || null, permissionMode || 'bypassPermissions',
-    (event) => { trackCacheFromEvent(event); mainWindow?.webContents.send('stream:event', event) },
+    (event) => {
+      trackCacheFromEvent(event)
+      mainWindow?.webContents.send('stream:event', event)
+      // после result читаем usage из jsonl — там точный контекст
+      if (event.type === 'result') {
+        setTimeout(() => {
+          // ищем jsonl по sessionId во всех папках проектов
+          const projectsDir = path.join(configDir, 'projects')
+          try {
+            for (const proj of fs.readdirSync(projectsDir)) {
+              const candidate = path.join(projectsDir, proj, `${sessionId}.jsonl`)
+              if (fs.existsSync(candidate)) {
+                const count = readLastContextTokens(candidate)
+                if (count !== null) {
+                  console.log(`[main] jsonl context tokens: ${count}`)
+                  mainWindow?.webContents.send('stream:event', { type: 'pty_tokens', count })
+                }
+                break
+              }
+            }
+          } catch {}
+        }, 800)
+      }
+    },
     (code) => {
       mainWindow?.webContents.send('stream:done', code)
       lastSessionId = sessionId
