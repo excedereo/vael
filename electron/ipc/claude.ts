@@ -24,7 +24,7 @@ export function registerClaudeHandlers(
       (event) => {
         trackCacheFromEvent(event)
         getWindow()?.webContents.send('stream:event', event)
-        if (event.type === 'result') {
+        if (event.type === 'result' && !(event as unknown as {isTui?:boolean}).isTui) {
           setTimeout(() => {
             const projectsDir = path.join(configDir, 'projects')
             try {

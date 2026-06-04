@@ -235,7 +235,8 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
   }
 
   const visibleEntries = entries.filter(e => {
-    if (e.type === 'result') return false
+    const ALLOWED = new Set(['user', 'assistant', 'compact_boundary', 'error_bubble', 'tui_usage'])
+    if (!ALLOWED.has(e.type)) return false
     if (e.type === 'compact_boundary') return true
     if (isHiddenEntry(e)) return false
     if (e.type === 'assistant') {
@@ -265,6 +266,7 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
   }
 
   const wrap = (node: React.ReactNode, isLast: boolean, extraClass?: string, animate = false, live = false, srcOverride?: string | null, shimmer = false) => {
+    if (node === null || node === undefined || node === false) return null
     if (isLast) return (
       <LastWrapper key="last" live={live} animate={animate} extraClass={extraClass} src={srcOverride !== undefined ? srcOverride : src} shimmer={shimmer}>
         {node}
@@ -311,6 +313,38 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
           )}
 
           {pagedEntries.map((entry, i) => {
+            if (entry.type === 'tui_usage') {
+              const d = entry.data
+              const barWidth = (pct: number) => `${Math.min(100, Math.max(0, pct))}%`
+              const barColor = (pct: number) => pct >= 90 ? '#f87171' : pct >= 70 ? '#fbbf24' : 'var(--accent)'
+              return (
+                <div key={`tui-usage-${i}`} className="my-3 mx-1">
+                  <div className="rounded-xl border border-border-subtle bg-surface-hover px-4 py-3 flex flex-col gap-3">
+                    <div className="flex flex-col gap-1">
+                      <div className="text-[11px] text-text-muted uppercase tracking-wide font-medium">Current session</div>
+                      <div className="h-1.5 w-full rounded-full bg-surface-active overflow-hidden">
+                        <div className="h-full rounded-full transition-all" style={{ width: barWidth(d.sessionPct), background: barColor(d.sessionPct) }} />
+                      </div>
+                      <div className="flex justify-between text-[11px] text-text-ghost">
+                        <span>{d.sessionPct}% used</span>
+                        <span>Resets {d.sessionResets}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <div className="text-[11px] text-text-muted uppercase tracking-wide font-medium">Current week</div>
+                      <div className="h-1.5 w-full rounded-full bg-surface-active overflow-hidden">
+                        <div className="h-full rounded-full transition-all" style={{ width: barWidth(d.weeklyPct), background: barColor(d.weeklyPct) }} />
+                      </div>
+                      <div className="flex justify-between text-[11px] text-text-ghost">
+                        <span>{d.weeklyPct}% used</span>
+                        <span>Resets {d.weeklyResets}</span>
+
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            }
             if (entry.type === 'compact_boundary') {
               const saved = entry.pre_tokens > 0
                 ? Math.round((1 - entry.post_tokens / entry.pre_tokens) * 100)

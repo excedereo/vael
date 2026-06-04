@@ -1,8 +1,80 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { JsonlEntry, StreamEvent } from '../types/index'
+import { JsonlEntry, StreamEvent, UsageData } from '../types/index'
 import { api } from '../lib/api.js'
 import { Session } from '../types/index'
 import { toolLabel } from '../lib/toolLabel.js'
+
+function parseResetsTime(raw: string): string {
+  // raw: "9:50pm (Europe/Moscow)" или "Jun 7, 7pm (Europe/Moscow)"
+  // Извлекаем timezone
+  const tzMatch = raw.match(/\(([^)]+)\)/)
+  const tz = tzMatch?.[1] ?? 'UTC'
+
+  // Пробуем парсить время сегодня: "9:50pm" / "9:50am"
+  const todayMatch = raw.match(/^(\d{1,2})(?::(\d{2}))?(am|pm)/i)
+  if (todayMatch) {
+    let hours = parseInt(todayMatch[1], 10)
+    const mins = parseInt(todayMatch[2] ?? '0', 10)
+    const ampm = todayMatch[3].toLowerCase()
+    if (ampm === 'pm' && hours !== 12) hours += 12
+    if (ampm === 'am' && hours === 12) hours = 0
+
+    // Создаём дату в нужной timezone
+    const now = new Date()
+    // Берём текущую дату в target timezone
+    const nowInTz = new Date(now.toLocaleString('en-US', { timeZone: tz }))
+    const target = new Date(nowInTz)
+    target.setHours(hours, mins, 0, 0)
+    if (target <= nowInTz) target.setDate(target.getDate() + 1)
+
+    const diffMs = target.getTime() - nowInTz.getTime()
+    const diffH = Math.floor(diffMs / 3600000)
+    const diffM = Math.floor((diffMs % 3600000) / 60000)
+    const timeStr = `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`
+    const inStr = diffH > 0 ? `in ${diffH}h ${diffM}m` : `in ${diffM}m`
+    return `${timeStr} (${inStr})`
+  }
+
+  // Пробуем парсить дату: "Jun 7, 7pm"
+  const dateMatch = raw.match(/^([A-Za-z]+)\s+(\d+),\s*(\d{1,2})(?::(\d{2}))?(am|pm)/i)
+  if (dateMatch) {
+    const monthStr = dateMatch[1]
+    const day = parseInt(dateMatch[2], 10)
+    let hours = parseInt(dateMatch[3], 10)
+    const mins = parseInt(dateMatch[4] ?? '0', 10)
+    const ampm = dateMatch[5].toLowerCase()
+    if (ampm === 'pm' && hours !== 12) hours += 12
+    if (ampm === 'am' && hours === 12) hours = 0
+
+    const now = new Date()
+    const year = now.getFullYear()
+    const target = new Date(`${monthStr} ${day}, ${year} ${hours}:${mins}:00`)
+    if (target <= now) target.setFullYear(year + 1)
+
+    const diffMs = target.getTime() - now.getTime()
+    const diffD = Math.floor(diffMs / 86400000)
+    const diffH = Math.floor((diffMs % 86400000) / 3600000)
+    const timeStr = `${monthStr} ${day}, ${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`
+    const inStr = diffD > 0 ? `in ${diffD}d ${diffH}h` : `in ${diffH}h`
+    return `${timeStr} (${inStr})`
+  }
+
+  return raw
+}
+
+function parseTuiUsage(text: string): UsageData | null {
+  const sessionPctMatch = text.match(/Current session[\s\S]*?(\d+)%\s*used/)
+  const sessionResetsMatch = text.match(/Current session[\s\S]*?\d+%\s*used\s*\nResets\s+([^\n]+)/)
+  const weeklyPctMatch = text.match(/Current week[\s\S]*?(\d+)%\s*used/)
+  const weeklyResetsMatch = text.match(/Current week[\s\S]*?\d+%\s*used\s*\nResets\s+([^\n]+)/)
+  if (!sessionPctMatch || !weeklyPctMatch) return null
+  return {
+    sessionPct: parseInt(sessionPctMatch[1], 10),
+    sessionResets: parseResetsTime(sessionResetsMatch?.[1]?.trim() ?? ''),
+    weeklyPct: parseInt(weeklyPctMatch[1], 10),
+    weeklyResets: parseResetsTime(weeklyResetsMatch?.[1]?.trim() ?? ''),
+  }
+}
 
 function getEntryText(entry: JsonlEntry): string {
   const content = entry.message?.content
@@ -296,6 +368,21 @@ export function useSession(session: Session | null) {
         return
       }
 
+      if (event.type === 'pty_tui_screen') {
+        const text = event.text
+        const usageData = parseTuiUsage(text)
+        const entry: JsonlEntry = usageData
+          ? { type: 'tui_usage', data: usageData }
+          : { type: 'assistant' as const, message: { role: 'assistant' as const, content: [{ type: 'text', text }] as any } }
+        // tui_usage не идёт в entries (иначе сдвигает visibleLimit) — показываем через liveEntries
+        liveEntriesRef.current = [entry]
+        setLiveEntries([entry])
+        setIsStreaming(false)
+        setIsThinking(false)
+        if (timerRef2.current) { clearInterval(timerRef2.current); timerRef2.current = null }
+        return
+      }
+
       if ((event as unknown as { type: string }).type === 'pty_final_message') {
         const e = event as unknown as { entry: JsonlEntry }
         const key = `final_${Date.now()}`
@@ -444,14 +531,19 @@ export function useSession(session: Session | null) {
         }
         // For PTY mode: keep liveEntries visible until pty_final_message arrives
         // We detect PTY by checking if there's pending text in liveEntries (no usage in result)
-        const r2 = event as unknown as { usage?: { output_tokens?: number } }
+        const r2 = event as unknown as { usage?: { output_tokens?: number }, isTui?: boolean }
         const isPty = !r2.usage?.output_tokens
         if (isPty) {
-          // Don't clear liveEntries or streaming state yet — pty_final_message will do it
           pendingToolsRef.current = []
           setLiveTool(null)
-          // Mark that we're waiting for pty_final_message
-          pendingResultRef.current = true
+          if (r2.isTui) {
+            // TUI команда — pty_tui_screen уже закоммитил entry напрямую, просто финализируем
+            setIsStreaming(false)
+            setIsThinking(false)
+          } else {
+            // Обычный PTY — ждём pty_final_message
+            pendingResultRef.current = true
+          }
           return
         }
         // SDK mode: commit immediately

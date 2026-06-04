@@ -29,6 +29,12 @@ export type JsonlEntry =
   | SystemEntry
   | ErrorEntry
   | CompactBoundaryEntry
+  | TuiUsageEntry
+
+export interface TuiUsageEntry {
+  type: 'tui_usage'
+  data: UsageData
+}
 
 export interface UserEntry {
   type: 'user'
@@ -131,6 +137,7 @@ export type StreamEvent =
   | { type: 'pty_tool_update'; tool_use_id: string; patch: Record<string, string> }
   | { type: 'pty_final_message'; entry: AssistantEntry }
   | { type: 'pty_tokens'; count: number }
+  | { type: 'pty_tui_screen'; text: string }
   | { type: 'result'; subtype: string; usage?: UsageInfo; duration_ms?: number }
   | { type: 'error'; error: string }
   | { type: 'assistant'; message: AssistantEntry['message'] }

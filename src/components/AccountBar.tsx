@@ -6,12 +6,13 @@ import { cn } from '../lib/utils.js'
 interface Props {
   accounts: Account[]
   activeAccountId: string
+  isRunning?: boolean
   onSwitch: (id: string) => void
   onManage: () => void
   onSettings: () => void
 }
 
-export function AccountBar({ accounts, activeAccountId, onSwitch, onManage, onSettings }: Props) {
+export function AccountBar({ accounts, activeAccountId, isRunning, onSwitch, onManage, onSettings }: Props) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -31,8 +32,7 @@ export function AccountBar({ accounts, activeAccountId, onSwitch, onManage, onSe
       <button
         onClick={() => setOpen(v => !v)}
         className={cn(
-          'w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors',
-          'hover:bg-surface-hover',
+          'w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors hover:bg-surface-hover',
           open && 'bg-surface-hover',
         )}
       >
@@ -59,8 +59,12 @@ export function AccountBar({ accounts, activeAccountId, onSwitch, onManage, onSe
               {accounts.map(acc => (
                 <button
                   key={acc.id}
-                  onClick={() => { if (acc.id !== activeAccountId) { onSwitch(acc.id) } setOpen(false) }}
-                  className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-surface-hover transition-colors"
+                  onClick={() => { if (acc.id !== activeAccountId && !isRunning) { onSwitch(acc.id) } setOpen(false) }}
+                  disabled={acc.id !== activeAccountId && isRunning}
+                  className={cn(
+                    'w-full flex items-center gap-2 px-2.5 py-2 rounded-lg transition-colors',
+                    acc.id !== activeAccountId && isRunning ? 'opacity-40 cursor-not-allowed' : 'hover:bg-surface-hover',
+                  )}
                 >
                   <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style={{ backgroundColor: 'color-mix(in srgb, var(--accent) 50%, transparent)' }}>
                     <span className="text-[13px] font-semibold text-text-primary">

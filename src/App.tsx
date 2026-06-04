@@ -39,7 +39,9 @@ export default function App() {
     syncMessage,
     isLocked,
     isRunning,
-    setIsRunning,
+    addRunning,
+    removeRunning,
+    replaceRunning,
     accountsLoaded,
     switchAccount,
     refreshSessions,
@@ -243,18 +245,21 @@ export default function App() {
     if (!activeAccountId) return
 
     appendUserMessage(text)
-    setIsRunning(true)
 
     const effort = getMaxEffort(activeModel) ? activeEffort : null
+    // Ключ для трекинга: реальный sessionId или '__pending__' для новых сессий
+    const sessionKey = activeSessionId ?? '__pending__'
+    addRunning(sessionKey)
 
     if (activeSessionId) {
       await api.sendMessage(activeSessionId, text, activeAccountId, activeModel, effort, activePermission)
     } else {
       await api.newSession(text, activeAccountId, activeModel, effort, activePermission)
 
-      // capture session_id from system init event
+      // capture session_id from system init event — заменяем __pending__ на реальный id
       const unsubInit = api.onStreamEvent((event) => {
         if (event.type === 'system' && event.subtype === 'init' && event.session_id) {
+          replaceRunning('__pending__', event.session_id)
           setActiveSessionId(event.session_id)
           refreshSessions()
           unsubInit()
@@ -262,22 +267,25 @@ export default function App() {
       })
     }
 
+    const doneSessionKey = activeSessionId ?? '__pending__'
     const unsubDone = api.onStreamDone(async () => {
-      setIsRunning(false)
+      // Убираем по реальному id если он уже известен, иначе по ключу с которым стартовали
+      removeRunning(activeSessionId ?? doneSessionKey)
       refreshSessions()
       unsubDone()
     })
-  }, [activeAccountId, activeSessionId, activeModel, activeEffort, activePermission, appendUserMessage, refreshSessions, setActiveSessionId, setIsRunning])
+  }, [activeAccountId, activeSessionId, activeModel, activeEffort, activePermission, appendUserMessage, refreshSessions, setActiveSessionId, addRunning, removeRunning, replaceRunning])
 
   const handleAbort = useCallback(() => {
     api.abortRun()
-    setIsRunning(false)
-  }, [setIsRunning])
+    if (activeSessionId) removeRunning(activeSessionId)
+    else removeRunning('__pending__')
+  }, [activeSessionId, removeRunning])
 
   const handleCommand = useCallback((name: CommandName, fullText: string) => {
     if (!activeSessionId && (name === 'compact' || name === 'context')) return
-    api.sessionCommand(fullText)
-  }, [activeSessionId])
+    handleSend(fullText)
+  }, [activeSessionId, handleSend])
 
 
   const handleDeleteSession = useCallback(async (session: import('./types/index').Session) => {
@@ -426,6 +434,7 @@ export default function App() {
         <AccountBar
           accounts={accounts}
           activeAccountId={activeAccountId || ''}
+          isRunning={isRunning}
           onSwitch={(id) => setSwitchTarget(id)}
           onManage={() => setPage('accounts')}
           onSettings={() => setPage('settings')}
@@ -552,6 +561,7 @@ export default function App() {
           <AccountsPage
             accounts={accounts}
             activeAccountId={activeAccountId || ''}
+            isRunning={isRunning}
             onBack={() => setPage('chat')}
             onAccountsChange={refreshAccounts}
             onSwitchAccount={async id => { await switchAccount(id); setPage('chat') }}

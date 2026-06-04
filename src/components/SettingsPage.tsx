@@ -3,7 +3,7 @@ import { ArrowLeft, ExternalLink, Plus, RotateCcw, Trash2, HardDrive, Loader2 } 
 import { api } from '../lib/api.js'
 import { cn } from '../lib/utils.js'
 import { WindowControls } from './WindowControls.js'
-import { loadActiveThemeFile } from '../lib/theme.js'
+import { loadActiveThemeFile, applyTheme } from '../lib/theme.js'
 import { BUILTIN_THEMES } from '../lib/builtinThemes.js'
 import {
   AVATAR_SLOTS,
@@ -15,7 +15,7 @@ import {
 } from '../lib/avatarSlots.js'
 import {
   Section, ToggleRow, SelectRow, TextRow, LockedRow,
-  PendingSection, PendingRow, SettingRow, ThemePicker, PtyOptSection,
+  PendingSection, PendingRow, SettingRow, ThemePicker, PtyOptSection, Dropdown,
 } from './SettingsComponents.js'
 
 interface Props {
@@ -78,7 +78,7 @@ function saveUISettings(s: UISettings) {
   localStorage.setItem('vaeliUISettings', JSON.stringify(s))
 }
 
-// PTY-recommended values вЂ” applied when applyPtyOptimizations is true
+// PTY-recommended values — applied when applyPtyOptimizations is true
 const PTY_RECOMMENDED: Partial<ClaudeSettings> = {
   promptSuggestionEnabled: false,
   spinnerTipsEnabled:       false,
@@ -119,7 +119,7 @@ function SlotCard({ slot, slotOverrides, updateSlot }: {
         <div className="text-[12px] text-text-faint mt-0.5">
           {isOverridden && slotOverrides[slot.id]
             ? slotOverrides[slot.id]!.split(/[/\\]/).pop()
-            : slot.builtinSrc ? 'С„Р°Р№Р»: РІСЃС‚СЂРѕРµРЅРЅС‹Р№' : 'С„Р°Р№Р»: РЅРµ СѓРєР°Р·Р°РЅ'
+            : slot.builtinSrc ? 'файл: встроенный' : 'файл: не указан'
           }
         </div>
         {slot.desc && <div className="text-[11px] text-text-ghost mt-0.5">{slot.desc}</div>}
@@ -130,7 +130,7 @@ function SlotCard({ slot, slotOverrides, updateSlot }: {
             className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] border transition-colors',
               isOverridden ? 'border-border-strong text-text-muted hover:text-text-primary hover:border-white/25' : 'border-border-subtle text-text-ghost cursor-not-allowed')}
           >
-            <RotateCcw size={11} />РЎР±СЂРѕСЃРёС‚СЊ
+            <RotateCcw size={11} />Сбросить
           </button>
           <button
             onClick={() => updateSlot(slot.id, null)}
@@ -138,7 +138,7 @@ function SlotCard({ slot, slotOverrides, updateSlot }: {
             className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] border transition-colors',
               !isDeleted ? 'border-border-strong text-red-400/55 hover:text-red-400/90 hover:border-red-400/30' : 'border-border-subtle text-text-ghost cursor-not-allowed')}
           >
-            <Trash2 size={11} />РЈРґР°Р»РёС‚СЊ
+            <Trash2 size={11} />Удалить
           </button>
         </div>
       </div>
@@ -166,7 +166,7 @@ function IconsTab({ slotOverrides, updateSlot }: {
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="РџРѕРёСЃРє РїРѕ РЅР°Р·РІР°РЅРёСЋ..."
+          placeholder="Поиск по названию..."
           className="flex-1 bg-surface-hover border border-border-default rounded-lg px-3 py-2 text-[13px] text-text-secondary placeholder:text-text-ghost outline-none focus:border-border-strong transition-colors"
         />
         <div className="flex gap-1.5">
@@ -175,7 +175,7 @@ function IconsTab({ slotOverrides, updateSlot }: {
             className={cn('px-3 py-2 rounded-lg text-[13px] border transition-colors',
               !activeTag ? 'border-border-strong text-text-secondary' : 'border-border-default text-text-faint hover:text-text-muted')}
           >
-            Р’СЃРµ
+            Все
           </button>
           {allTags.map(tag => (
             <button
@@ -217,9 +217,9 @@ export function SettingsPage({ onBack }: Props) {
   const updateSlot = (id: string, path: string | null | undefined) => {
     const next = { ...slotOverrides }
     if (path === undefined) {
-      delete next[id]  // СЃР±СЂРѕСЃ Рє РґРµС„РѕР»С‚Сѓ
+      delete next[id]  // сброс к дефолту
     } else {
-      next[id] = path  // null = РїСѓСЃС‚РѕС‚Р°, string = РєР°СЃС‚РѕРјРЅС‹Р№ РїСѓС‚СЊ
+      next[id] = path  // null = пустота, string = кастомный путь
     }
     setSlotOverrides(next)
     saveSlotOverrides(next)
@@ -333,10 +333,10 @@ export function SettingsPage({ onBack }: Props) {
   }
 
   const TABS: { id: Tab; label: string }[] = [
-    { id: 'interface', label: 'РРЅС‚РµСЂС„РµР№СЃ' },
-    { id: 'icons',     label: 'РРєРѕРЅРєРё' },
+    { id: 'interface', label: 'Интерфейс' },
+    { id: 'icons',     label: 'Иконки' },
     { id: 'claude',    label: 'Claude' },
-    { id: 'system',    label: 'РЎРёСЃС‚РµРјР°' },
+    { id: 'system',    label: 'Система' },
   ]
 
   return (
@@ -391,15 +391,15 @@ export function SettingsPage({ onBack }: Props) {
 
               {/* в”Ђв”Ђ INTERFACE TAB в”Ђв”Ђ */}
               {tab === 'interface' && (<>
-                <SettingRow label="РўРµРјР°">
+                <SettingRow label="Тема">
                   <ThemePicker themes={themes} activeThemeFile={activeThemeFile} setActiveThemeFile={setActiveThemeFile} />
                 </SettingRow>
 
-                <Section label="РћС‚РѕР±СЂР°Р¶РµРЅРёРµ">
+                <Section label="Отображение">
                   <div className="flex items-center justify-between px-4 py-2.5">
                     <div className="flex flex-col gap-0.5">
-                      <span className="text-sm text-text-primary">РћС‚СЃС‚СѓРї РєРѕРЅС‚РµРЅС‚Р°</span>
-                      <span className="text-xs text-text-muted">Р‘РѕРєРѕРІС‹Рµ РѕС‚СЃС‚СѓРїС‹ С‡Р°С‚Р° Рё РёРЅРїСѓС‚Р°</span>
+                      <span className="text-sm text-text-primary">Отступ контента</span>
+                      <span className="text-xs text-text-muted">Боковые отступы чата и инпута</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <input
@@ -418,41 +418,41 @@ export function SettingsPage({ onBack }: Props) {
                   </div>
                 </Section>
 
-                <PendingSection label="РџСЂРѕС‡РµРµ" reason="Р‘СѓРґРµС‚ СЂРµР°Р»РёР·РѕРІР°РЅРѕ РІ РёРЅС‚РµСЂС„РµР№СЃРµ Vael">
-                  <PendingRow label="Reduce motion"      desc="РЈР±СЂР°С‚СЊ Р°РЅРёРјР°С†РёРё РІ РёРЅС‚РµСЂС„РµР№СЃРµ" />
-                  <PendingRow label="Show turn duration" desc="РџРѕРєР°Р·С‹РІР°С‚СЊ РІСЂРµРјСЏ РІС‹РїРѕР»РЅРµРЅРёСЏ РєР°Р¶РґРѕРіРѕ РѕС‚РІРµС‚Р°" />
-                  <PendingRow label="Auto-scroll"        desc="РђРІС‚РѕРјР°С‚РёС‡РµСЃРєРё СЃРєСЂРѕР»Р»РёС‚СЊ РІРЅРёР· РїСЂРё РЅРѕРІС‹С… СЃРѕРѕР±С‰РµРЅРёСЏС…" />
+                <PendingSection label="Прочее" reason="Будет реализовано в интерфейсе Vael">
+                  <PendingRow label="Reduce motion"      desc="Убрать анимации в интерфейсе" />
+                  <PendingRow label="Show turn duration" desc="Показывать время выполнения каждого ответа" />
+                  <PendingRow label="Auto-scroll"        desc="Автоматически скроллить вниз при новых сообщениях" />
                 </PendingSection>
               </>)}
 
               {/* в”Ђв”Ђ CLAUDE TAB в”Ђв”Ђ */}
               {tab === 'claude' && (<>
-                <Section label="РџРѕРІРµРґРµРЅРёРµ">
-                  <ToggleRow claude label="Auto-compact"              desc="РђРІС‚РѕРјР°С‚РёС‡РµСЃРєРё СЃР¶РёРјР°С‚СЊ РєРѕРЅС‚РµРєСЃС‚ РєРѕРіРґР° РѕРЅ Р·Р°РїРѕР»РЅСЏРµС‚СЃСЏ"            value={claude.autoCompactEnabled ?? true}        onChange={v => updateClaude({ autoCompactEnabled: v })} />
-                  <ToggleRow claude label="Thinking mode"             desc="Р Р°СЃС€РёСЂРµРЅРЅРѕРµ РјС‹С€Р»РµРЅРёРµ РґР»СЏ РїРѕРґРґРµСЂР¶РёРІР°РµРјС‹С… РјРѕРґРµР»РµР№ (Opus, Sonnet)" value={claude.alwaysThinkingEnabled ?? true}      onChange={v => updateClaude({ alwaysThinkingEnabled: v })} />
-                  <ToggleRow claude label="Session recap"             desc="РљСЂР°С‚РєРѕРµ СЂРµР·СЋРјРµ СЃРµСЃСЃРёРё РїСЂРё РІРѕР·РІСЂР°С‰РµРЅРёРё СЃРїСѓСЃС‚СЏ РІСЂРµРјСЏ"             value={claude.awaySummaryEnabled ?? false}        onChange={v => updateClaude({ awaySummaryEnabled: v })} />
-                  <ToggleRow claude label="Rewind code"               desc="РЎРѕС…СЂР°РЅСЏС‚СЊ С‡РµРєРїРѕРёРЅС‚С‹ С„Р°Р№Р»РѕРІ РґР»СЏ РІРѕР·РјРѕР¶РЅРѕСЃС‚Рё РѕС‚РєР°С‚Р°"              value={claude.fileCheckpointingEnabled ?? true}   onChange={v => updateClaude({ fileCheckpointingEnabled: v })} />
-                  <ToggleRow claude label="Use auto mode during plan" desc="РђРІС‚РѕРјР°С‚РёС‡РµСЃРєРё РїРµСЂРµРєР»СЋС‡Р°С‚СЊСЃСЏ РІ auto-СЂРµР¶РёРј РІРѕ РІСЂРµРјСЏ РїР»Р°РЅРёСЂРѕРІР°РЅРёСЏ"  value={claude.useAutoModeDuringPlan ?? true}      onChange={v => updateClaude({ useAutoModeDuringPlan: v })} />
+                <Section label="Поведение">
+                  <ToggleRow claude label="Auto-compact"              desc="Автоматически сжимать контекст когда он заполняется"            value={claude.autoCompactEnabled ?? true}        onChange={v => updateClaude({ autoCompactEnabled: v })} />
+                  <ToggleRow claude label="Thinking mode"             desc="Расширенное мышление для поддерживаемых моделей (Opus, Sonnet)" value={claude.alwaysThinkingEnabled ?? true}      onChange={v => updateClaude({ alwaysThinkingEnabled: v })} />
+                  <ToggleRow claude label="Session recap"             desc="Краткое резюме сессии при возвращении спустя время"             value={claude.awaySummaryEnabled ?? false}        onChange={v => updateClaude({ awaySummaryEnabled: v })} />
+                  <ToggleRow claude label="Rewind code"               desc="Сохранять чекпоинты файлов для возможности отката"              value={claude.fileCheckpointingEnabled ?? true}   onChange={v => updateClaude({ fileCheckpointingEnabled: v })} />
+                  <ToggleRow claude label="Use auto mode during plan" desc="Автоматически переключаться в auto-режим во время планирования"  value={claude.useAutoModeDuringPlan ?? true}      onChange={v => updateClaude({ useAutoModeDuringPlan: v })} />
                 </Section>
 
-                <Section label="РџРѕ СѓРјРѕР»С‡Р°РЅРёСЋ">
+                <Section label="По умолчанию">
                   <SelectRow claude label="Effort level"       value={claude.effortLevel || 'medium'}            options={EFFORT_OPTIONS}     onChange={v => updateClaude({ effortLevel: v })} />
                   <SelectRow claude label="Permission mode"    value={claude.defaultPermissionMode || 'default'}  options={PERMISSION_OPTIONS}  onChange={v => updateClaude({ defaultPermissionMode: v })} />
                 </Section>
 
-                <Section label="Р¤Р°Р№Р»С‹">
-                  <ToggleRow claude label="Respect .gitignore" desc="РЎРєСЂС‹РІР°С‚СЊ .gitignored С„Р°Р№Р»С‹ РІ С„Р°Р№Р»РѕРІРѕРј РїРёРєРµСЂРµ" value={claude.respectGitignore ?? true} onChange={v => updateClaude({ respectGitignore: v })} />
-                  <TextRow   claude label="Worktree base ref"  desc="Р‘Р°Р·РѕРІР°СЏ РІРµС‚РєР° РґР»СЏ git worktree СЂРµР¶РёРјР°"        value={claude.worktreeBaseRef || ''} placeholder="main" onChange={v => updateClaude({ worktreeBaseRef: v })} />
+                <Section label="Файлы">
+                  <ToggleRow claude label="Respect .gitignore" desc="Скрывать .gitignored файлы в файловом пикере" value={claude.respectGitignore ?? true} onChange={v => updateClaude({ respectGitignore: v })} />
+                  <TextRow   claude label="Worktree base ref"  desc="Базовая ветка для git worktree режима"        value={claude.worktreeBaseRef || ''} placeholder="main" onChange={v => updateClaude({ worktreeBaseRef: v })} />
                 </Section>
 
-                <Section label="РРЅС‚РµРіСЂР°С†РёРё">
-                  <ToggleRow claude label="Claude in Chrome"      desc="Р Р°СЃС€РёСЂРµРЅРёРµ Chrome Р°РєС‚РёРІРЅРѕ РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ"  value={claude.claudeInChromeDefaultEnabled ?? true} onChange={v => updateClaude({ claudeInChromeDefaultEnabled: v })} />
-                  <ToggleRow claude label="Enable Remote Control" desc="Р Р°Р·СЂРµС€РёС‚СЊ СѓРґР°Р»С‘РЅРЅРѕРµ СѓРїСЂР°РІР»РµРЅРёРµ СЃРµСЃСЃРёСЏРјРё" value={claude.remoteControlAtStartup ?? false}      onChange={v => updateClaude({ remoteControlAtStartup: v })} />
+                <Section label="Интеграции">
+                  <ToggleRow claude label="Claude in Chrome"      desc="Расширение Chrome активно по умолчанию"  value={claude.claudeInChromeDefaultEnabled ?? true} onChange={v => updateClaude({ claudeInChromeDefaultEnabled: v })} />
+                  <ToggleRow claude label="Enable Remote Control" desc="Разрешить удалённое управление сессиями" value={claude.remoteControlAtStartup ?? false}      onChange={v => updateClaude({ remoteControlAtStartup: v })} />
                 </Section>
 
-                <Section label="РўРµС…РЅРёС‡РµСЃРєРёРµ">
-                  <LockedRow label="Output style"   desc="РћР±СЏР·Р°С‚РµР»СЊРЅРѕ РґР»СЏ СЂР°Р±РѕС‚С‹ Vael вЂ” РЅРµР»СЊР·СЏ РѕС‚РєР»СЋС‡РёС‚СЊ" value="Default" />
-                  <LockedRow label="Verbose output" desc="РћР±СЏР·Р°С‚РµР»СЊРЅРѕ РґР»СЏ СЂР°Р±РѕС‚С‹ Vael вЂ” РЅРµР»СЊР·СЏ РѕС‚РєР»СЋС‡РёС‚СЊ" value="Р’РєР»СЋС‡С‘РЅ" />
+                <Section label="Технические">
+                  <LockedRow label="Output style"   desc="Обязательно для работы Vael — нельзя отключить" value="Default" />
+                  <LockedRow label="Verbose output" desc="Обязательно для работы Vael — нельзя отключить" value="Включён" />
                 </Section>
 
                 <PtyOptSection applyPty={applyPty} onToggle={toggleApplyPty} />
@@ -460,16 +460,16 @@ export function SettingsPage({ onBack }: Props) {
 
               {/* в”Ђв”Ђ SYSTEM TAB в”Ђв”Ђ */}
               {tab === 'system' && (<>
-                <Section label="Р’СЂРµРјРµРЅРЅС‹Рµ С„Р°Р№Р»С‹">
+                <Section label="Временные файлы">
                   <div className="flex items-center justify-between px-4 py-3">
                     <div className="flex items-center gap-2">
                       <HardDrive size={13} className="text-text-faint" />
                       <div>
-                        <div className="text-[14px] text-text-secondary">РџР°РїРєР° temp</div>
+                        <div className="text-[14px] text-text-secondary">Папка temp</div>
                         <div className="text-[12px] text-text-faint mt-0.5">
                           {tempDirSize
-                            ? `${tempDirSize.count} С„Р°Р№Р»РѕРІ В· ${(tempDirSize.bytes / 1024).toFixed(1)} KB`
-                            : 'Р—Р°РіСЂСѓР·РєР°...'}
+                            ? `${tempDirSize.count} файлов В· ${(tempDirSize.bytes / 1024).toFixed(1)} KB`
+                            : 'Загрузка...'}
                         </div>
                       </div>
                     </div>
@@ -486,12 +486,12 @@ export function SettingsPage({ onBack }: Props) {
                       {tempClearing ? (
                         <>
                           <Loader2 size={11} className="animate-spin" />
-                          РћС‚РјРµРЅР°? ({tempClearCountdown}СЃ)
+                          Отмена? ({tempClearCountdown}с)
                         </>
                       ) : (
                         <>
                           <Trash2 size={11} />
-                          РћС‡РёСЃС‚РёС‚СЊ
+                          Очистить
                         </>
                       )}
                     </button>
@@ -502,27 +502,27 @@ export function SettingsPage({ onBack }: Props) {
                         onClick={() => { tempClearCancelRef.current = true }}
                         className="text-[12px] text-text-faint hover:text-text-secondary transition-colors"
                       >
-                        РћС‚РјРµРЅРёС‚СЊ РѕС‡РёСЃС‚РєСѓ
+                        Отменить очистку
                       </button>
                     </div>
                   )}
                   <div className="flex items-center justify-between px-4 py-3 border-t border-border-subtle">
                     <div>
-                      <div className="text-[14px] text-text-secondary">РђРІС‚Рѕ-СѓРґР°Р»РµРЅРёРµ РїСЂРё Р·Р°РїСѓСЃРєРµ</div>
-                      <div className="text-[12px] text-text-faint mt-0.5">РЈРґР°Р»СЏС‚СЊ С„Р°Р№Р»С‹ СЃС‚Р°СЂС€Рµ СѓРєР°Р·Р°РЅРЅРѕРіРѕ РІСЂРµРјРµРЅРё</div>
+                      <div className="text-[14px] text-text-secondary">Авто-удаление при запуске</div>
+                      <div className="text-[12px] text-text-faint mt-0.5">Удалять файлы старше указанного времени</div>
                     </div>
                     <Dropdown
                       value={tempAutoDelete}
                       options={[
-                        { value: '3h',    label: '3 С‡Р°СЃР°' },
-                        { value: '6h',    label: '6 С‡Р°СЃРѕРІ' },
-                        { value: '12h',   label: '12 С‡Р°СЃРѕРІ' },
-                        { value: '1d',    label: '1 РґРµРЅСЊ' },
-                        { value: '3d',    label: '3 РґРЅСЏ' },
-                        { value: '7d',    label: '7 РґРЅРµР№' },
-                        { value: '14d',   label: '14 РґРЅРµР№' },
-                        { value: '1mo',   label: '1 РјРµСЃСЏС†' },
-                        { value: 'never', label: 'РќРёРєРѕРіРґР°' },
+                        { value: '3h',    label: '3 часа' },
+                        { value: '6h',    label: '6 часов' },
+                        { value: '12h',   label: '12 часов' },
+                        { value: '1d',    label: '1 день' },
+                        { value: '3d',    label: '3 дня' },
+                        { value: '7d',    label: '7 дней' },
+                        { value: '14d',   label: '14 дней' },
+                        { value: '1mo',   label: '1 месяц' },
+                        { value: 'never', label: 'Никогда' },
                       ]}
                       onChange={async v => {
                         setTempAutoDelete(v)
@@ -532,10 +532,10 @@ export function SettingsPage({ onBack }: Props) {
                   </div>
                 </Section>
 
-                <Section label="РћР±РЅРѕРІР»РµРЅРёСЏ">
+                <Section label="Обновления">
                   <ToggleRow
-                    label="РђРІС‚Рѕ-РѕР±РЅРѕРІР»РµРЅРёРµ"
-                    desc="РЎРєР°С‡РёРІР°С‚СЊ Рё СѓСЃС‚Р°РЅР°РІР»РёРІР°С‚СЊ РѕР±РЅРѕРІР»РµРЅРёСЏ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё"
+                    label="Авто-обновление"
+                    desc="Скачивать и устанавливать обновления автоматически"
                     value={autoDownload}
                     onChange={async v => {
                       setAutoDownload(v)
@@ -547,7 +547,7 @@ export function SettingsPage({ onBack }: Props) {
                     <div className="flex items-center justify-between px-4 py-3">
                       <div>
                         <div className="text-[14px] text-text-secondary">Vael</div>
-                        <div className="text-[12px] text-text-faint mt-0.5">РўРµРєСѓС‰Р°СЏ РІРµСЂСЃРёСЏ РїСЂРёР»РѕР¶РµРЅРёСЏ</div>
+                        <div className="text-[12px] text-text-faint mt-0.5">Текущая версия приложения</div>
                       </div>
                       <a
                         href="#"
@@ -562,12 +562,12 @@ export function SettingsPage({ onBack }: Props) {
                       </a>
                     </div>
                   )}
-                  <SelectRow label="Claude CLI: РєР°РЅР°Р» РѕР±РЅРѕРІР»РµРЅРёР№" value={claude.autoUpdatesChannel || 'latest'} options={UPDATE_OPTIONS} onChange={v => updateClaude({ autoUpdatesChannel: v })} />
+                  <SelectRow label="Claude CLI: канал обновлений" value={claude.autoUpdatesChannel || 'latest'} options={UPDATE_OPTIONS} onChange={v => updateClaude({ autoUpdatesChannel: v })} />
                   {version && (
                     <div className="flex items-center justify-between px-4 py-3">
                       <div>
                         <div className="text-[14px] text-text-secondary">Claude Code CLI</div>
-                        <div className="text-[12px] text-text-faint mt-0.5">РўРµРєСѓС‰Р°СЏ РІРµСЂСЃРёСЏ</div>
+                        <div className="text-[12px] text-text-faint mt-0.5">Текущая версия</div>
                       </div>
                       <a
                         href={`https://github.com/anthropics/claude-code/releases/tag/v${version}`}
@@ -588,15 +588,15 @@ export function SettingsPage({ onBack }: Props) {
 
                 <Section label="Developer">
                   <ToggleRow
-                    label="Р’РєР»СЋС‡РёС‚СЊ Dev-РЅР°СЃС‚СЂРѕР№РєРё"
-                    desc="РџРѕРєР°Р·Р°С‚СЊ СЂР°СЃС€РёСЂРµРЅРЅС‹Рµ РЅР°СЃС‚СЂРѕР№РєРё РґР»СЏ СЂР°Р·СЂР°Р±РѕС‚С‡РёРєРѕРІ"
+                    label="Включить Dev-настройки"
+                    desc="Показать расширенные настройки для разработчиков"
                     value={showDev}
                     onChange={v => setShowDev(v)}
                   />
                   {showDev && (
                     <ToggleRow
                       label="Developer console"
-                      desc="РџРѕРєР°Р·С‹РІР°С‚СЊ РІРєР»Р°РґРєСѓ Console РІ СЃР°Р№РґР±Р°СЂРµ СЃ Р»РѕРіР°РјРё main process"
+                      desc="Показывать вкладку Console в сайдбаре с логами main process"
                       value={devConsole}
                       onChange={v => {
                         setDevConsole(v)
@@ -607,10 +607,10 @@ export function SettingsPage({ onBack }: Props) {
                   )}
                 </Section>
 
-                <PendingSection label="РЈРІРµРґРѕРјР»РµРЅРёСЏ" reason="Р‘СѓРґРµС‚ СЂРµР°Р»РёР·РѕРІР°РЅРѕ С‡РµСЂРµР· Vael">
-                  <PendingRow label="Local notifications"         desc="РЎРёСЃС‚РµРјРЅС‹Рµ СѓРІРµРґРѕРјР»РµРЅРёСЏ Windows" />
-                  <PendingRow label="Push: when actions required" desc="РљРѕРіРґР° РєР»РѕРґ Р¶РґС‘С‚ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ" />
-                  <PendingRow label="Push: when Claude decides"   desc="РљРѕРіРґР° РєР»РѕРґ РїСЂРёРЅСЏР» СЂРµС€РµРЅРёРµ" />
+                <PendingSection label="Уведомления" reason="Будет реализовано через Vael">
+                  <PendingRow label="Local notifications"         desc="Системные уведомления Windows" />
+                  <PendingRow label="Push: when actions required" desc="Когда клод ждёт подтверждения" />
+                  <PendingRow label="Push: when Claude decides"   desc="Когда клод принял решение" />
                 </PendingSection>
               </>)}
 

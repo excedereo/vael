@@ -67,6 +67,12 @@ class PtyParser {
   private emittedTools = new Set<string>()
   private emittedResults = new Set<string>()  // дедупликация tool_result по toolId+content
   private emittedTexts = new Set<string>()
+  private tuiScreenTimer: ReturnType<typeof setTimeout> | null = null
+  private inAltScreen = false
+  inAltScreenCommand = false  // флаг: TUI открылся во время busy (реальная команда)
+  private silenceTimer: ReturnType<typeof setTimeout> | null = null
+  isSlashCommand = false  // /usage, /context и т.д. — снимаем экран по таймеру тишины
+  onSendRaw: ((data: string) => void) | null = null
 
   constructor(private onEvent: (e: StreamEvent) => void) {}
 
@@ -84,7 +90,81 @@ class PtyParser {
   }
 
   feed(data: string, sessionKey: string): void {
+    if (this.isSlashCommand) {
+      if (this.silenceTimer) clearTimeout(this.silenceTimer)
+      this.silenceTimer = setTimeout(() => {
+        this.silenceTimer = null
+        this._captureScreenAfterSilence(sessionKey)
+      }, 900)
+    }
+    if (data.includes('\x1b[?1049h')) {
+
+      this.inAltScreen = true
+    }
+    // Детектируем выход из alternate screen (на случай если Esc уже закрыл TUI)
+    if (data.includes('\x1b[?1049l')) {
+      this.inAltScreen = false
+    }
+
+    // Пока в alternate screen — сбрасываем таймер при каждом новом чанке
+    // (TUI рисует контент в нескольких чанках после входа)
+    if (this.inAltScreen) {
+      if (this.tuiScreenTimer) clearTimeout(this.tuiScreenTimer)
+      this.tuiScreenTimer = setTimeout(() => {
+        this.tuiScreenTimer = null
+        this.inAltScreen = false
+        this._captureTuiScreen(sessionKey)
+      }, 800)
+    }
+
     this.term.write(data, () => this._afterWrite(sessionKey))
+  }
+
+  private _captureScreenAfterSilence(sessionKey: string): void {
+    // Снимаем текущий экран xterm после тишины — для /usage, /context и т.д.
+    const screen = this.readScreen()
+    const lines = screen.map(l => l.trimEnd()).filter(l => l.trim())
+    const filtered = lines.filter(l => {
+      if (l.match(/^[❯>]\s/)) return false
+      if (l.match(/^\? for shortcuts/)) return false
+      if (isSpinnerLine(l)) return false
+      if (l.match(/^●\s/)) return false
+      if (l.match(/^⎿\s/)) return false
+      return true
+    })
+    // Убираем пустые края
+    while (filtered.length && !filtered[0].trim()) filtered.shift()
+    while (filtered.length && !filtered[filtered.length - 1].trim()) filtered.pop()
+    const text = filtered.join('\n')
+    if (text.trim()) {
+      this.onEvent({ type: 'pty_tui_screen', text } as unknown as StreamEvent)
+    }
+    this.onEvent({ type: 'result', subtype: 'success', isTui: true } as unknown as StreamEvent)
+  }
+
+  private _captureTuiScreen(sessionKey: string): void {
+    // Alternate screen (\x1b[?1049h) использует term.buffer.alternate, не .active
+    // После переключения .active указывает на alternate буфер — читаем его
+    const buf = this.term.buffer.active
+    const lines: string[] = []
+    // Alternate screen — только ROWS строк (нет скроллбека), baseY == 0
+    const totalLines = Math.max(buf.baseY + ROWS, ROWS)
+    for (let i = 0; i < totalLines; i++) {
+      const line = buf.getLine(i)
+      if (line) lines.push(line.translateToString(true).trimEnd())
+    }
+    // Убираем пустые строки с краёв
+    while (lines.length && !lines[0].trim()) lines.shift()
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop()
+    const text = lines.join('\n')
+
+    if (text.trim()) {
+      this.onEvent({ type: 'pty_tui_screen', text } as unknown as StreamEvent)
+    }
+
+    // Отправляем Esc чтобы закрыть TUI
+    // result НЕ эмитим здесь — его эмитит onData при детекции \x1b[?1049l (выход из alt screen)
+    this.onSendRaw?.('\x1b')
   }
 
   private _afterWrite(sessionKey: string): void {
@@ -375,6 +455,11 @@ class PtyParser {
     this.emittedTools.clear()
     this.emittedResults.clear()
     this.emittedTexts.clear()
+    if (this.tuiScreenTimer) { clearTimeout(this.tuiScreenTimer); this.tuiScreenTimer = null }
+    if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null }
+    this.inAltScreen = false
+    this.inAltScreenCommand = false
+    this.isSlashCommand = sentMessage.trimStart().startsWith('/')
   }
 }
 
@@ -386,6 +471,7 @@ interface PtySession {
   sessionId: string | null   // null for new sessions until we detect it
   ready: boolean
   busy: boolean
+  requestId: number  // инкрементируется при каждом sendMessage — защита от stale result
   parser: PtyParser
   onEvent: StreamCallback | null
   onDone: DoneCallback | null
@@ -433,10 +519,11 @@ export class PtySessionManager {
       if (event.type === 'result') {
         const done = sess.onDone
         sess.onDone = null
-        // через 600мс завершаем сессию
+        const rid = sess.requestId
+        // через 600мс завершаем сессию — только если requestId не изменился
         setTimeout(() => {
           const s = this.sessions.get(key)
-          if (s) { s.busy = false; s.onEvent = null }
+          if (s && s.requestId === rid) { s.busy = false; s.onEvent = null }
           done?.(0)
         }, 600)
       }
@@ -449,6 +536,8 @@ export class PtySessionManager {
       cwd: os.homedir(),
       env: { ...process.env, CLAUDE_CONFIG_DIR: configDir } as Record<string, string>,
     })
+
+    parser.onSendRaw = (data) => proc.write(data)
 
     const sess: PtySession = {
       proc,
@@ -468,6 +557,7 @@ export class PtySessionManager {
       effort,
       permissionMode,
       idleTimer: null,
+      requestId: 0,
     }
 
     proc.onData((data) => {
@@ -495,6 +585,21 @@ export class PtySessionManager {
       }
 
       if (sess.busy) {
+        if (data.includes('\x1b[?1049h')) {
+          sess.parser.inAltScreenCommand = true
+        }
+        sess.parser.feed(data, key)
+        if (data.includes('\x1b[?1049l') && sess.parser.inAltScreenCommand) {
+          sess.parser.inAltScreenCommand = false
+          setTimeout(() => {
+            const s = this.sessions.get(key)
+            if (s?.busy) {
+              s.onEvent?.({ type: 'result', subtype: 'success' } as StreamEvent)
+            }
+          }, 200)
+        }
+      } else if (data.includes('\x1b[?1049h')) {
+        // TUI открылся вне busy — всё равно снимаем экран (edge case)
         sess.parser.feed(data, key)
       }
 
@@ -566,6 +671,7 @@ export class PtySessionManager {
       sess.busy = false
     }
 
+    sess.requestId = (sess.requestId + 1) % 0xFFFF  // invalidate any pending stale result
     sess.onEvent = onEvent
     sess.onDone = onDone
     sess.tokenCallback = onEvent  // держим отдельно, живёт дольше onEvent
@@ -598,6 +704,7 @@ export class PtySessionManager {
     // setTimeout(2000) — не заменять на waitReady(), ломает отправку (проверено)
     await new Promise(r => setTimeout(r, 2000))
 
+    sess.requestId = (sess.requestId + 1) % 0xFFFF
     sess.onEvent = onEvent
     sess.onDone = onDone
     sess.tokenCallback = onEvent  // держим отдельно, живёт дольше onEvent

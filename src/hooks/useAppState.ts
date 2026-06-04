@@ -18,9 +18,22 @@ export function useAppState() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
   const [syncMessage, setSyncMessage] = useState<string>()
-  const [isRunning, setIsRunning] = useState(false)
+  const [runningSessions, setRunningSessions] = useState<Set<string>>(() => new Set())
 
+  const isRunning = runningSessions.size > 0
   const isLocked = syncStatus === 'syncing' || isRunning
+
+  const addRunning = useCallback((sessionKey: string) => {
+    setRunningSessions(prev => new Set(prev).add(sessionKey))
+  }, [])
+
+  const removeRunning = useCallback((sessionKey: string) => {
+    setRunningSessions(prev => { const next = new Set(prev); next.delete(sessionKey); return next })
+  }, [])
+
+  const replaceRunning = useCallback((oldKey: string, newKey: string) => {
+    setRunningSessions(prev => { const next = new Set(prev); next.delete(oldKey); next.add(newKey); return next })
+  }, [])
 
   const loadAccounts = useCallback(async () => {
     const accs = await api.getAccounts()
@@ -56,7 +69,7 @@ export function useAppState() {
   }, [])
 
   const switchAccount = useCallback(async (toId: string) => {
-    if (toId === activeAccountId || isLocked) return
+    if (toId === activeAccountId || isRunning || syncStatus === 'syncing') return
     const result = await api.switchAccount(activeAccountId, toId)
     if (result.ok) {
       setActiveAccountId(toId)
@@ -90,7 +103,9 @@ export function useAppState() {
     syncMessage,
     isLocked,
     isRunning,
-    setIsRunning,
+    addRunning,
+    removeRunning,
+    replaceRunning,
     accountsLoaded,
     switchAccount,
     refreshSessions,
