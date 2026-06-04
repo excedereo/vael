@@ -409,6 +409,7 @@ interface PtySession {
   parser: PtyParser
   onEvent: StreamCallback | null
   onDone: DoneCallback | null
+  tokenCallback: StreamCallback | null  // отдельный callback для pty_tokens, живёт дольше onEvent
   trustAnswered: boolean
   bypassAnswered: boolean
   themeAnswered: boolean
@@ -443,7 +444,12 @@ export class PtySessionManager {
     const parser = new PtyParser((event) => {
       const sess = this.sessions.get(key)
       if (!sess) return
-      sess.onEvent?.(event)
+      // pty_tokens шлём через tokenCallback (живёт дольше), остальное через onEvent
+      if ((event as any).type === 'pty_tokens') {
+        sess.tokenCallback?.(event)
+      } else {
+        sess.onEvent?.(event)
+      }
       if (event.type === 'result') {
         // держим busy ещё 600мс чтобы поймать "31783 tokens" который приходит после ready
         const done = sess.onDone
@@ -474,6 +480,7 @@ export class PtySessionManager {
       parser,
       onEvent: null,
       onDone: null,
+      tokenCallback: null,
       trustAnswered: false,
       bypassAnswered: false,
       themeAnswered: false,
@@ -512,13 +519,13 @@ export class PtySessionManager {
         sess.parser.feed(data, key)
       }
 
-      // ловим "31783 tokens" всегда — приходит после ready prompt
+      // ловим "31783 tokens" всегда — приходит после ready prompt (после onEvent уже null)
       const plainStripped = stripAnsiLocal(data)
-      const tokMatch = plainStripped.match(/^(\d+)\s+tokens$/m)
-      if (tokMatch && !/[↓↑]/.test(plainStripped)) {
+      const tokMatch = plainStripped.match(/(\d{4,})\s+tokens/m)
+      if (tokMatch && !/[↓↑]/.test(tokMatch[0])) {
         const count = parseInt(tokMatch[1], 10)
-        console.log(`[PtySession:${key}] tokens: ${count}`)
-        sess.onEvent?.({ type: 'pty_tokens', count } as unknown as StreamEvent)
+        console.log(`[PtySession:${key}] tokens (raw): ${count}`)
+        sess.tokenCallback?.({ type: 'pty_tokens', count } as unknown as StreamEvent)
       }
     })
 
@@ -590,6 +597,7 @@ export class PtySessionManager {
 
     sess.onEvent = onEvent
     sess.onDone = onDone
+    sess.tokenCallback = onEvent  // держим отдельно, живёт дольше onEvent
     sess.busy = true
     sess.ready = false
     sess.parser.reset(text)
@@ -621,6 +629,7 @@ export class PtySessionManager {
 
     sess.onEvent = onEvent
     sess.onDone = onDone
+    sess.tokenCallback = onEvent  // держим отдельно, живёт дольше onEvent
     sess.busy = true
     sess.ready = false
     sess.parser.reset(text)

@@ -97,6 +97,7 @@ export function useSession(session: Session | null) {
   const [ptyTokens, setPtyTokens] = useState<number | null>(null)
   const [ptyTokensDelta, setPtyTokensDelta] = useState<number | null>(null)
   const prevPtyTokensRef = useRef<number | null>(null)
+  const currentSessionIdRef = useRef<string | null>(null)
   const streamingTextCommittedRef = useRef(false)  // был ли streaming text зафиксирован
   const [streamCacheCreated, setStreamCacheCreated] = useState<number | null>(null)
   const [contextPct, setContextPct] = useState<number | null>(null)
@@ -118,6 +119,7 @@ export function useSession(session: Session | null) {
       setEntries([])
       return
     }
+    currentSessionIdRef.current = session.id
     const jsonlPath = `${session.projectPath}\\${session.id}.jsonl`
     api.readSession(jsonlPath).then(raw => {
       const filtered = filterContextEntries(raw)
@@ -128,6 +130,12 @@ export function useSession(session: Session | null) {
     pendingToolsRef.current = []
     setIsStreaming(false)
     setIsThinking(false)
+    // Восстанавливаем токены для этой сессии из localStorage
+    const saved = localStorage.getItem(`pty_tokens_${session.id}`)
+    const savedCount = saved ? parseInt(saved, 10) : null
+    setPtyTokens(savedCount)
+    setPtyTokensDelta(null)
+    prevPtyTokensRef.current = savedCount
   }, [session?.id, reloadKey])
 
   useEffect(() => {
@@ -316,6 +324,10 @@ export function useSession(session: Session | null) {
         }
         prevPtyTokensRef.current = count
         setPtyTokens(count)
+        // Сохраняем токены для текущей сессии в localStorage
+        if (currentSessionIdRef.current) {
+          localStorage.setItem(`pty_tokens_${currentSessionIdRef.current}`, String(count))
+        }
         return
       }
 
