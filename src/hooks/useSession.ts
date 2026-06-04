@@ -97,6 +97,8 @@ export function useSession(session: Session | null) {
   const [ptyTokens, setPtyTokens] = useState<number | null>(null)
   const [ptyTokensDelta, setPtyTokensDelta] = useState<number | null>(null)
   const prevPtyTokensRef = useRef<number | null>(null)
+  const [finalEntryKey, setFinalEntryKey] = useState<string | null>(null)
+  const pendingResultRef = useRef<boolean>(false)
   const currentSessionIdRef = useRef<string | null>(null)
   const streamingTextCommittedRef = useRef(false)  // был ли streaming text зафиксирован
   const [streamCacheCreated, setStreamCacheCreated] = useState<number | null>(null)
@@ -316,6 +318,26 @@ export function useSession(session: Session | null) {
         return
       }
 
+      if ((event as unknown as { type: string }).type === 'pty_final_message') {
+        const e = event as unknown as { entry: JsonlEntry }
+        const key = `final_${Date.now()}`
+        const entry = { ...e.entry, _animKey: key } as JsonlEntry
+        // Drop last text entry from liveEntries — it's a TUI-stripped duplicate, final comes from jsonl
+        const live = liveEntriesRef.current
+        const lastIsText = live.length > 0 &&
+          live[live.length - 1].type === 'assistant' &&
+          Array.isArray(live[live.length - 1].message?.content) &&
+          (live[live.length - 1].message.content as Array<{type:string}>)[0]?.type === 'text'
+        const toCommit = lastIsText ? live.slice(0, -1) : live
+        setEntries(prev => [...prev, ...toCommit, entry])
+        liveEntriesRef.current = []
+        setLiveEntries([])
+        pendingResultRef.current = false
+        setFinalEntryKey(key)
+        setTimeout(() => setFinalEntryKey(null), 1000)
+        return
+      }
+
       if (event.type === 'pty_tokens') {
         const count = (event as unknown as { count: number }).count
         console.log('[useSession] pty_tokens:', count)
@@ -439,9 +461,24 @@ export function useSession(session: Session | null) {
           setLiveTool(null)
           return
         }
-        // Commit all live entries + result to entries
+        // For PTY mode: keep liveEntries visible until pty_final_message arrives
+        // We detect PTY by checking if there's pending text in liveEntries (no usage in result)
+        const r2 = event as unknown as { usage?: { output_tokens?: number } }
+        const isPty = !r2.usage?.output_tokens
+        if (isPty) {
+          // Don't clear liveEntries yet — pty_final_message will do it
+          pendingToolsRef.current = []
+          setLiveTool(null)
+          setIsStreaming(false)
+          setIsThinking(false)
+          if (timerRef2.current) { clearInterval(timerRef2.current); timerRef2.current = null }
+          // Mark that we're waiting for pty_final_message
+          pendingResultRef.current = true
+          return
+        }
+        // SDK mode: commit immediately
         const accumulated = liveEntriesRef.current
-        setEntries(prev => [...prev, ...accumulated, event as unknown as JsonlEntry])
+        setEntries(prev => [...prev, ...accumulated])
         liveEntriesRef.current = []
         pendingToolsRef.current = []
         setLiveEntries([])
@@ -491,5 +528,5 @@ export function useSession(session: Session | null) {
     ? { seconds: streamSeconds, tokens: streamTokens ?? (estimatedTokens > 0 ? estimatedTokens : null), exact: streamTokens !== null, inputTokens: streamInputTokens, cacheRead: streamCacheRead, cacheCreated: streamCacheCreated, contextPct, prevContextPct: prevContextPctRef.current, usagePct, prevUsagePct: prevUsagePctRef.current }
     : null
 
-  return { entries, liveEntries, isStreaming, isThinking, isCompacting, liveTool, appendUserMessage, error, clearError: () => setError(null), streamStats, ptyTokens, ptyTokensDelta, reloadEntries: () => setReloadKey(k => k + 1) }
+  return { entries, liveEntries, isStreaming, isThinking, isCompacting, liveTool, appendUserMessage, error, clearError: () => setError(null), streamStats, ptyTokens, ptyTokensDelta, finalEntryKey, reloadEntries: () => setReloadKey(k => k + 1) }
 }

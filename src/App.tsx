@@ -287,7 +287,7 @@ export default function App() {
     }
   }, [accountsLoaded, accounts.length])
   const activeSession = sessions.find(s => s.id === activeSessionId) || null
-  const { entries, liveEntries, isStreaming, isThinking, isCompacting, liveTool, appendUserMessage, error, clearError, streamStats, ptyTokens, ptyTokensDelta, reloadEntries } = useSession(activeSession)
+  const { entries, liveEntries, isStreaming, isThinking, isCompacting, liveTool, appendUserMessage, error, clearError, streamStats, ptyTokens, ptyTokensDelta, finalEntryKey, reloadEntries } = useSession(activeSession)
 
   useEffect(() => {
     const unsub = api.onSessionReload((sessionId) => {
@@ -571,6 +571,7 @@ export default function App() {
             streamStats={streamStats}
             onScrollStateChange={atBottom => setChatAtBottom(atBottom)}
             scrollTrigger={scrollTrigger}
+            finalEntryKey={finalEntryKey}
           />
           <AnimatePresence>
             {!chatAtBottom && (

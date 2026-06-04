@@ -73,6 +73,7 @@ function TextContent({ text, plain }: { text: string; plain?: boolean }) {
         prose-td:text-text-secondary prose-td:border prose-td:border-border-default prose-td:px-2 prose-td:py-1
         prose-blockquote:border-l-2 prose-blockquote:border-border-strong prose-blockquote:text-text-muted prose-blockquote:pl-3 prose-blockquote:italic prose-blockquote:my-1
         prose-strong:text-text-primary prose-em:text-text-secondary
+        prose-a:text-[var(--accent)] prose-a:no-underline hover:prose-a:underline
         prose-hr:border-border-default prose-hr:my-2
         text-text-primary text-sm">
     <ReactMarkdown

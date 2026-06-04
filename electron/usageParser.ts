@@ -85,6 +85,22 @@ export function readLastContextTokens(jsonlPath: string): number | null {
   return null
 }
 
+export function readLastAssistantMessage(jsonlPath: string): object | null {
+  try {
+    const content = fs.readFileSync(jsonlPath, 'utf-8')
+    const lines = content.trim().split('\n')
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const obj = JSON.parse(lines[i])
+        if (obj.type === 'assistant' && obj.message?.content) {
+          return obj
+        }
+      } catch {}
+    }
+  } catch {}
+  return null
+}
+
 export function parseContext(raw: string): ContextData | null {
   const text = stripAnsi(raw)
     .replace(/\r/g, '')
