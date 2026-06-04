@@ -28,13 +28,14 @@ export interface HandlerDeps {
   getLastConfigDir: () => string
   setLastConfigDir: (dir: string) => void
   trackCacheFromEvent: (event: unknown) => void
+  flushLogBuffer: () => void
 }
 
 export function registerAllHandlers(deps: HandlerDeps) {
   const {
     getWindow, accountManager, claudeRunner, contextPty, moduleRegistry,
     contextCache, lastUsageData, getLastSessionId, setLastSessionId,
-    getLastConfigDir, setLastConfigDir, trackCacheFromEvent,
+    getLastConfigDir, setLastConfigDir, trackCacheFromEvent, flushLogBuffer,
   } = deps
 
   registerAccountHandlers(accountManager, getWindow)
@@ -43,7 +44,7 @@ export function registerAllHandlers(deps: HandlerDeps) {
   registerMemoryHandlers()
   registerModuleHandlers(moduleRegistry)
   registerWindowHandlers(getWindow)
-  registerSettingsHandlers(setLastConfigDir)
+  registerSettingsHandlers(setLastConfigDir, flushLogBuffer)
   registerPtyHandlers(claudeRunner, contextPty, getWindow)
   registerTempHandlers(getWindow)
 }

@@ -5,6 +5,7 @@ import { PATHS, loadVaeliSettings, saveVaeliSettings, patchVaeliSettings } from 
 
 export function registerSettingsHandlers(
   setLastConfigDir: (dir: string) => void,
+  flushLogBuffer?: () => void,
 ) {
   ipcMain.handle('settings:get', () => {
     if (!fs.existsSync(PATHS.globalSettings)) return {}
@@ -32,7 +33,7 @@ export function registerSettingsHandlers(
     return ''
   })
 
-  ipcMain.handle('console:flush', () => ({ ok: true }))
+  ipcMain.handle('console:flush', () => { flushLogBuffer?.(); return { ok: true } })
 
   ipcMain.handle('usage:fetch', () => ({ ok: true }))
   ipcMain.handle('usage:getCached', () => ({ ok: true }))
