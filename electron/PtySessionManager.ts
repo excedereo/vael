@@ -1,6 +1,7 @@
 import * as pty from 'node-pty'
 import fs from 'fs'
 import path from 'path'
+import os from 'os'
 import { stripAnsi } from './usageParser.js'
 import type { StreamEvent } from '../shared/types.js'
 import { findClaudeBin, findClaudeExe } from './services/ClaudeBin.js'
