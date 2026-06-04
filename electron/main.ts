@@ -10,7 +10,6 @@ const __dirname = path.dirname(__filename)
 
 import { AccountManager } from './AccountManager.js'
 import { PtySessionManager } from './PtySessionManager.js'
-import { PtyManager } from './PtyManager.js'
 import { ModuleRegistry } from './ModuleRegistry.js'
 import { parseUsage } from './usageParser.js'
 import type { ContextData } from './usageParser.js'
@@ -24,7 +23,6 @@ import { runStartupTempCleanup } from './ipc/temp.js'
 const accountManager = new AccountManager()
 const claudeRunner = new PtySessionManager()
 const moduleRegistry = new ModuleRegistry()
-const contextPty = new PtyManager()
 const contextCache = new Map<string, ContextData>()
 
 let mainWindow: BrowserWindow | null = null
@@ -155,7 +153,6 @@ app.whenReady().then(() => {
     getWindow: () => mainWindow,
     accountManager,
     claudeRunner,
-    contextPty,
     moduleRegistry,
     contextCache,
     lastUsageData: () => lastUsageData,
@@ -188,6 +185,9 @@ app.whenReady().then(() => {
   runStartupTempCleanup(() => mainWindow)
 })
 
-app.on('before-quit', () => moduleRegistry.destroy())
+app.on('before-quit', () => {
+  claudeRunner.killAll()
+  moduleRegistry.destroy()
+})
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })

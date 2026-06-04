@@ -8,6 +8,7 @@ import { WindowControls } from './WindowControls.js'
 interface Props {
   accounts: Account[]
   activeAccountId: string
+  isRunning?: boolean
   onBack: () => void
   onAccountsChange: () => void
   onSwitchAccount: (id: string) => void
@@ -274,7 +275,7 @@ function StatsTab() {
 }
 
 // ── Main component ────────────────────────────────────────────
-export function AccountsPage({ accounts, activeAccountId, onBack, onAccountsChange, onSwitchAccount }: Props) {
+export function AccountsPage({ accounts, activeAccountId, isRunning, onBack, onAccountsChange, onSwitchAccount }: Props) {
   const [tab, setTab] = useState<Tab>('accounts')
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState(false)
@@ -483,32 +484,37 @@ export function AccountsPage({ accounts, activeAccountId, onBack, onAccountsChan
                           <button
                             onClick={() => handleLogin(acc)}
                             className="flex items-center gap-1 px-2 py-1 rounded-lg text-[13px] text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors"
-                            title="Войти"
                           >
                             <LogIn size={12} />
                             Войти
                           </button>
                         ) : (
                           <button
-                            onClick={() => setConfirm({ type: 'logout', id: acc.id })}
-                            className="p-1 rounded transition-colors text-text-ghost hover:text-amber-400 hover:bg-amber-400/10"
-                            title="Выйти (сохранить сессии)"
+                            onClick={() => !isRunning && setConfirm({ type: 'logout', id: acc.id })}
+                            disabled={isRunning}
+                            title={isRunning ? 'Дождись завершения всех сессий' : undefined}
+                            className={cn(
+                              'flex items-center gap-1 px-2 py-1 rounded-lg text-[13px] transition-colors',
+                              isRunning ? 'text-text-ghost opacity-30 cursor-not-allowed' : 'text-text-ghost hover:text-amber-400 hover:bg-amber-400/10',
+                            )}
                           >
-                            <LogOut size={13} />
+                            <LogOut size={12} />
+                            Выйти
                           </button>
                         )}
                         <button
-                          onClick={() => accounts.length > 1 ? setConfirm({ type: 'delete', id: acc.id }) : undefined}
-                          disabled={accounts.length <= 1}
+                          onClick={() => !isRunning && accounts.length > 1 ? setConfirm({ type: 'delete', id: acc.id }) : undefined}
+                          disabled={accounts.length <= 1 || isRunning}
+                          title={accounts.length <= 1 ? 'Нельзя удалить единственный аккаунт' : isRunning ? 'Дождись завершения всех сессий' : undefined}
                           className={cn(
-                            'p-1 rounded transition-colors',
-                            accounts.length > 1
-                              ? 'text-text-ghost hover:text-red-400 hover:bg-red-400/10'
-                              : 'text-text-ghost opacity-30 cursor-not-allowed',
+                            'flex items-center gap-1 px-2 py-1 rounded-lg text-[13px] transition-colors',
+                            accounts.length <= 1 || isRunning
+                              ? 'text-text-ghost opacity-30 cursor-not-allowed'
+                              : 'text-text-ghost hover:text-red-400 hover:bg-red-400/10',
                           )}
-                          title={accounts.length <= 1 ? 'Нельзя удалить единственный аккаунт' : 'Удалить аккаунт'}
                         >
-                          <Trash2 size={13} />
+                          <Trash2 size={12} />
+                          Удалить
                         </button>
                       </div>
                     </div>

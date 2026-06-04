@@ -1,7 +1,6 @@
 import { BrowserWindow } from 'electron'
 import type { AccountManager } from '../AccountManager.js'
 import type { PtySessionManager } from '../PtySessionManager.js'
-import type { PtyManager } from '../PtyManager.js'
 import type { ModuleRegistry } from '../ModuleRegistry.js'
 import type { ContextData } from '../usageParser.js'
 
@@ -19,7 +18,6 @@ export interface HandlerDeps {
   getWindow: () => BrowserWindow | null
   accountManager: AccountManager
   claudeRunner: PtySessionManager
-  contextPty: PtyManager
   moduleRegistry: ModuleRegistry
   contextCache: Map<string, ContextData>
   lastUsageData: () => { usage: unknown; context: unknown } | null
@@ -33,7 +31,7 @@ export interface HandlerDeps {
 
 export function registerAllHandlers(deps: HandlerDeps) {
   const {
-    getWindow, accountManager, claudeRunner, contextPty, moduleRegistry,
+    getWindow, accountManager, claudeRunner, moduleRegistry,
     contextCache, lastUsageData, getLastSessionId, setLastSessionId,
     getLastConfigDir, setLastConfigDir, trackCacheFromEvent, flushLogBuffer,
   } = deps
@@ -45,6 +43,6 @@ export function registerAllHandlers(deps: HandlerDeps) {
   registerModuleHandlers(moduleRegistry)
   registerWindowHandlers(getWindow)
   registerSettingsHandlers(setLastConfigDir, flushLogBuffer)
-  registerPtyHandlers(claudeRunner, contextPty, getWindow)
+  registerPtyHandlers(claudeRunner)
   registerTempHandlers(getWindow)
 }
