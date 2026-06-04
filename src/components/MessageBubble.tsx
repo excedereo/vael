@@ -11,6 +11,17 @@ import hljs from 'highlight.js'
 
 interface Props {
   entry: JsonlEntry
+  showMeta?: boolean
+}
+
+function relativeTime(ts: string | undefined): string | null {
+  if (!ts) return null
+  const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 1000)
+  if (diff < 10) return 'just now'
+  if (diff < 60) return `${diff}s ago`
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return `${Math.floor(diff / 86400)}d ago`
 }
 
 function preserveEmptyLines(text: string): string {
@@ -356,7 +367,26 @@ function CollapsibleContent({ children }: { children: React.ReactNode }) {
   )
 }
 
-export function MessageBubble({ entry }: Props) {
+function MetaRow({ entry, onCopy }: { entry: JsonlEntry; onCopy: () => string }) {
+  const [copied, setCopied] = useState(false)
+  const time = relativeTime(entry.timestamp)
+  const handleCopy = () => {
+    navigator.clipboard.writeText(onCopy()).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+  return (
+    <div className="flex items-center gap-2 mt-1.5 px-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+      <button onClick={handleCopy} className="flex items-center justify-center w-4 h-4 text-text-ghost hover:text-text-muted transition-colors">
+        {copied ? <Check size={11} /> : <Copy size={11} />}
+      </button>
+      {time && <span className="text-[11px] text-text-ghost font-mono">{time}</span>}
+    </div>
+  )
+}
+
+export function MessageBubble({ entry, showMeta }: Props) {
   if (entry.type === 'user') {
     const content = typeof entry.message.content === 'string'
       ? entry.message.content
@@ -367,12 +397,13 @@ export function MessageBubble({ entry }: Props) {
     const cleaned = content.replace(/^-\r?\n/, '')
     if (!cleaned.trim()) return null
     return (
-      <div className="py-0.5 my-5">
+      <div className="py-0.5 my-5 group">
         <div className="block w-full rounded-2xl rounded-tl-sm bg-surface-hover border border-border-default px-4 py-3 text-sm text-text-primary">
           <CollapsibleContent>
             <TextContent text={cleaned} plain />
           </CollapsibleContent>
         </div>
+        {showMeta && <MetaRow entry={entry} onCopy={() => cleaned} />}
       </div>
     )
   }
@@ -385,8 +416,10 @@ export function MessageBubble({ entry }: Props) {
       (b.type === 'text' && b.text) || (b.type === 'tool_use' && b.name)
     )
     if (rendered.length === 0) return null
+    const textBlocks = rendered.filter(b => b.type === 'text' && b.text)
+    const fullText = textBlocks.map(b => b.text || '').join('\n\n')
     return (
-      <div className="py-0.5 space-y-2">
+      <div className="py-0.5 space-y-2 group">
         {rendered.map((block, i) => {
           if (block.type === 'text' && block.text) {
             return (
@@ -405,6 +438,7 @@ export function MessageBubble({ entry }: Props) {
           }
           return null
         })}
+        {showMeta && textBlocks.length > 0 && <MetaRow entry={entry} onCopy={() => fullText} />}
       </div>
     )
   }
