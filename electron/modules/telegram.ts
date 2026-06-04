@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { PyreModule, ModuleContext } from './types.js'
+import type { PyreModule, ModuleContext } from './types.js'
 import { ClaudeRunner } from '../ClaudeRunner.js'
 
 interface TgSettings {

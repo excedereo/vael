@@ -1,4 +1,4 @@
-import { spawn, ChildProcess } from 'child_process'
+import { spawn } from 'child_process'
 import fs from 'fs'
 import type { StreamEvent } from '../shared/types.js'
 import { findClaudeBin } from './services/ClaudeBin.js'
