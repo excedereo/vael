@@ -595,8 +595,8 @@ export class PtySessionManager {
 
     const sess = this.spawnSession(this.pendingKey, configDir, null, model, effort, permissionMode)
 
-    const ready = await this.waitReady(sess)
-    if (!ready) console.warn('[PtySessionManager] waitReady timed out for new session')
+    // setTimeout(2000) — не заменять на waitReady(), ломает отправку (проверено)
+    await new Promise(r => setTimeout(r, 2000))
 
     sess.onEvent = onEvent
     sess.onDone = onDone
