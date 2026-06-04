@@ -539,14 +539,6 @@ export class PtySessionManager {
         sess.parser.feed(data, key)
       }
 
-      // ловим "31783 tokens" всегда — приходит после ready prompt (после onEvent уже null)
-      const plainStripped = stripAnsiLocal(data)
-      const tokMatch = plainStripped.match(/(\d{4,})\s+tokens/m)
-      if (tokMatch && !/[↓↑]/.test(tokMatch[0])) {
-        const count = parseInt(tokMatch[1], 10)
-        console.log(`[PtySession:${key}] tokens (raw): ${count}`)
-        sess.tokenCallback?.({ type: 'pty_tokens', count } as unknown as StreamEvent)
-      }
     })
 
     proc.onExit(() => {

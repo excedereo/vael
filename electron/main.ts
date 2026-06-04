@@ -1057,7 +1057,6 @@ ipcMain.handle('claude:send', async (_, sessionId: string, text: string, account
       // после result читаем usage из jsonl — там точный контекст
       if (event.type === 'result') {
         setTimeout(() => {
-          // ищем jsonl по sessionId во всех папках проектов
           const projectsDir = path.join(configDir, 'projects')
           try {
             for (const proj of fs.readdirSync(projectsDir)) {
@@ -1065,7 +1064,6 @@ ipcMain.handle('claude:send', async (_, sessionId: string, text: string, account
               if (fs.existsSync(candidate)) {
                 const count = readLastContextTokens(candidate)
                 if (count !== null) {
-                  console.log(`[main] jsonl context tokens: ${count}`)
                   mainWindow?.webContents.send('stream:event', { type: 'pty_tokens', count })
                 }
                 break
