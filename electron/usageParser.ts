@@ -1,3 +1,5 @@
+import fs from 'fs'
+
 export interface UsageData {
   sessionPct: number
   sessionResets: string
@@ -66,8 +68,6 @@ export function parseContextFromMarkdown(markdown: string): ContextData | null {
 // Читает последний assistant usage из jsonl и возвращает суммарный контекст в токенах
 export function readLastContextTokens(jsonlPath: string): number | null {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const fs = require('fs')
     const content = fs.readFileSync(jsonlPath, 'utf-8')
     const lines = content.trim().split('\n')
     // ищем снизу вверх последний assistant с usage
