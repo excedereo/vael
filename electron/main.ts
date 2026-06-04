@@ -74,8 +74,6 @@ console.log = (...args) => { originalLog(...args); sendLog('log', args) }
 console.warn = (...args) => { originalWarn(...args); sendLog('warn', args) }
 console.error = (...args) => { originalError(...args); sendLog('error', args) }
 
-ipcMain.handle('console:flush', () => { flushLogBuffer(); return { ok: true } })
-
 // ── Window ────────────────────────────────────────────────────────────────────
 
 function createWindow() {
@@ -145,8 +143,6 @@ if (!gotLock) {
 // ── App ready ─────────────────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
-  createWindow()
-
   // Restore context cache from stored metas
   for (const meta of accountManager.getAllSessionMetas()) {
     const sid = meta.sessionId as string
@@ -154,6 +150,7 @@ app.whenReady().then(() => {
     if (sid && ctx) contextCache.set(sid, ctx)
   }
 
+  // Register IPC handlers before creating window to avoid race conditions
   registerAllHandlers({
     getWindow: () => mainWindow,
     accountManager,
@@ -167,7 +164,10 @@ app.whenReady().then(() => {
     getLastConfigDir: () => lastConfigDir,
     setLastConfigDir,
     trackCacheFromEvent,
+    flushLogBuffer,
   })
+
+  createWindow()
 
   moduleRegistry.init({
     claudeRunner,
