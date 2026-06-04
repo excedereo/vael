@@ -1,4 +1,4 @@
-import { PyreModule, ModuleContext } from './modules/types.js'
+import type { PyreModule, ModuleContext } from './modules/types.js'
 import { TelegramModule } from './modules/telegram.js'
 
 export class ModuleRegistry {

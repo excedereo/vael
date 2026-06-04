@@ -5,8 +5,9 @@ import os from 'os'
 import {
   ensureMemoryDir, loadMeta, saveMeta, parseFrontmatter, relPath,
   buildIndexContent, rebuildIndexChain, rebuildAllIndexes, rebuildClaudeMdBlock,
-  lastMemoryTokens, FsEntry,
+  lastMemoryTokens,
 } from '../services/MemoryService.js'
+import type { FsEntry } from '../services/MemoryService.js'
 import { PATHS } from '../services/SettingsService.js'
 
 export function registerMemoryHandlers() {

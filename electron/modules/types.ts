@@ -20,3 +20,6 @@ export interface PyreModule {
   setSettings(settings: Record<string, unknown>): void
   isRunning(): boolean
 }
+
+// Runtime sentinel — keeps rollup from treating this as an empty module (interfaces are TS-only)
+export const _types = true
