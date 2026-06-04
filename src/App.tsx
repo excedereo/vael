@@ -4,6 +4,9 @@ import { ChevronDown } from 'lucide-react'
 import { useAppState } from './hooks/useAppState.js'
 import { useSession } from './hooks/useSession.js'
 import { useNavHistory } from './hooks/useNavHistory.js'
+import { useUpdateManager } from './hooks/useUpdateManager.js'
+import { useDependencies } from './hooks/useDependencies.js'
+import { useConsoleCapture } from './hooks/useConsoleCapture.js'
 import { Sidebar } from './components/Sidebar.js'
 import { ChatView } from './components/ChatView.js'
 import { InputBar, InputBarHandle, ModelId, EffortLevel, PermissionMode, CommandName, getMaxEffort } from './components/InputBar.js'
@@ -18,7 +21,7 @@ import { ConsoleView } from './components/ConsoleView.js'
 import { MemoryPage } from './components/MemoryPage.js'
 import { NavControls } from './components/NavControls.js'
 import { WindowControls } from './components/WindowControls.js'
-import { UpdateBanner, UpdateState } from './components/UpdateBanner.js'
+import { UpdateBanner } from './components/UpdateBanner.js'
 import { PyrePage } from './components/PyrePage.js'
 import { api } from './lib/api.js'
 import { Session } from './types/index'
@@ -52,19 +55,13 @@ export default function App() {
   const [modules, setModules] = useState<{ id: string; name: string; icon?: string; running: boolean }[]>([])
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null)
   const { push: navPush, goBack, goForward, canGoBack, canGoForward } = useNavHistory()
-  const [updateState, setUpdateState] = useState<UpdateState | null>(null)
   const [ptyAlive, setPtyAlive] = useState(false)
   const [ptyStarting, setPtyStarting] = useState(false)
   const [killModal, setKillModal] = useState(false)
-  const handleUpdateClick = useCallback(() => {
-    if (!updateState) return
-    if (updateState.status === 'available' || updateState.status === 'error') {
-      setUpdateState({ status: 'downloading', progress: 0 })
-      api.updateDownload().catch((e) => setUpdateState({ status: 'error', message: e.message }))
-    } else if (updateState.status === 'ready') {
-      api.updateInstall()
-    }
-  }, [updateState])
+
+  const { updateState, handleUpdateClick, tempCleanupBanner, tempCleanupCountdown } = useUpdateManager()
+  const { deps, installing, installLog, handleInstallClaude } = useDependencies()
+  const { consoleLogs, setConsoleLogs, devConsole } = useConsoleCapture()
 
   // Poll PTY alive status
   useEffect(() => {
@@ -92,84 +89,10 @@ export default function App() {
     })
   }, [])
 
-  useEffect(() => {
-    const u1 = api.onUpdateAvailable(v => setUpdateState({ status: 'available', version: v }))
-    const u2 = api.onUpdateProgress(p => setUpdateState({ status: 'downloading', progress: p }))
-    const u3 = api.onUpdateReady(() => setUpdateState({ status: 'ready' }))
-    const u4 = api.onUpdateError(msg => setUpdateState({ status: 'error', message: msg }))
-    return () => { u1(); u2(); u3(); u4() }
-  }, [])
-
-  const [devConsole, setDevConsole] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('vaeliDevConsole') ?? 'false') } catch { return false }
-  })
-
-  // Global console log buffer — always collecting regardless of active tab
-  const [consoleLogs, setConsoleLogs] = useState<{ level: string; text: string; ts: number; id: number }[]>([])
-  const consoleIdRef = useRef(0)
-  useEffect(() => {
-    api.consoleFlush()
-    const unsub = api.onConsoleLog((entry) => {
-      setConsoleLogs(prev => [...prev.slice(-500), { ...entry, id: consoleIdRef.current++ }])
-    })
-    return unsub
-  }, [])
-
-  // Capture renderer-side errors into ConsoleView
-  useEffect(() => {
-    const addLog = (level: string, text: string) =>
-      setConsoleLogs(prev => [...prev.slice(-500), { level, text, ts: Date.now(), id: consoleIdRef.current++ }])
-
-    const onError = (e: ErrorEvent) => {
-      addLog('error', `${e.message}${e.filename ? ` (${e.filename}:${e.lineno})` : ''}`)
-    }
-    const onUnhandled = (e: PromiseRejectionEvent) => {
-      const msg = e.reason instanceof Error ? e.reason.stack || e.reason.message : String(e.reason)
-      addLog('error', `Unhandled rejection: ${msg}`)
-    }
-
-    window.addEventListener('error', onError)
-    window.addEventListener('unhandledrejection', onUnhandled)
-    return () => {
-      window.removeEventListener('error', onError)
-      window.removeEventListener('unhandledrejection', onUnhandled)
-    }
-  }, [])
-
-  useEffect(() => {
-    const h = () => {
-      try { setDevConsole(JSON.parse(localStorage.getItem('vaeliDevConsole') ?? 'false')) } catch { setDevConsole(false) }
-    }
-    window.addEventListener('vaeli:devConsoleChanged', h)
-    return () => window.removeEventListener('vaeli:devConsoleChanged', h)
-  }, [])
 
   // Apply saved theme on startup — reads vars directly from localStorage, no IPC
   useEffect(() => { restoreSavedTheme() }, [])
 
-  // Temp cleanup banner state
-  const [tempCleanupBanner, setTempCleanupBanner] = useState<{ autoDelete: string; cancelled: boolean } | null>(null)
-  const [tempCleanupCountdown, setTempCleanupCountdown] = useState(0)
-
-  useEffect(() => {
-    const unsubStart = api.onTempCleanupStart((autoDelete) => {
-      setTempCleanupBanner({ autoDelete, cancelled: false })
-      setTempCleanupCountdown(4)
-      const iv = setInterval(() => setTempCleanupCountdown(c => {
-        if (c <= 1) { clearInterval(iv); return 0 }
-        return c - 1
-      }), 1000)
-    })
-    const unsubDone = api.onTempCleanupDone((_count) => {
-      setTempCleanupBanner(null)
-      setTempCleanupCountdown(0)
-    })
-    const unsubCancelled = api.onTempCleanupCancelled(() => {
-      setTempCleanupBanner(null)
-      setTempCleanupCountdown(0)
-    })
-    return () => { unsubStart(); unsubDone(); unsubCancelled() }
-  }, [])
 
   // Load defaults from claude settings on startup
   useEffect(() => {
@@ -179,27 +102,6 @@ export default function App() {
       const pm = settings.defaultPermissionMode
       if (pm === 'plan' || pm === 'bypassPermissions') setActivePermission(pm)
     })
-  }, [])
-  const [deps, setDeps] = useState<{ npm: string | null; claude: string | null; ready: boolean } | null>(null)
-  const [installing, setInstalling] = useState(false)
-  const [installLog, setInstallLog] = useState<string | null>(null)
-
-  useEffect(() => {
-    api.checkDeps().then(setDeps)
-  }, [])
-
-  const handleInstallClaude = useCallback(async () => {
-    setInstalling(true)
-    setInstallLog(null)
-    const result = await api.installClaude()
-    setInstalling(false)
-    if (result.ok) {
-      // Re-check after install
-      const newDeps = await api.checkDeps()
-      setDeps(newDeps)
-    } else {
-      setInstallLog(result.log || 'Неизвестная ошибка')
-    }
   }, [])
 
   const [memoryTokens, setMemoryTokens] = useState<{ auto: number; total: number } | undefined>()
