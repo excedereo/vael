@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { JsonlEntry, StreamEvent } from '../types/index'
 import { api } from '../lib/api.js'
 import { Session } from '../types/index'
+import { toolLabel } from '../lib/toolLabel.js'
 
 function getEntryText(entry: JsonlEntry): string {
   const content = entry.message?.content
@@ -55,29 +56,6 @@ export interface LiveTool {
   input?: Record<string, unknown>
 }
 
-function toolLabel(name: string, input: Record<string, unknown>): string {
-  const short = (p: unknown) => {
-    const s = String(p || '')
-    const parts = s.replace(/\\/g, '/').split('/')
-    return parts[parts.length - 1] || s
-  }
-  switch (name) {
-    case 'Read':       return `Reading ${short(input.file_path)}`
-    case 'Edit':
-    case 'Update':     return `Editing ${short(input.file_path)}`
-    case 'Write':      return `Writing ${short(input.file_path)}`
-    case 'Grep':       return `Searching "${String(input.pattern || '').slice(0, 30)}"`
-    case 'Glob':       return `Globbing ${String(input.pattern || '')}`
-    case 'Bash':       return `Running ${String(input.command || '').slice(0, 40)}`
-    case 'PowerShell': return `Running ${short(input.file_path) || String(input.command || '').slice(0, 35)}`
-    case 'WebSearch':  return `Searching "${String(input.query || '').slice(0, 30)}"`
-    case 'WebFetch':   return `Fetching ${short(input.url)}`
-    case 'Agent':      return `Spawning ${String(input.subagent_type || 'agent')}…`
-    case 'Task':
-    case 'TaskCreate': return `Creating task…`
-    default:           return name
-  }
-}
 
 export function useSession(session: Session | null) {
   const [reloadKey, setReloadKey] = useState(0)

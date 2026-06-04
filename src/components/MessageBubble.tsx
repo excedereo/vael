@@ -1,5 +1,6 @@
 import { JsonlEntry, ContentBlock } from '../types/index'
 import { cn } from '../lib/utils.js'
+import { toolHeading } from '../lib/toolLabel.js'
 import { ChevronDown, ChevronRight, Copy, Check, Bot } from 'lucide-react'
 import { useState, useMemo, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
@@ -173,23 +174,6 @@ function diffStats(name: string, input: Record<string, unknown>): { added: numbe
 }
 
 // Human-readable verb + subject
-function toolHeading(name: string, input: Record<string, unknown>): { verb: string; subject: string } {
-  const fullPath = (p: unknown) => String(p || '').replace(/\\/g, '/')
-  switch (name) {
-    case 'Read':       return { verb: 'Read',    subject: fullPath(input.file_path) }
-    case 'Edit':
-    case 'Update':     return { verb: 'Edited',  subject: fullPath(input.file_path) }
-    case 'Write':      return { verb: 'Created', subject: fullPath(input.file_path) }
-    case 'Grep':       return { verb: 'Searched', subject: `"${String(input.pattern || '').slice(0, 35)}"` }
-    case 'Glob':       return { verb: 'Globbed', subject: String(input.pattern || '') }
-    case 'Bash':       return { verb: '$',       subject: String(input.command || '').slice(0, 55) }
-    case 'PowerShell': return { verb: 'PS',      subject: String(input.command || '').slice(0, 55) }
-    case 'WebSearch':  return { verb: 'Searched web', subject: String(input.query || '').slice(0, 40) }
-    case 'WebFetch':   return { verb: 'Fetched', subject: String(input.url || '').slice(0, 50) }
-    case 'Agent':      return { verb: 'Spawned', subject: String(input.subagent_type || 'agent') }
-    default:           return { verb: name,      subject: '' }
-  }
-}
 
 // Expandable content depending on tool type
 function ToolDetail({ name, input }: { name: string; input: Record<string, unknown> }) {

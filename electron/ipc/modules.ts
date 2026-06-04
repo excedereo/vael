@@ -19,5 +19,5 @@ export function registerModuleHandlers(moduleRegistry: ModuleRegistry) {
   })
   ipcMain.handle('tg:start', () => ({ ok: moduleRegistry.start('telegram') }))
   ipcMain.handle('tg:stop', () => ({ ok: moduleRegistry.stop('telegram') }))
-  ipcMain.handle('tg:reply', (_, chatId: string, text: string) => moduleRegistry.reply?.('telegram', chatId, text))
+  ipcMain.handle('tg:reply', (_, chatId: string, text: string) => moduleRegistry.reply('telegram', chatId, text))
 }
