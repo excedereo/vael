@@ -61,6 +61,7 @@ export interface ElectronAPI {
   ptySend: (command: string) => Promise<{ ok: boolean }>
   ptyKill: () => Promise<{ ok: boolean }>
   ptySessionKill: (sessionId?: string) => Promise<{ ok: boolean }>
+  ptySessionAlive: (sessionId: string) => Promise<{ alive: boolean }>
   sessionCommand: (command: string) => Promise<{ ok: boolean; error?: string }>
 
   pickAvatar: () => Promise<string | null>

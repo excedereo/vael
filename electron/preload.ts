@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('api', {
   ptySend: (command: string) => ipcRenderer.invoke('pty:send', command),
   ptyKill: () => ipcRenderer.invoke('pty:kill'),
   ptySessionKill: (sessionId?: string) => ipcRenderer.invoke('pty:session:kill', sessionId),
+  ptySessionAlive: (sessionId: string) => ipcRenderer.invoke('pty:session:alive', sessionId),
   sessionCommand: (command: string) => ipcRenderer.invoke('session:command', command),
 
   // Event listeners

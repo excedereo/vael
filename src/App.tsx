@@ -53,6 +53,9 @@ export default function App() {
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null)
   const { push: navPush, goBack, goForward, canGoBack, canGoForward } = useNavHistory()
   const [updateState, setUpdateState] = useState<UpdateState | null>(null)
+  const [ptyAlive, setPtyAlive] = useState(false)
+  const [ptyStarting, setPtyStarting] = useState(false)
+  const [killModal, setKillModal] = useState(false)
   const handleUpdateClick = useCallback(() => {
     if (!updateState) return
     if (updateState.status === 'available' || updateState.status === 'error') {
@@ -62,6 +65,25 @@ export default function App() {
       api.updateInstall()
     }
   }, [updateState])
+
+  // Poll PTY alive status
+  useEffect(() => {
+    if (!activeSessionId) { setPtyAlive(false); setPtyStarting(false); return }
+    let cancelled = false
+    const poll = async () => {
+      if (cancelled) return
+      try {
+        const { alive } = await api.ptySessionAlive(activeSessionId)
+        if (!cancelled) {
+          setPtyAlive(alive)
+          setPtyStarting(isRunning && !alive)
+        }
+      } catch {}
+      if (!cancelled) setTimeout(poll, 1500)
+    }
+    poll()
+    return () => { cancelled = true }
+  }, [activeSessionId, isRunning])
 
   useEffect(() => {
     api.modulesList().then(list => {
@@ -607,7 +629,9 @@ export default function App() {
             onPermissionChange={setActivePermission}
             onSend={handleSend}
             onAbort={handleAbort}
-            onKillPty={() => api.ptySessionKill(activeSessionId ?? undefined)}
+            ptyAlive={ptyAlive}
+            ptyStarting={ptyStarting}
+            onKillPtyRequest={() => setKillModal(true)}
             onCommand={handleCommand}
             isLocked={isLocked}
             isRunning={isRunning}
@@ -655,6 +679,36 @@ export default function App() {
           />
         )
       })()}
+
+      {/* Kill PTY modal */}
+      {killModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setKillModal(false)} />
+          <div className="relative w-80 bg-bg-surface border border-border-default rounded-2xl p-5 shadow-2xl space-y-4">
+            <h2 className="text-base font-semibold text-text-primary">Завершить сессию?</h2>
+            <p className="text-sm text-text-secondary">PTY процесс будет остановлен. История сессии сохранится.</p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setKillModal(false)}
+                className="text-sm px-3 py-1.5 rounded-lg text-text-secondary hover:bg-surface-hover transition-colors"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={async () => {
+                  setKillModal(false)
+                  await api.ptySessionKill(activeSessionId ?? undefined)
+                  setPtyAlive(false)
+                  setPtyStarting(false)
+                }}
+                className="text-sm px-3 py-1.5 rounded-lg text-red-400 bg-red-400/10 hover:bg-red-400/20 transition-colors"
+              >
+                Завершить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

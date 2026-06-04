@@ -1,8 +1,7 @@
 ﻿import { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '../lib/utils.js'
-import { CornerDownLeft, Square, Check, Terminal, X } from 'lucide-react'
-import { UsageCircles } from './UsageCircles.js'
+import { CornerDownLeft, Square, Check, Terminal } from 'lucide-react'
 import { AttachedFiles, AttachedFile } from './AttachedFiles.js'
 import { api } from '../lib/api.js'
 
@@ -68,7 +67,9 @@ interface Props {
   onPermissionChange: (p: PermissionMode) => void
   onSend: (text: string) => void
   onAbort: () => void
-  onKillPty?: () => void
+  onKillPtyRequest?: () => void
+  ptyAlive?: boolean
+  ptyStarting?: boolean
   onCommand: (name: CommandName, fullText: string) => void
   isLocked: boolean
   isRunning: boolean
@@ -166,7 +167,9 @@ export const InputBar = forwardRef<InputBarHandle, Props>(function InputBar({
   onPermissionChange,
   onSend,
   onAbort,
-  onKillPty,
+  onKillPtyRequest,
+  ptyAlive,
+  ptyStarting,
   onCommand,
   isLocked,
   isRunning,
@@ -185,6 +188,7 @@ export const InputBar = forwardRef<InputBarHandle, Props>(function InputBar({
   const [cmdSuggestions, setCmdSuggestions] = useState<typeof COMMANDS>([])
   const [cmdSelectedIdx, setCmdSelectedIdx] = useState(0)
   const [currentText, setCurrentText] = useState('')
+  const [ptyConfirm, setPtyConfirm] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const editRef = useRef<HTMLDivElement>(null)
@@ -736,20 +740,29 @@ export const InputBar = forwardRef<InputBarHandle, Props>(function InputBar({
           </AnimatePresence>
         </div>
 
-        {/* Kill PTY button */}
-        {onKillPty && (
-          <button
-            onClick={onKillPty}
-            title="Kill PTY session"
-            className="text-sm px-2 py-1.5 rounded-lg transition-all duration-150 text-text-faint hover:text-red-400 hover:bg-red-400/10 active:bg-red-400/20 active:scale-95"
-          >
-            <X size={13} />
-          </button>
-        )}
-
-        {/* Right: Usage + Model + Effort */}
+        {/* Right: PTY status + Model + Effort */}
         <div className="flex items-center gap-1.5">
-          <UsageCircles hasSession={hasSession} />
+          {(ptyAlive || ptyStarting) && (
+            <button
+              onClick={() => {
+                if (ptyStarting) return
+                if (!ptyConfirm) { setPtyConfirm(true); return }
+                setPtyConfirm(false)
+                onKillPtyRequest?.()
+              }}
+              onBlur={() => setPtyConfirm(false)}
+              className={cn(
+                'text-sm px-2.5 py-1.5 rounded-lg transition-all duration-150',
+                ptyStarting
+                  ? 'text-text-ghost cursor-default'
+                  : ptyConfirm
+                    ? 'text-red-400/80 bg-red-400/10 hover:bg-red-400/15'
+                    : 'text-text-faint hover:text-text-secondary hover:bg-surface-hover active:bg-surface-active active:scale-95',
+              )}
+            >
+              {ptyStarting ? 'запуск сессии…' : ptyConfirm ? 'завершить сессию?' : 'сессия активна'}
+            </button>
+          )}
           <div className="relative" ref={popupRef}>
             <button
               onClick={() => setPopupOpen(v => !v)}

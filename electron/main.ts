@@ -1181,6 +1181,10 @@ ipcMain.handle('pty:session:kill', (_, sessionId?: string) => {
   return { ok: true }
 })
 
+ipcMain.handle('pty:session:alive', (_, sessionId: string) => {
+  return { alive: claudeRunner.isAlive(sessionId) }
+})
+
 ipcMain.handle('console:flush', () => {
   flushLogBuffer()
   return { ok: true }
