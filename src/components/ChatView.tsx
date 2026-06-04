@@ -379,6 +379,41 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
           {liveEntries.filter(e => !isHiddenEntry(e)).map((entry, i, arr) => {
             const prevType = i === 0 ? (pagedEntries.at(-1)?.type ?? '') : arr[i - 1].type
             const gap = i === 0 && visibleEntries.length === 0 ? '' : prevType !== entry.type ? 'mt-6' : 'mt-1'
+            if (entry.type === 'tui_usage') {
+              const d = entry.data
+              const barWidth = (pct: number) => `${Math.min(100, Math.max(0, pct))}%`
+              const barColor = (pct: number) => pct >= 90 ? '#f87171' : pct >= 70 ? '#fbbf24' : 'var(--accent)'
+              return wrap(
+                <div className="my-3 mx-1">
+                  <div className="rounded-xl border border-border-subtle bg-surface-hover px-4 py-3 flex flex-col gap-3">
+                    <div className="flex flex-col gap-1">
+                      <div className="text-[11px] text-text-muted uppercase tracking-wide font-medium">Current session</div>
+                      <div className="h-1.5 w-full rounded-full bg-surface-active overflow-hidden">
+                        <div className="h-full rounded-full transition-all" style={{ width: barWidth(d.sessionPct), background: barColor(d.sessionPct) }} />
+                      </div>
+                      <div className="flex justify-between text-[11px] text-text-ghost">
+                        <span>{d.sessionPct}% used</span>
+                        <span>Resets {d.sessionResets}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <div className="text-[11px] text-text-muted uppercase tracking-wide font-medium">Current week</div>
+                      <div className="h-1.5 w-full rounded-full bg-surface-active overflow-hidden">
+                        <div className="h-full rounded-full transition-all" style={{ width: barWidth(d.weeklyPct), background: barColor(d.weeklyPct) }} />
+                      </div>
+                      <div className="flex justify-between text-[11px] text-text-ghost">
+                        <span>{d.weeklyPct}% used</span>
+                        <span>Resets {d.weeklyResets}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>,
+                i === arr.length - 1,
+                gap,
+                true,
+                true,
+              )
+            }
             return wrap(
               <MessageBubble entry={entry} />,
               i === arr.length - 1,
