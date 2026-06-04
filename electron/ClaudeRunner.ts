@@ -1,55 +1,10 @@
-import { spawn, ChildProcess, execSync } from 'child_process'
-import os from 'os'
+import { spawn, ChildProcess } from 'child_process'
 import fs from 'fs'
-import path from 'path'
 import type { StreamEvent } from '../shared/types.js'
+import { findClaudeBin } from './services/ClaudeBin.js'
 
 export type StreamCallback = (event: StreamEvent) => void
 export type DoneCallback = (exitCode: number | null) => void
-
-function findClaudeBin(): string {
-  // 1. Explicit env var
-  if (process.env.CLAUDE_BIN && fs.existsSync(process.env.CLAUDE_BIN)) {
-    return process.env.CLAUDE_BIN
-  }
-  // 2. Search via where/which — try both claude.cmd and claude
-  if (process.platform === 'win32') {
-    for (const name of ['claude.cmd', 'claude']) {
-      try {
-        const found = execSync(`where ${name}`, {
-          stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf-8'
-        }).trim().split('\n')[0].trim()
-        if (found && fs.existsSync(found)) return found
-      } catch { /* not in PATH */ }
-    }
-  } else {
-    try {
-      const found = execSync('which claude', {
-        stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf-8'
-      }).trim().split('\n')[0].trim()
-      if (found && fs.existsSync(found)) return found
-    } catch { /* not in PATH */ }
-  }
-  // 3. Standard npm global paths + winget paths
-  const home = os.homedir()
-  const candidates = process.platform === 'win32'
-    ? [
-        path.join(home, 'AppData', 'Roaming', 'npm', 'claude.cmd'),
-        path.join(home, 'AppData', 'Local', 'Programs', 'claude', 'claude.exe'),
-        'C:\\Program Files\\claude\\claude.exe',
-        'C:\\Program Files\\nodejs\\claude.cmd',
-      ]
-    : [
-        path.join(home, '.npm-global', 'bin', 'claude'),
-        '/usr/local/bin/claude',
-        '/usr/bin/claude',
-      ]
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p
-  }
-  // 4. Fallback — let PATH figure it out
-  return process.platform === 'win32' ? 'claude.cmd' : 'claude'
-}
 
 const CLAUDE_BIN = findClaudeBin()
 console.log('[ClaudeRunner] using claude bin:', CLAUDE_BIN)

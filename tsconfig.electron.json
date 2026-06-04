@@ -9,8 +9,8 @@
     "allowSyntheticDefaultImports": true,
     "strict": false,
     "outDir": "dist-electron",
-    "rootDir": "electron",
+    "rootDirs": ["electron", "shared"],
     "types": ["node"]
   },
-  "include": ["electron"]
+  "include": ["electron", "shared"]
 }
