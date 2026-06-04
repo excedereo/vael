@@ -63,6 +63,28 @@ export function parseContextFromMarkdown(markdown: string): ContextData | null {
   }
 }
 
+// Читает последний assistant usage из jsonl и возвращает суммарный контекст в токенах
+export function readLastContextTokens(jsonlPath: string): number | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const fs = require('fs')
+    const content = fs.readFileSync(jsonlPath, 'utf-8')
+    const lines = content.trim().split('\n')
+    // ищем снизу вверх последний assistant с usage
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const obj = JSON.parse(lines[i])
+        if (obj.type === 'assistant' && obj.message?.usage) {
+          const u = obj.message.usage
+          const total = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
+          if (total > 0) return total
+        }
+      } catch {}
+    }
+  } catch {}
+  return null
+}
+
 export function parseContext(raw: string): ContextData | null {
   const text = stripAnsi(raw)
     .replace(/\r/g, '')

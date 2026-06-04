@@ -87,7 +87,7 @@ function isSpinnerLine(line: string): boolean {
 }
 
 class PtyParser {
-  private term = new XTerminal({ cols: COLS, rows: ROWS, allowProposedApi: true })
+  private term = new XTerminal({ cols: COLS, rows: ROWS, allowProposedApi: true, scrollback: 2000 })
   private prevScreen: string[] = []
   private started = false
   private seenOurEcho = false
@@ -109,12 +109,13 @@ class PtyParser {
   constructor(private onEvent: (e: StreamEvent) => void) {}
 
   private readScreen(): string[] {
+    const buf = this.term.buffer.active
+    const totalLines = buf.baseY + ROWS  // baseY = количество строк в скроллбеке
     const lines: string[] = []
-    for (let i = 0; i < ROWS; i++) {
-      const line = this.term.buffer.active.getLine(i)
+    for (let i = 0; i < totalLines; i++) {
+      const line = buf.getLine(i)
       if (line) {
-        const text = line.translateToString(false)
-        lines.push(text)
+        lines.push(line.translateToString(false))
       }
     }
     return lines
@@ -365,6 +366,26 @@ class PtyParser {
     }
   }
 
+  scanTokens(): number | null {
+    const screen = this.readScreen()
+    // ищем снизу вверх — токены близко к концу буфера
+    for (let i = screen.length - 1; i >= 0; i--) {
+      const line = screen[i]
+      // стандартный паттерн "34325 tokens"
+      const m = line.match(/(\d{4,})\s+tokens/)
+      if (m && !/[↓↑]/.test(line)) return parseInt(m[1], 10)
+      // TUI может рисовать только число без слова "tokens" в правой части экрана (pos > 80)
+      // ищем 4-5 значное число в правой половине строки
+      const right = line.slice(80)
+      const rm = right.match(/(\d{4,5})\s*$/)
+      if (rm && !/[↓↑]/.test(line)) {
+        const n = parseInt(rm[1], 10)
+        if (n > 10000) return n  // явно токены контекста
+      }
+    }
+    return null
+  }
+
   forceFinalize(sessionKey: string): void {
     if (!this.started) return
     console.log(`[PtyParser:${sessionKey}] forceFinalize, text: "${this.responseText.slice(0, 80)}"`)
@@ -451,10 +472,9 @@ export class PtySessionManager {
         sess.onEvent?.(event)
       }
       if (event.type === 'result') {
-        // держим busy ещё 600мс чтобы поймать "31783 tokens" который приходит после ready
         const done = sess.onDone
-        const onEv = sess.onEvent
         sess.onDone = null
+        // через 600мс завершаем сессию
         setTimeout(() => {
           const s = this.sessions.get(key)
           if (s) { s.busy = false; s.onEvent = null }
