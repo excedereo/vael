@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename)
 import { AccountManager } from './AccountManager.js'
 import { PtySessionManager } from './PtySessionManager.js'
 import { PtyManager } from './PtyManager.js'
-import { parseUsage, parseContextFromMarkdown, readLastContextTokens } from './usageParser.js'
+import { parseUsage, parseContextFromMarkdown, readLastContextTokens, readLastAssistantMessage } from './usageParser.js'
 import type { ContextData } from './usageParser.js'
 import { ModuleRegistry } from './ModuleRegistry.js'
 
@@ -1058,19 +1058,26 @@ ipcMain.handle('claude:send', async (_, sessionId: string, text: string, account
       if (event.type === 'result') {
         setTimeout(() => {
           const projectsDir = path.join(configDir, 'projects')
+          console.log('[main] looking for jsonl in:', projectsDir, 'sessionId:', sessionId)
           try {
             for (const proj of fs.readdirSync(projectsDir)) {
               const candidate = path.join(projectsDir, proj, `${sessionId}.jsonl`)
               if (fs.existsSync(candidate)) {
+                console.log('[main] found jsonl:', candidate)
                 const count = readLastContextTokens(candidate)
                 if (count !== null) {
                   mainWindow?.webContents.send('stream:event', { type: 'pty_tokens', count })
                 }
+                const msg = readLastAssistantMessage(candidate)
+                console.log('[main] pty_final_message:', msg ? 'found' : 'null')
+                if (msg !== null) {
+                  mainWindow?.webContents.send('stream:event', { type: 'pty_final_message', entry: msg })
+                }
                 break
               }
             }
-          } catch {}
-        }, 800)
+          } catch (e) { console.log('[main] jsonl error:', e) }
+        }, 300)
       }
     },
     (code) => {

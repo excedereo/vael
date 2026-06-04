@@ -19,6 +19,7 @@ interface Props {
   streamStats?: { seconds: number; tokens: number | null; exact: boolean } | null
   onScrollStateChange?: (atBottom: boolean) => void
   scrollTrigger?: number
+  finalEntryKey?: string | null
 }
 
 type AvatarState = 'default' | 'punching' | 'thinking' | 'compacting'
@@ -26,12 +27,13 @@ type AvatarState = 'default' | 'punching' | 'thinking' | 'compacting'
 const ICON_W = 80
 const ICON_LEFT = 8
 
-function LastWrapper({ children, live, animate, extraClass, src }: {
+function LastWrapper({ children, live, animate, extraClass, src, shimmer }: {
   children: React.ReactNode
   live: boolean
   animate: boolean
   extraClass?: string
   src: string | null
+  shimmer?: boolean
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const [tall, setTall] = useState(false)
@@ -61,6 +63,14 @@ function LastWrapper({ children, live, animate, extraClass, src }: {
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4, ease: 'easeOut' }}>
           {children}
         </motion.div>
+      ) : shimmer ? (
+        <motion.div
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: 'easeOut' }}
+        >
+          {children}
+        </motion.div>
       ) : children}
     </div>
   )
@@ -68,7 +78,7 @@ function LastWrapper({ children, live, animate, extraClass, src }: {
 
 const PAGE_SIZE = 100
 
-export function ChatView({ session, entries, liveEntries, isStreaming, isThinking, isCompacting, contentPadding = 104, liveTool, streamStats, onScrollStateChange, scrollTrigger }: Props) {
+export function ChatView({ session, entries, liveEntries, isStreaming, isThinking, isCompacting, contentPadding = 104, liveTool, streamStats, onScrollStateChange, scrollTrigger, finalEntryKey }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [visibleLimit, setVisibleLimit] = useState(PAGE_SIZE)
 
@@ -254,9 +264,9 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
     return 'mt-1'
   }
 
-  const wrap = (node: React.ReactNode, isLast: boolean, extraClass?: string, animate = false, live = false, srcOverride?: string | null) => {
+  const wrap = (node: React.ReactNode, isLast: boolean, extraClass?: string, animate = false, live = false, srcOverride?: string | null, shimmer = false) => {
     if (isLast) return (
-      <LastWrapper key="last" live={live} animate={animate} extraClass={extraClass} src={srcOverride !== undefined ? srcOverride : src}>
+      <LastWrapper key="last" live={live} animate={animate} extraClass={extraClass} src={srcOverride !== undefined ? srcOverride : src} shimmer={shimmer}>
         {node}
       </LastWrapper>
     )
@@ -319,6 +329,7 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
                 </div>
               )
             }
+            const isShimmer = !!(finalEntryKey && (entry as JsonlEntry & { _animKey?: string })._animKey === finalEntryKey)
             return wrap(
               <MessageBubble entry={entry} />,
               isLastCommitted(i),
@@ -326,6 +337,7 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
               i === visibleEntries.length - 1 && entry.type === 'user',
               false,
               entry.type === 'error_bubble' ? errorSrc : undefined,
+              isShimmer,
             )
           })}
 

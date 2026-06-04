@@ -100,6 +100,7 @@ class PtyParser {
   private diffRemoved: string[] = []
   private diffAdded: string[] = []
   private streamingTextEmitted = false
+  private pendingText: string | null = null  // буферизированный текст — не знаем ещё финальный или нет
   // Дедупликация: не эмитим одну и ту же строку дважды
   private _lastTokenCount = 0
   private emittedTools = new Set<string>()
@@ -219,13 +220,8 @@ class PtyParser {
       // Если стриминг текста был — он уже в liveEntries через streaming_text events.
       // Если нет (например только tool calls без текста) — шлём пустой ответ.
       // result коммитит всё из liveEntries.
-      if (this.responseText && !this.streamingTextEmitted) {
-        // fallback: не стримили, шлём целиком
-        this.onEvent({
-          type: 'assistant',
-          message: { role: 'assistant', content: [{ type: 'text', text: this.responseText }] },
-        } as StreamEvent)
-      }
+      // pendingText при READY — финальный ответ, дропаем (придёт из jsonl)
+      this.pendingText = null
       this.onEvent({ type: 'result', subtype: 'success' } as StreamEvent)
       return
     }
@@ -297,8 +293,14 @@ class PtyParser {
       const toolKey = toolMatch[1] + '(' + toolMatch[2].slice(0, 40)
       if (this.emittedTools.has(toolKey)) return
       this.emittedTools.add(toolKey)
-      // если был streaming text до tool call — коммитим его (фиксируем в liveEntries)
-      if (this.streamingTextEmitted && this.responseText) {
+      // если был pendingText до tool call — промежуточный, эмитим
+      if (this.pendingText) {
+        this.onEvent({ type: 'assistant_streaming_text', text: this.pendingText } as StreamEvent)
+        this.onEvent({ type: 'commit_streaming_text' } as unknown as StreamEvent)
+        this.pendingText = null
+        this.responseText = ''
+        this.streamingTextEmitted = false
+      } else if (this.streamingTextEmitted && this.responseText) {
         this.onEvent({ type: 'commit_streaming_text' } as unknown as StreamEvent)
         this.responseText = ''
         this.streamingTextEmitted = false
@@ -336,33 +338,28 @@ class PtyParser {
       if (/^\w[\w.]*$/.test(afterBullet)) return  // только одно слово — это имя тула без скобок
       const content = line.slice(1).trim()
       if (!content) return
-      // дедупликация текста — не эмитим один и тот же текст дважды
+      // буферизируем — не знаем ещё финальный или промежуточный
       if (this.emittedTexts.has(content)) return
       this.emittedTexts.add(content)
-      // если раньше был tool call — это новый ответ после инструментов
       this.responseText = content
+      this.pendingText = content
       this.streamingTextEmitted = false
-      // стримим текст в реальном времени через streaming_text event
-      this.onEvent({ type: 'assistant_streaming_text', text: content } as StreamEvent)
-      this.streamingTextEmitted = true
-      console.log(`[PtyParser:${sessionKey}] streaming_text: "${content.slice(0, 60)}"`)
+      console.log(`[PtyParser:${sessionKey}] pending_text: "${content.slice(0, 60)}"`)
       return
     }
 
-    // продолжение текста ответа (строки без ●, после того как responseText начался)
-    if (this.responseText && this.streamingTextEmitted) {
-      // не берём служебное
+    // продолжение текста ответа (строки без ●, после того как pendingText начался)
+    if (this.pendingText) {
       if (line.startsWith('❯') || line.startsWith('>') || line.startsWith('⎿')) return
-      if (line.startsWith('●')) return  // новый bullet — не continuation
+      if (line.startsWith('●')) return
       if (isSpinnerLine(line)) return
       if (READY_RE.test(line)) return
-      if (/^\d[\d\s]*tokens?/.test(line)) return  // "29666 tokens" — счётчик контекста
-      if (/^\d+$/.test(line.trim())) return        // голое число — перехвачено выше или строка файла
+      if (/^\d[\d\s]*tokens?/.test(line)) return
+      if (/^\d+$/.test(line.trim())) return
       if (/^esc to interrupt/.test(line)) return
       if (/^globalVersion/.test(line)) return
-      // это continuation строка
-      this.responseText += '\n' + line
-      this.onEvent({ type: 'assistant_streaming_text', text: this.responseText } as StreamEvent)
+      this.pendingText += '\n' + line
+      this.responseText = this.pendingText
     }
   }
 
@@ -412,6 +409,7 @@ class PtyParser {
     this.diffRemoved = []
     this.diffAdded = []
     this.streamingTextEmitted = false
+    this.pendingText = null
     this._lastTokenCount = 0
     this.emittedTools.clear()
     this.emittedResults.clear()
