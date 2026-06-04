@@ -333,6 +333,9 @@ export function useSession(session: Session | null) {
         liveEntriesRef.current = []
         setLiveEntries([])
         pendingResultRef.current = false
+        setIsStreaming(false)
+        setIsThinking(false)
+        if (timerRef2.current) { clearInterval(timerRef2.current); timerRef2.current = null }
         setFinalEntryKey(key)
         setTimeout(() => setFinalEntryKey(null), 1000)
         return
@@ -466,12 +469,9 @@ export function useSession(session: Session | null) {
         const r2 = event as unknown as { usage?: { output_tokens?: number } }
         const isPty = !r2.usage?.output_tokens
         if (isPty) {
-          // Don't clear liveEntries yet — pty_final_message will do it
+          // Don't clear liveEntries or streaming state yet — pty_final_message will do it
           pendingToolsRef.current = []
           setLiveTool(null)
-          setIsStreaming(false)
-          setIsThinking(false)
-          if (timerRef2.current) { clearInterval(timerRef2.current); timerRef2.current = null }
           // Mark that we're waiting for pty_final_message
           pendingResultRef.current = true
           return

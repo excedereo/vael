@@ -330,8 +330,9 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
               )
             }
             const isShimmer = !!(finalEntryKey && (entry as JsonlEntry & { _animKey?: string })._animKey === finalEntryKey)
+            const showMeta = entry.type === 'user' || (entry.type === 'assistant' && isLastCommitted(i))
             return wrap(
-              <MessageBubble entry={entry} />,
+              <MessageBubble entry={entry} showMeta={showMeta} />,
               isLastCommitted(i),
               gapBefore(i, visibleEntries),
               i === visibleEntries.length - 1 && entry.type === 'user',
@@ -385,6 +386,9 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
                     }}
                   />
                 ))}
+                {streamStats && (
+                  <span className="text-[12px] text-text-faint font-mono ml-1">{streamStats.seconds}s</span>
+                )}
               </div>
             </div>,
             true, 'mt-6', true, true,
@@ -400,8 +404,8 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
             true, 'mt-6', true, true,
           )}
 
-          {/* Stream stats: timer + token count */}
-          {streamStats && (
+          {/* Stream stats: token count after done */}
+          {streamStats && (streamStats.tokens !== null || streamStats.inputTokens !== null || streamStats.cacheRead != null || streamStats.usagePct != null || streamStats.contextPct != null) && (
             <div className="flex items-center gap-1.5 mt-2 px-0.5">
               <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'color-mix(in srgb, var(--accent) 40%, transparent)' }} />
               <span className="text-[12px] text-text-faint font-mono">
