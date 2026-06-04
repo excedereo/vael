@@ -110,6 +110,12 @@ export class TelegramModule implements PyreModule {
     return this.pollInterval !== null
   }
 
+  async sendReply(chatId: string, text: string) {
+    const s = loadSettings()
+    if (!s.botToken) return
+    await sendMessage(s.botToken, chatId, text)
+  }
+
   private startPolling() {
     if (this.pollInterval) return
     console.log('[TG] polling started')

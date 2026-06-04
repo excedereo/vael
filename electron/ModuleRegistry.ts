@@ -1,6 +1,10 @@
 import type { PyreModule, ModuleContext } from './modules/types.js'
 import { TelegramModule } from './modules/telegram.js'
 
+interface ReplyableModule extends PyreModule {
+  sendReply(chatId: string, text: string): Promise<void>
+}
+
 export class ModuleRegistry {
   private modules: Map<string, PyreModule> = new Map()
   private ctx: ModuleContext | null = null
@@ -58,5 +62,11 @@ export class ModuleRegistry {
   stop(id: string) {
     this.modules.get(id)?.destroy()
     return true
+  }
+
+  reply(moduleId: string, chatId: string, text: string) {
+    const mod = this.modules.get(moduleId)
+    if (mod && 'sendReply' in mod) return (mod as ReplyableModule).sendReply(chatId, text)
+    return Promise.resolve()
   }
 }
