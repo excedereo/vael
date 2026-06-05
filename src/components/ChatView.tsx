@@ -316,14 +316,28 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
             if (entry.type === 'tui_usage') {
               const d = entry.data
               const barWidth = (pct: number) => `${Math.min(100, Math.max(0, pct))}%`
-              const barColor = (pct: number) => pct >= 90 ? '#f87171' : pct >= 70 ? '#fbbf24' : 'var(--accent)'
+              const barColor = (pct: number) =>
+                pct <= 10 ? '#FAFAFA'
+                : pct <= 20 ? '#9dc4df'
+                : pct <= 30 ? '#61ab99'
+                : pct <= 40 ? '#6ead44'
+                : pct <= 50 ? '#e6e536'
+                : pct <= 60 ? '#e9cb2f'
+                : pct <= 70 ? '#c8662a'
+                : pct <= 80 ? '#ff100f'
+                : pct <= 90 ? '#cf0f0f'
+                : '#cf0f0f'
+              const barStyle = (pct: number): React.CSSProperties => pct > 90
+                ? { width: barWidth(pct), background: '#cf0f0f', animation: 'usage-pulse 1s ease-in-out infinite' }
+                : { width: barWidth(pct), background: barColor(pct) }
               return (
                 <div key={`tui-usage-${i}`} className="my-3 mx-1">
+                  <style>{`@keyframes usage-pulse { 0%,100% { background:#9e0f0f } 50% { background:#cf0f0f } }`}</style>
                   <div className="rounded-xl border border-border-subtle bg-surface-hover px-4 py-3 flex flex-col gap-3">
                     <div className="flex flex-col gap-1">
                       <div className="text-[11px] text-text-muted uppercase tracking-wide font-medium">Current session</div>
                       <div className="h-1.5 w-full rounded-full bg-surface-active overflow-hidden">
-                        <div className="h-full rounded-full transition-all" style={{ width: barWidth(d.sessionPct), background: barColor(d.sessionPct) }} />
+                        <div className="h-full rounded-full transition-all" style={barStyle(d.sessionPct)} />
                       </div>
                       <div className="flex justify-between text-[11px] text-text-ghost">
                         <span>{d.sessionPct}% used</span>
@@ -333,12 +347,11 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
                     <div className="flex flex-col gap-1">
                       <div className="text-[11px] text-text-muted uppercase tracking-wide font-medium">Current week</div>
                       <div className="h-1.5 w-full rounded-full bg-surface-active overflow-hidden">
-                        <div className="h-full rounded-full transition-all" style={{ width: barWidth(d.weeklyPct), background: barColor(d.weeklyPct) }} />
+                        <div className="h-full rounded-full transition-all" style={barStyle(d.weeklyPct)} />
                       </div>
                       <div className="flex justify-between text-[11px] text-text-ghost">
                         <span>{d.weeklyPct}% used</span>
                         <span>Resets {d.weeklyResets}</span>
-
                       </div>
                     </div>
                   </div>
@@ -382,14 +395,27 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
             if (entry.type === 'tui_usage') {
               const d = entry.data
               const barWidth = (pct: number) => `${Math.min(100, Math.max(0, pct))}%`
-              const barColor = (pct: number) => pct >= 90 ? '#f87171' : pct >= 70 ? '#fbbf24' : 'var(--accent)'
+              const barColor = (pct: number) =>
+                pct <= 10 ? '#FAFAFA'
+                : pct <= 20 ? '#9dc4df'
+                : pct <= 30 ? '#61ab99'
+                : pct <= 40 ? '#6ead44'
+                : pct <= 50 ? '#e6e536'
+                : pct <= 60 ? '#e9cb2f'
+                : pct <= 70 ? '#c8662a'
+                : pct <= 80 ? '#ff100f'
+                : pct <= 90 ? '#cf0f0f'
+                : '#cf0f0f'
+              const barStyle = (pct: number): React.CSSProperties => pct > 90
+                ? { width: barWidth(pct), background: '#cf0f0f', animation: 'usage-pulse 1s ease-in-out infinite' }
+                : { width: barWidth(pct), background: barColor(pct) }
               return wrap(
                 <div className="my-3 mx-1">
                   <div className="rounded-xl border border-border-subtle bg-surface-hover px-4 py-3 flex flex-col gap-3">
                     <div className="flex flex-col gap-1">
                       <div className="text-[11px] text-text-muted uppercase tracking-wide font-medium">Current session</div>
                       <div className="h-1.5 w-full rounded-full bg-surface-active overflow-hidden">
-                        <div className="h-full rounded-full transition-all" style={{ width: barWidth(d.sessionPct), background: barColor(d.sessionPct) }} />
+                        <div className="h-full rounded-full transition-all" style={barStyle(d.sessionPct)} />
                       </div>
                       <div className="flex justify-between text-[11px] text-text-ghost">
                         <span>{d.sessionPct}% used</span>
@@ -399,7 +425,7 @@ export function ChatView({ session, entries, liveEntries, isStreaming, isThinkin
                     <div className="flex flex-col gap-1">
                       <div className="text-[11px] text-text-muted uppercase tracking-wide font-medium">Current week</div>
                       <div className="h-1.5 w-full rounded-full bg-surface-active overflow-hidden">
-                        <div className="h-full rounded-full transition-all" style={{ width: barWidth(d.weeklyPct), background: barColor(d.weeklyPct) }} />
+                        <div className="h-full rounded-full transition-all" style={barStyle(d.weeklyPct)} />
                       </div>
                       <div className="flex justify-between text-[11px] text-text-ghost">
                         <span>{d.weeklyPct}% used</span>

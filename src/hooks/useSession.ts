@@ -64,9 +64,9 @@ function parseResetsTime(raw: string): string {
 
 function parseTuiUsage(text: string): UsageData | null {
   const sessionPctMatch = text.match(/Current session[\s\S]*?(\d+)%\s*used/)
-  const sessionResetsMatch = text.match(/Current session[\s\S]*?\d+%\s*used\s*\nResets\s+([^\n]+)/)
+  const sessionResetsMatch = text.match(/Current session[\s\S]*?\d+%\s*used[\s\S]*?Resets\s+([^\n]+)/)
   const weeklyPctMatch = text.match(/Current week[\s\S]*?(\d+)%\s*used/)
-  const weeklyResetsMatch = text.match(/Current week[\s\S]*?\d+%\s*used\s*\nResets\s+([^\n]+)/)
+  const weeklyResetsMatch = text.match(/Current week[\s\S]*?\d+%\s*used[\s\S]*?Resets\s+([^\n]+)/)
   if (!sessionPctMatch || !weeklyPctMatch) return null
   return {
     sessionPct: parseInt(sessionPctMatch[1], 10),
