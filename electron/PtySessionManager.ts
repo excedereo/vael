@@ -69,9 +69,9 @@ class PtyParser {
   private emittedTexts = new Set<string>()
   private tuiScreenTimer: ReturnType<typeof setTimeout> | null = null
   private inAltScreen = false
-  inAltScreenCommand = false  // флаг: TUI открылся во время busy (реальная команда)
+  inAltScreenCommand = false
   private silenceTimer: ReturnType<typeof setTimeout> | null = null
-  isSlashCommand = false  // /usage, /context и т.д. — снимаем экран по таймеру тишины
+  isSlashCommand = false
   onSendRaw: ((data: string) => void) | null = null
 
   constructor(private onEvent: (e: StreamEvent) => void) {}
@@ -94,8 +94,8 @@ class PtyParser {
       if (this.silenceTimer) clearTimeout(this.silenceTimer)
       this.silenceTimer = setTimeout(() => {
         this.silenceTimer = null
-        this._captureScreenAfterSilence(sessionKey)
-      }, 900)
+        this._pollSlashScreen(sessionKey, 0)
+      }, 300)
     }
     if (data.includes('\x1b[?1049h')) {
 
@@ -120,27 +120,28 @@ class PtyParser {
     this.term.write(data, () => this._afterWrite(sessionKey))
   }
 
-  private _captureScreenAfterSilence(sessionKey: string): void {
-    // Снимаем текущий экран xterm после тишины — для /usage, /context и т.д.
+  private slashScreenCapture: string | null = null  // снимок экрана с нужными данными
+
+  private _checkAndCacheScreen(): void {
     const screen = this.readScreen()
-    const lines = screen.map(l => l.trimEnd()).filter(l => l.trim())
-    const filtered = lines.filter(l => {
-      if (l.match(/^[❯>]\s/)) return false
-      if (l.match(/^\? for shortcuts/)) return false
-      if (isSpinnerLine(l)) return false
-      if (l.match(/^●\s/)) return false
-      if (l.match(/^⎿\s/)) return false
-      return true
-    })
-    // Убираем пустые края
-    while (filtered.length && !filtered[0].trim()) filtered.shift()
-    while (filtered.length && !filtered[filtered.length - 1].trim()) filtered.pop()
-    const text = filtered.join('\n')
-    if (text.trim()) {
-      this.onEvent({ type: 'pty_tui_screen', text } as unknown as StreamEvent)
+    const text = screen.map(l => l.trimEnd()).filter(l => l.trim()).join('\n')
+    if (/Current session[\s\S]*?\d+%\s*used/.test(text)) {
+      this.slashScreenCapture = text
     }
-    this.onEvent({ type: 'result', subtype: 'success', isTui: true } as unknown as StreamEvent)
   }
+
+  private _pollSlashScreen(sessionKey: string, attempt: number): void {
+    if (this.slashScreenCapture) {
+      this.onEvent({ type: 'pty_tui_screen', text: this.slashScreenCapture } as unknown as StreamEvent)
+      this.onEvent({ type: 'result', subtype: 'success', isTui: true } as unknown as StreamEvent)
+    } else if (attempt < 8) {
+      setTimeout(() => this._pollSlashScreen(sessionKey, attempt + 1), 200)
+    } else {
+      // Данных так и нет — просто финализируем
+      this.onEvent({ type: 'result', subtype: 'success', isTui: true } as unknown as StreamEvent)
+    }
+  }
+
 
   private _captureTuiScreen(sessionKey: string): void {
     // Alternate screen (\x1b[?1049h) использует term.buffer.alternate, не .active
@@ -168,7 +169,9 @@ class PtyParser {
   }
 
   private _afterWrite(sessionKey: string): void {
+    if (this.isSlashCommand) this._checkAndCacheScreen()
     const screen = this.readScreen()
+
 
     // Находим последнее вхождение echo нашего сообщения на экране
     // Всё ниже него — новый контент, всё выше — история
@@ -459,6 +462,7 @@ class PtyParser {
     if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null }
     this.inAltScreen = false
     this.inAltScreenCommand = false
+    this.slashScreenCapture = null
     this.isSlashCommand = sentMessage.trimStart().startsWith('/')
   }
 }
