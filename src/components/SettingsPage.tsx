@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ArrowLeft, ExternalLink, Trash2, HardDrive, Loader2, X, Plus } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Trash2, HardDrive, Loader2, X, Plus, FolderOpen } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { cn } from '../lib/utils.js'
 import { WindowControls } from './WindowControls.js'
@@ -367,11 +367,17 @@ export function SettingsPage({ onBack }: Props) {
   const [tempClearCountdown, setTempClearCountdown] = useState(0)
   const tempClearCancelRef = useRef<boolean>(false)
 
+  const [attachDirSize, setAttachDirSize] = useState<{ bytes: number; count: number } | null>(null)
+  const [attachAutoDelete, setAttachAutoDelete] = useState<string>('never')
+  const [attachClearing, setAttachClearing] = useState(false)
+
   useEffect(() => {
     api.tempGetSettings().then(s => {
       if (s.tempAutoDelete) setTempAutoDelete(s.tempAutoDelete as string)
+      if (s.attachAutoDelete) setAttachAutoDelete(s.attachAutoDelete as string)
     })
     api.tempGetDirSize().then(s => setTempDirSize(s))
+    api.attachmentsGetDirSize().then(s => setAttachDirSize(s))
   }, [])
 
   const handleTempClear = async () => {
@@ -491,73 +497,65 @@ export function SettingsPage({ onBack }: Props) {
             </>)}
 
             {tab === 'system' && (<>
-              <Section label="Временные файлы">
+              <Section label="Вложения">
                 <div className="flex items-center justify-between px-4 py-3">
                   <div className="flex items-center gap-2">
                     <HardDrive size={13} className="text-text-faint" />
                     <div>
-                      <div className="text-[14px] text-text-secondary">Папка temp</div>
+                      <div className="text-[14px] text-text-secondary">Папка attachments</div>
                       <div className="text-[12px] text-text-faint mt-0.5">
-                        {tempDirSize
-                          ? `${tempDirSize.count} файлов · ${(tempDirSize.bytes / 1024).toFixed(1)} KB`
+                        {attachDirSize
+                          ? `${attachDirSize.count} файлов · ${(attachDirSize.bytes / 1024).toFixed(1)} KB`
                           : 'Загрузка...'}
                       </div>
                     </div>
                   </div>
-                  <button
-                    onClick={handleTempClear}
-                    disabled={tempClearing}
-                    className={cn(
-                      'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] border transition-colors',
-                      tempClearing
-                        ? 'border-border-subtle text-text-ghost cursor-not-allowed'
-                        : 'border-border-default text-text-muted hover:text-red-400 hover:border-red-400/30',
-                    )}
-                  >
-                    {tempClearing ? (
-                      <>
-                        <Loader2 size={11} className="animate-spin" />
-                        Отмена? ({tempClearCountdown}с)
-                      </>
-                    ) : (
-                      <>
-                        <Trash2 size={11} />
-                        Очистить
-                      </>
-                    )}
-                  </button>
-                </div>
-                {tempClearing && (
-                  <div className="px-4 pb-3">
+                  <div className="flex items-center gap-2">
                     <button
-                      onClick={() => { tempClearCancelRef.current = true }}
-                      className="text-[12px] text-text-faint hover:text-text-secondary transition-colors"
+                      onClick={() => api.attachmentsOpenFolder()}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] border border-border-default text-text-muted hover:text-text-primary hover:border-border-strong transition-colors"
                     >
-                      Отменить очистку
+                      <FolderOpen size={11} />
+                      Открыть
+                    </button>
+                    <button
+                      onClick={async () => {
+                        setAttachClearing(true)
+                        await api.attachmentsClear()
+                        const s = await api.attachmentsGetDirSize()
+                        setAttachDirSize(s)
+                        setAttachClearing(false)
+                      }}
+                      disabled={attachClearing}
+                      className={cn(
+                        'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] border transition-colors',
+                        attachClearing
+                          ? 'border-border-subtle text-text-ghost cursor-not-allowed'
+                          : 'border-border-default text-text-muted hover:text-red-400 hover:border-red-400/30',
+                      )}
+                    >
+                      {attachClearing ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
+                      Очистить
                     </button>
                   </div>
-                )}
+                </div>
                 <div className="flex items-center justify-between px-4 py-3 border-t border-border-subtle">
                   <div>
-                    <div className="text-[14px] text-text-secondary">Авто-удаление при запуске</div>
-                    <div className="text-[12px] text-text-faint mt-0.5">Удалять файлы старше указанного времени</div>
+                    <div className="text-[14px] text-text-secondary">Авто-удаление</div>
+                    <div className="text-[12px] text-text-faint mt-0.5">Удалять вложения старше указанного времени</div>
                   </div>
                   <Dropdown
-                    value={tempAutoDelete}
+                    value={attachAutoDelete}
                     options={[
-                      { value: '3h',    label: '3 часа' },
-                      { value: '6h',    label: '6 часов' },
-                      { value: '12h',   label: '12 часов' },
-                      { value: '1d',    label: '1 день' },
-                      { value: '3d',    label: '3 дня' },
                       { value: '7d',    label: '7 дней' },
                       { value: '14d',   label: '14 дней' },
                       { value: '1mo',   label: '1 месяц' },
+                      { value: '3mo',   label: '3 месяца' },
                       { value: 'never', label: 'Никогда' },
                     ]}
                     onChange={async v => {
-                      setTempAutoDelete(v)
-                      await api.tempSaveSettings({ tempAutoDelete: v })
+                      setAttachAutoDelete(v)
+                      await api.tempSaveSettings({ attachAutoDelete: v })
                     }}
                   />
                 </div>

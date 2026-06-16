@@ -23,6 +23,7 @@ export function PtyTerminalView({ termId, sessionId, projectPath, configDir, vis
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const spawnedRef = useRef<string | null>(null)
+  const visibleRef = useRef(visible)
 
   // Init terminal once
   useEffect(() => {
@@ -98,12 +99,64 @@ export function PtyTerminalView({ termId, sessionId, projectPath, configDir, vis
       api.ptyWrite(termId, data)
     })
 
-    // Paste via right-click or middle-click selection
+    // Обработка файлов — вставляет путь или сохраняет в ~/.vael/attachments если это blob без пути
+    const handleFiles = async (files: FileList | File[]) => {
+      const arr = Array.from(files)
+      const parts: string[] = []
+      for (const f of arr) {
+        const nativePath = (f as File & { path?: string }).path
+        if (nativePath) {
+          parts.push(`"${nativePath}"`)
+        } else {
+          const buf = await f.arrayBuffer()
+          const ext = f.name.includes('.') ? f.name.split('.').pop() : 'png'
+          const filename = `clipboard_${Date.now()}.${ext}`
+          const res = await api.saveAttachment(buf, filename)
+          if (res.ok) parts.push(`"${res.filePath}"`)
+        }
+      }
+      if (parts.length > 0) api.ptyWrite(termId, parts.join(' '))
+    }
+
+    // Ctrl+V / Ctrl+М — читаем clipboard через IPC (main process, без browser permissions)
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.code === 'KeyV' || e.code === 'KeyM') && e.ctrlKey) {
+        e.preventDefault()
+        e.stopPropagation()
+        api.clipboardRead().then(async result => {
+          console.log('[clipboard:read]', JSON.stringify(result))
+          if (result.type === 'text') {
+            api.ptyWrite(termId, result.text)
+          } else if (result.type === 'file') {
+            api.ptyWrite(termId, `"${result.filePath}"`)
+          } else if (result.type === 'paths') {
+            api.ptyWrite(termId, result.paths.map((p: string) => `"${p}"`).join(' '))
+          }
+        })
+      }
+    }
+    containerRef.current.addEventListener('keydown', onKeyDown, { capture: true })
+
+    // Paste событие (правый клик → вставить)
     containerRef.current.addEventListener('paste', (e) => {
       e.preventDefault()
+      const files = e.clipboardData?.files
+      if (files && files.length > 0) { handleFiles(files); return }
       const text = e.clipboardData?.getData('text')
       if (text) api.ptyWrite(termId, text)
     })
+
+    // Drag-and-drop файлов — слушаем на document, фильтруем по visible
+    const onDropPaths = (e: CustomEvent<string[]>) => {
+      if (!visibleRef.current) return
+      api.ptyWrite(termId, e.detail.map(p => `"${p}"`).join(' '))
+    }
+    const onDrop = (e: CustomEvent<FileList>) => {
+      if (!visibleRef.current) return
+      handleFiles(e.detail)
+    }
+    document.addEventListener('vaeli:dropPaths', onDropPaths as EventListener)
+    document.addEventListener('vaeli:dropFiles', onDrop as EventListener)
 
     // Receive PTY output
     const unsubData = api.onPtyData((tid, data) => {
@@ -128,11 +181,17 @@ export function PtyTerminalView({ termId, sessionId, projectPath, configDir, vis
       unsubData()
       unsubExit()
       ro.disconnect()
+      containerRef.current?.removeEventListener('keydown', onKeyDown, { capture: true })
+      document.removeEventListener('vaeli:dropPaths', onDropPaths as EventListener)
+      document.removeEventListener('vaeli:dropFiles', onDrop as EventListener)
       term.dispose()
       termRef.current = null
       fitRef.current = null
     }
   }, [termId])
+
+  // Синхронизируем visibleRef с пропом
+  useEffect(() => { visibleRef.current = visible }, [visible])
 
   // Spawn only when spawnTrigger is set (> 0) — prevents auto-spawn on session select
   useEffect(() => {

@@ -13,6 +13,7 @@ let _addon: {
   kill: () => boolean
   isAlive: () => boolean
   setVisible: (visible: boolean) => void
+  getClipboardFiles: () => string[]
 } | null = null
 
 function getAddon() {
@@ -72,5 +73,14 @@ export const NativeConsole = {
     try {
       getAddon().setVisible(visible)
     } catch {}
+  },
+
+  getClipboardFiles(): string[] {
+    try {
+      return getAddon().getClipboardFiles()
+    } catch (e) {
+      console.error('[NativeConsole] getClipboardFiles error:', e)
+      return []
+    }
   },
 }

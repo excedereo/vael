@@ -47,6 +47,11 @@ export interface ElectronAPI {
   deleteSession: (sessionPath: string) => Promise<{ ok: boolean }>
   findNewSessions: (configDir: string, excludeIds: string[]) => Promise<string[]>
   importSessions: (configDir: string) => Promise<{ ok: boolean; imported: string[] }>
+  saveAttachment: (buffer: ArrayBuffer, filename: string) => Promise<{ ok: boolean; filePath: string }>
+  clipboardRead: () => Promise<{ type: 'text'; text: string } | { type: 'file'; filePath: string } | { type: 'paths'; paths: string[] } | { type: 'empty' }>
+  attachmentsGetDirSize: () => Promise<{ bytes: number; count: number }>
+  attachmentsClear: (maxAgeDays?: number) => Promise<{ ok: boolean; count: number }>
+  attachmentsOpenFolder: () => Promise<{ ok: boolean }>
 
   switchAccount: (fromId: string, toId: string) => Promise<{ ok: boolean; error?: string }>
   setActiveAccount: (id: string) => Promise<{ ok: boolean }>

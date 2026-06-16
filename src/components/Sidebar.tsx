@@ -24,6 +24,7 @@ interface Props {
   sessions: Session[]
   activeSessionId: string | null
   newSessionId?: string | null
+  runningSessionIds?: string[]
   onSelect: (session: Session) => void
   onNew: () => void
   onDelete: (session: Session) => void
@@ -37,7 +38,7 @@ interface Props {
   onSelectModule?: (id: string) => void
 }
 
-function SessionItem({ session, active, onClick, onContextMenu, isRenaming, renameValue, onRenameChange, onRenameCommit, displayTitle }: {
+function SessionItem({ session, active, onClick, onContextMenu, isRenaming, renameValue, onRenameChange, onRenameCommit, displayTitle, isRunning }: {
   session: Session
   active: boolean
   onClick: () => void
@@ -47,16 +48,59 @@ function SessionItem({ session, active, onClick, onContextMenu, isRenaming, rena
   onRenameChange?: (v: string) => void
   onRenameCommit?: () => void
   displayTitle: string
+  isRunning?: boolean
 }) {
+  const [glinting, setGlinting] = useState(false)
+
+  const [flashing, setFlashing] = useState(false)
+
+  const handleClick = () => {
+    onClick()
+    setGlinting(true)
+    setTimeout(() => setGlinting(false), 500)
+    setFlashing(true)
+    setTimeout(() => setFlashing(false), 150)
+  }
+
   return (
     <div
       onContextMenu={onContextMenu}
       className={cn(
-        'relative flex items-center gap-1 px-2.5 py-2 rounded-lg transition-colors group cursor-pointer',
+        'relative flex items-center gap-1 px-2.5 py-2 rounded-lg transition-colors group cursor-pointer overflow-hidden',
         active ? 'bg-surface-selected' : 'hover:bg-surface-hover',
+        isRunning && 'border-l-2 border-emerald-400 pl-[8px]',
       )}
-      onClick={onClick}
+      onClick={handleClick}
     >
+
+      {/* Мерцание при клике */}
+      {flashing && (
+        <motion.div
+          className="absolute inset-0 rounded-lg pointer-events-none"
+          initial={{ opacity: 0.12 }}
+          animate={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          style={{ background: 'white' }}
+        />
+      )}
+
+      {/* Glint при клике */}
+      {glinting && (
+        <motion.div
+          className="absolute inset-0 pointer-events-none overflow-hidden rounded-lg"
+          initial={{ opacity: 1 }}
+          animate={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <motion.div
+            className="absolute top-0 bottom-0 w-12"
+            style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent)', skewX: '-15deg' }}
+            initial={{ left: '-3rem' }}
+            animate={{ left: '110%' }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+          />
+        </motion.div>
+      )}
 
       {/* Title with fade-out mask */}
       <div className="flex-1 min-w-0 relative overflow-hidden">
@@ -91,7 +135,7 @@ function SessionItem({ session, active, onClick, onContextMenu, isRenaming, rena
 }
 
 
-export function Sidebar({ sessions, activeSessionId, newSessionId, onSelect, onNew, onDelete, isLocked, activeTab: tab, onTabChange: setTab, devConsole, memoryTokens, modules = [], activeModuleId, onSelectModule }: Props) {
+export function Sidebar({ sessions, activeSessionId, newSessionId, runningSessionIds = [], onSelect, onNew, onDelete, isLocked, activeTab: tab, onTabChange: setTab, devConsole, memoryTokens, modules = [], activeModuleId, onSelectModule }: Props) {
   const [ctxMenu, setCtxMenu] = useState<ContextMenu | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -233,6 +277,8 @@ export function Sidebar({ sessions, activeSessionId, newSessionId, onSelect, onN
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.25, ease: 'easeOut' }}
                   className="relative"
+                  whileHover={{ scale: 1.025 }}
+                  style={{ originX: 0.5, originY: 0.5 }}
                 >
                   {/* Зелёный пульс — только для новой сессии */}
                   {isNew && (
@@ -271,6 +317,7 @@ export function Sidebar({ sessions, activeSessionId, newSessionId, onSelect, onN
                     onRenameChange={setRenameValue}
                     onRenameCommit={commitRename}
                     displayTitle={title}
+                    isRunning={runningSessionIds.includes(session.id)}
                   />
                 </motion.div>
               )
