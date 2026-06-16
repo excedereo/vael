@@ -13,19 +13,41 @@ import {
   loadCustomOptions, saveCustomOptions,
   CustomOption, OptionCategory,
 } from '../lib/customOptions.js'
+import { useSettings, DEFAULT_CONTENT_PADDING as SETTINGS_DEFAULT_CONTENT_PADDING } from '../hooks/useSettings.js'
+import type { UISettings } from '../hooks/useSettings.js'
 
 interface Props {
   onBack: () => void
 }
 
-interface UISettings {
-  reduceMotion: boolean
-  showTurnDuration: boolean
-  autoScroll: boolean
-  contentPadding: number
+// Settings stored in ~/.claude/settings.json
+interface ClaudeSettings {
+  autoCompactEnabled?: boolean
+  alwaysThinkingEnabled?: boolean
+  fileCheckpointingEnabled?: boolean
+  awaySummaryEnabled?: boolean
+  useAutoModeDuringPlan?: boolean
+  effortLevel?: string
+  defaultPermissionMode?: string
+  outputStyle?: string
+  spinnerTipsEnabled?: boolean
+  promptSuggestionEnabled?: boolean
+  verbose?: boolean
+  terminalProgressBar?: boolean
+  worktreeBaseRef?: string
+  respectGitignore?: boolean
+  skipCopyPicker?: boolean
+  autoConnectIde?: boolean
+  claudeInChromeDefaultEnabled?: boolean
+  remoteControlAtStartup?: boolean
+  autoUpdatesChannel?: string
+  notifChannel?: string
+  pushNotifWhenActionsRequired?: boolean
+  pushNotifWhenClaudeDecides?: boolean
 }
 
-export const DEFAULT_CONTENT_PADDING = 160
+// Re-export для обратной совместимости с App.tsx
+export const DEFAULT_CONTENT_PADDING = SETTINGS_DEFAULT_CONTENT_PADDING
 
 type Tab = 'interface' | 'sessions' | 'system'
 
@@ -88,18 +110,11 @@ const PERMISSION_OPTIONS_DEF = [
   { value: 'plan',              label: 'Plan',         sub: 'только планировать' },
 ]
 
-function loadUISettings(): UISettings {
-  try {
-    const s = localStorage.getItem('vaeliUISettings')
-    const parsed = s ? JSON.parse(s) : {}
-    return { reduceMotion: false, showTurnDuration: false, autoScroll: true, contentPadding: DEFAULT_CONTENT_PADDING, ...parsed }
-  } catch {
-    return { reduceMotion: false, showTurnDuration: false, autoScroll: true, contentPadding: DEFAULT_CONTENT_PADDING }
-  }
-}
-
-function saveUISettings(s: UISettings) {
-  localStorage.setItem('vaeliUISettings', JSON.stringify(s))
+// PTY-recommended values — applied when applyPtyOptimizations is true
+const PTY_RECOMMENDED: Partial<ClaudeSettings> = {
+  promptSuggestionEnabled: false,
+  spinnerTipsEnabled:       false,
+  skipCopyPicker:           false,
 }
 
 const CAT_LABELS: Record<OptionCategory, string> = {
@@ -299,7 +314,7 @@ export function SettingsPage({ onBack }: Props) {
   const [tab, setTab] = useState<Tab>('interface')
   const [saving, _setSaving] = useState(false)
   const [version, setVersion] = useState<string>('')
-  const [uiSettings, setUiSettings] = useState<UISettings>(() => loadUISettings())
+  const { uiSettings, setUISettings } = useSettings()
   const [defaultConfig, setDefaultConfig] = useState<DefaultSessionConfig>(() => loadDefaultSessionConfig())
   const [customModels, setCustomModels]      = useState(() => loadCustomOptions('model'))
   const [customEfforts, setCustomEfforts]    = useState(() => loadCustomOptions('effort'))
@@ -317,8 +332,7 @@ export function SettingsPage({ onBack }: Props) {
 
   const updateUI = (patch: Partial<UISettings>) => {
     const next = { ...uiSettings, ...patch }
-    setUiSettings(next)
-    saveUISettings(next)
+    setUISettings(next)
     window.dispatchEvent(new Event('vaeli:uiSettingsChanged'))
   }
 
