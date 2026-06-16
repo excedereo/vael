@@ -16,7 +16,10 @@ export function clearTheme() {
     '--text-primary', '--text-secondary', '--text-muted', '--text-faint', '--text-ghost',
     '--border-subtle', '--border-default', '--border-strong',
     '--surface-hover', '--surface-selected', '--surface-active',
-    '--accent', '--accent-dim',
+    '--accent', '--accent-dim', '--accent-glow',
+    '--success', '--success-glow',
+    '--toolbar-bg', '--dropdown-bg', '--welcome-bg', '--welcome-card', '--welcome-card-hover',
+    '--code-bg', '--error-bg', '--error-border', '--error-text',
   ]
   const root = document.documentElement
   for (const v of knownVars) root.style.removeProperty(v)

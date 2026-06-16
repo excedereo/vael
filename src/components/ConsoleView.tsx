@@ -15,19 +15,28 @@ interface Props {
 }
 
 const FILTER_GROUPS = [
-  { id: 'usage',   label: 'PTY Usage',    patterns: ['[usagePty]', '[PtyManager] queryUsage', '[usage]'] },
-  { id: 'context', label: 'PTY Context',  patterns: ['[context]', '[PtyManager] waitForPrompt'] },
-  { id: 'runner',  label: 'ClaudeRunner', patterns: ['[ClaudeRunner]'] },
-  { id: 'cache',   label: 'Cache',        patterns: ['[cache]'] },
-  { id: 'pty',     label: 'PTY misc',     patterns: ['[PtyManager]'] },
+  { id: 'usage',   label: 'PTY Usage',    patterns: ['[usagePty]', '[PtyManager] queryUsage', '[usage]'], defaultOn: true },
+  { id: 'context', label: 'PTY Context',  patterns: ['[context]', '[PtyManager] waitForPrompt'], defaultOn: true },
+  { id: 'runner',  label: 'ClaudeRunner', patterns: ['[ClaudeRunner]'], defaultOn: true },
+  { id: 'cache',   label: 'Cache',        patterns: ['[cache]'], defaultOn: true },
+  { id: 'pty',     label: 'PTY misc',     patterns: ['[PtyManager]'], defaultOn: true },
+  { id: 'ptyraw',  label: 'PTY Raw',      patterns: ['[pty:raw]'], defaultOn: false },
 ]
 
 function loadFilters(): Record<string, boolean> {
   try {
     const raw = localStorage.getItem('vael:consoleFilters')
-    if (raw) return JSON.parse(raw)
+    if (raw) {
+      const saved = JSON.parse(raw)
+      // новые группы которых нет в saved — берём defaultOn
+      const result = { ...saved }
+      for (const g of FILTER_GROUPS) {
+        if (!(g.id in result)) result[g.id] = g.defaultOn
+      }
+      return result
+    }
   } catch {}
-  return Object.fromEntries(FILTER_GROUPS.map(g => [g.id, true]))
+  return Object.fromEntries(FILTER_GROUPS.map(g => [g.id, g.defaultOn]))
 }
 
 export function ConsoleView({ logs, onClear }: Props) {

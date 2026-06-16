@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="..">
+      <UniqueIdentifier>{13ED4249-1F9C-5F0F-2651-29A73F3A7059}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="..\src">
+      <UniqueIdentifier>{F1003AD6-4B6D-45DF-3F56-5CAC869BF55E}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="C:">
+      <UniqueIdentifier>{F87FD356-0FEB-9BC5-D1FA-368C81420008}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="C:\Users">
+      <UniqueIdentifier>{707347A1-1ABA-A9B2-9AF4-DE122F5D7F08}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="C:\Users\reaya">
+      <UniqueIdentifier>{9B10A382-7575-15AC-304E-335AC923B843}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="C:\Users\reaya\Documents">
+      <UniqueIdentifier>{A6B140C2-EC61-188F-22F2-AD1FFCF65561}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="C:\Users\reaya\Documents\Github">
+      <UniqueIdentifier>{58874B3B-DFA3-597C-6FC1-225ADD8F8D43}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="C:\Users\reaya\Documents\Github\vael">
+      <UniqueIdentifier>{10980DC1-07B3-7BB3-43ED-7873B15A33E3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="C:\Users\reaya\Documents\Github\vael\node_modules">
+      <UniqueIdentifier>{126A39EA-1D28-5689-C126-0DA0AB5837A0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="C:\Users\reaya\Documents\Github\vael\node_modules\node-gyp">
+      <UniqueIdentifier>{49558BB4-6D34-CA91-A65D-85A65792DC11}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="C:\Users\reaya\Documents\Github\vael\node_modules\node-gyp\src">
+      <UniqueIdentifier>{F1003AD6-4B6D-45DF-3F56-5CAC869BF55E}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="..">
+      <UniqueIdentifier>{13ED4249-1F9C-5F0F-2651-29A73F3A7059}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\src\console_window.cc">
+      <Filter>..\src</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\reaya\Documents\Github\vael\node_modules\node-gyp\src\win_delay_load_hook.cc">
+      <Filter>C:\Users\reaya\Documents\Github\vael\node_modules\node-gyp\src</Filter>
+    </ClCompile>
+    <None Include="..\binding.gyp">
+      <Filter>..</Filter>
+    </None>
+  </ItemGroup>
+</Project>

@@ -246,22 +246,36 @@ export class AccountManager {
           catch { return false }
         }).length
 
-        // Extract title from first user message
+        // Extract title: prefer claude-generated slug, fallback to first user message
         let title: string | undefined
         let firstUserMsg = ''
+        let slug: string | undefined
+
         for (const line of lines) {
           try {
             const entry = JSON.parse(line)
-            if (entry.type === 'user') {
+            if (entry.type === 'ai-title' && entry.aiTitle && !slug) slug = entry.aiTitle
+            if (entry.slug && !slug) slug = entry.slug
+            if (entry.type === 'user' && !firstUserMsg) {
               const content = typeof entry.message?.content === 'string'
                 ? entry.message.content
                 : entry.message?.content?.[0]?.text || ''
               firstUserMsg = content.trim()
-              title = content.slice(0, 60)
-              break
             }
           } catch { /* skip */ }
         }
+
+        // Check meta for custom user-set title (takes priority over everything)
+        const metaPath = filePath.replace('.jsonl', '.meta.json')
+        let customTitle: string | undefined
+        if (fs.existsSync(metaPath)) {
+          try {
+            const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+            if (meta.customTitle) customTitle = meta.customTitle
+          } catch {}
+        }
+
+        title = customTitle ?? slug ?? (firstUserMsg ? firstUserMsg.slice(0, 60) : undefined)
 
         // Hide internal PTY sessions (usage session or context queries)
         const usageId = this.getUsageSessionId(accountId)

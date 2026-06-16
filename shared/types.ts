@@ -131,13 +131,6 @@ export interface ContextData {
 
 export type StreamEvent =
   | { type: 'system'; subtype: string; status?: string | null; compact_result?: string; compact_metadata?: CompactMetadata; attempt?: number; max_retries?: number; error_status?: number | null; error?: string; session_id?: string }
-  | { type: 'assistant_streaming_start' }
-  | { type: 'assistant_streaming_text'; text: string }
-  | { type: 'commit_streaming_text' }
-  | { type: 'pty_tool_update'; tool_use_id: string; patch: Record<string, string> }
-  | { type: 'pty_final_message'; entry: AssistantEntry }
-  | { type: 'pty_tokens'; count: number }
-  | { type: 'pty_tui_screen'; text: string }
   | { type: 'result'; subtype: string; usage?: UsageInfo; duration_ms?: number }
   | { type: 'error'; error: string }
   | { type: 'assistant'; message: AssistantEntry['message'] }

@@ -13,47 +13,41 @@ contextBridge.exposeInMainWorld('api', {
   getSessions: (accountId: string) => ipcRenderer.invoke('sessions:get', accountId),
   readSession: (sessionPath: string) => ipcRenderer.invoke('sessions:read', sessionPath),
   deleteSession: (sessionPath: string) => ipcRenderer.invoke('sessions:delete', sessionPath),
+  findNewSessions: (configDir: string, excludeIds: string[]) => ipcRenderer.invoke('sessions:findNew', configDir, excludeIds),
 
   // Account switch (sync + set active)
   switchAccount: (fromId: string, toId: string) => ipcRenderer.invoke('account:switch', fromId, toId),
   setActiveAccount: (id: string) => ipcRenderer.invoke('account:setActive', id),
 
-  // Send message via -p flag
-  sendMessage: (sessionId: string, text: string, accountId: string, model: string, effort: string, permissionMode: string) =>
-    ipcRenderer.invoke('claude:send', sessionId, text, accountId, model, effort, permissionMode),
-
-  // New session
-  newSession: (text: string, accountId: string, model: string, effort: string, permissionMode: string) =>
-    ipcRenderer.invoke('claude:new', text, accountId, model, effort, permissionMode),
-
   // Abort running process
   abortRun: () => ipcRenderer.invoke('claude:abort'),
 
-  // PTY slash commands
-  ptySpawn: (configDir: string, sessionId?: string) =>
-    ipcRenderer.invoke('pty:spawn', configDir, sessionId),
-  ptySend: (command: string) => ipcRenderer.invoke('pty:send', command),
-  ptyKill: () => ipcRenderer.invoke('pty:kill'),
-  ptySessionKill: (sessionId?: string) => ipcRenderer.invoke('pty:session:kill', sessionId),
-  ptySessionAlive: (sessionId: string) => ipcRenderer.invoke('pty:session:alive', sessionId),
-  sessionCommand: (command: string) => ipcRenderer.invoke('session:command', command),
+  // PTY terminal
+  ptySpawn: (termId: string, sessionId: string, projectPath: string, configDir: string, cols: number, rows: number, model?: string, effort?: string, permissionMode?: string) =>
+    ipcRenderer.invoke('pty:spawn', termId, sessionId, projectPath, configDir, cols, rows, model, effort, permissionMode),
+  ptyWrite: (termId: string, data: string) => ipcRenderer.send('pty:write', termId, data),
+  ptyResize: (termId: string, cols: number, rows: number) => ipcRenderer.invoke('pty:resize', termId, cols, rows),
+  ptyKill: (termId: string) => ipcRenderer.invoke('pty:kill', termId),
+  ptyAlive: (termId: string) => ipcRenderer.invoke('pty:alive', termId),
+  onPtyData: (cb: (termId: string, data: string) => void) => {
+    const handler = (_: unknown, termId: string, data: string) => cb(termId, data)
+    ipcRenderer.on('pty:data', handler)
+    return () => ipcRenderer.removeListener('pty:data', handler)
+  },
+  onPtyExit: (cb: (termId: string) => void) => {
+    const handler = (_: unknown, termId: string) => cb(termId)
+    ipcRenderer.on('pty:exit', handler)
+    return () => ipcRenderer.removeListener('pty:exit', handler)
+  },
 
-  // Event listeners
-  onStreamEvent: (cb: (event: unknown) => void) => {
-    const handler = (_: unknown, event: unknown) => cb(event)
-    ipcRenderer.on('stream:event', handler)
-    return () => ipcRenderer.removeListener('stream:event', handler)
-  },
-  onStreamDone: (cb: (code: number | null) => void) => {
-    const handler = (_: unknown, code: number | null) => cb(code)
-    ipcRenderer.on('stream:done', handler)
-    return () => ipcRenderer.removeListener('stream:done', handler)
-  },
-  onPtyOutput: (cb: (data: string) => void) => {
-    const handler = (_: unknown, data: string) => cb(data)
-    ipcRenderer.on('pty:output', handler)
-    return () => ipcRenderer.removeListener('pty:output', handler)
-  },
+  // Native console window (Win32 SetParent embedding)
+  nconSpawn: (sessionPath: string, x: number, y: number, w: number, h: number) =>
+    ipcRenderer.invoke('ncon:spawn', sessionPath, x, y, w, h),
+  nconMove: (x: number, y: number, w: number, h: number) =>
+    ipcRenderer.invoke('ncon:move', x, y, w, h),
+  nconKill: () => ipcRenderer.invoke('ncon:kill'),
+  nconIsAlive: () => ipcRenderer.invoke('ncon:isAlive'),
+  nconSetVisible: (visible: boolean) => ipcRenderer.invoke('ncon:setVisible', visible),
   onSyncStatus: (cb: (status: string, message?: string) => void) => {
     const handler = (_: unknown, status: string, message?: string) => cb(status, message)
     ipcRenderer.on('sync:status', handler)
@@ -92,6 +86,7 @@ contextBridge.exposeInMainWorld('api', {
 
   checkDeps: () => ipcRenderer.invoke('claude:checkDeps'),
   installClaude: () => ipcRenderer.invoke('claude:install'),
+  installClaudeVersion: (version: string) => ipcRenderer.invoke('claude:installVersion', version),
   tempSave: (buffer: ArrayBuffer, filename: string) => ipcRenderer.invoke('temp:save', buffer, filename),
   tempDelete: (filePath: string) => ipcRenderer.invoke('temp:delete', filePath),
   tempClear: () => ipcRenderer.invoke('temp:clear'),

@@ -1,0 +1,12 @@
+{
+  "name": "vael-native",
+  "version": "1.0.0",
+  "description": "Native Win32 console embedding addon",
+  "main": "build/Release/console_window.node",
+  "scripts": {
+    "build": "node-gyp rebuild --target=42.3.0 --arch=x64 --dist-url=https://electronjs.org/headers --nodedir=."
+  },
+  "dependencies": {
+    "node-addon-api": "^8.3.1"
+  }
+}

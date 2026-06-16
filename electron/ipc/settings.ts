@@ -1,10 +1,10 @@
 import { ipcMain } from 'electron'
 import fs from 'fs'
 import os from 'os'
-import { PATHS, loadVaeliSettings, saveVaeliSettings, patchVaeliSettings } from '../services/SettingsService.js'
+import { PATHS, loadVaeliSettings, saveVaeliSettings } from '../services/SettingsService.js'
 
 export function registerSettingsHandlers(
-  setLastConfigDir: (dir: string) => void,
+  _unused: unknown,
   flushLogBuffer?: () => void,
 ) {
   ipcMain.handle('settings:get', () => {

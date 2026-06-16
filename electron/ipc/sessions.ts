@@ -1,14 +1,9 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import fs from 'fs'
 import type { AccountManager } from '../AccountManager.js'
-import type { ContextData } from '../usageParser.js'
 
 export function registerSessionHandlers(
   accountManager: AccountManager,
-  contextCache: Map<string, ContextData>,
-  lastUsageData: () => { usage: unknown; context: unknown } | null,
-  getLastSessionId: () => string | null,
-  setLastSessionId: (id: string) => void,
   getWindow: () => BrowserWindow | null,
 ) {
   ipcMain.handle('sessions:get', (_, accountId: string) =>
@@ -35,10 +30,12 @@ export function registerSessionHandlers(
     }
   })
 
-  ipcMain.handle('session:select', (_, sessionId: string) => {
-    setLastSessionId(sessionId)
-    const context = contextCache.get(sessionId) ?? null
-    getWindow()?.webContents.send('usage:data', { usage: lastUsageData()?.usage ?? null, context })
+  ipcMain.handle('session:select', () => {
+    return { ok: true }
+  })
+
+  ipcMain.handle('sessions:findNew', (_, configDir: string, excludeIds: string[]) => {
+    return accountManager.findNewSessions(configDir, new Set(excludeIds), 5)
   })
 
   ipcMain.handle('session:reload', (_, sessionId: string) => {
