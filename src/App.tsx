@@ -1,31 +1,34 @@
 import { useCallback, useState, useEffect, useRef } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronDown } from 'lucide-react'
+import { X } from 'lucide-react'
 import { useAppState } from './hooks/useAppState.js'
-import { useSession } from './hooks/useSession.js'
 import { useNavHistory } from './hooks/useNavHistory.js'
 import { useUpdateManager } from './hooks/useUpdateManager.js'
 import { useDependencies } from './hooks/useDependencies.js'
 import { useConsoleCapture } from './hooks/useConsoleCapture.js'
 import { Sidebar } from './components/Sidebar.js'
-import { ChatView } from './components/ChatView.js'
-import { InputBar, InputBarHandle, ModelId, EffortLevel, PermissionMode, CommandName, getMaxEffort } from './components/InputBar.js'
+
 import { StatusBar } from './components/StatusBar.js'
 import { AccountBar } from './components/AccountBar.js'
 import { AccountsPage } from './components/AccountsPage.js'
-import { SettingsPage, DEFAULT_CONTENT_PADDING } from './components/SettingsPage.js'
+import { SettingsPage } from './components/SettingsPage.js'
 import { AccountSwitchModal } from './components/AccountSwitchModal.js'
 import { FirstLaunch } from './components/FirstLaunch.js'
 import { ErrorToast } from './components/ErrorToast.js'
 import { ConsoleView } from './components/ConsoleView.js'
 import { MemoryPage } from './components/MemoryPage.js'
 import { NavControls } from './components/NavControls.js'
+import { PtyTerminalView } from './components/PtyTerminalView.js'
+import { SessionToolbar } from './components/SessionToolbar.js'
+import { SessionWelcome } from './components/SessionWelcome.js'
+import { ConfettiCanvas } from './components/ConfettiCanvas.js'
 import { WindowControls } from './components/WindowControls.js'
 import { UpdateBanner } from './components/UpdateBanner.js'
 import { PyrePage } from './components/PyrePage.js'
 import { api } from './lib/api.js'
 import { Session } from './types/index'
 import { restoreSavedTheme } from './lib/theme.js'
+import { loadDefaultSessionConfig } from './components/SettingsPage.js'
 import { cn } from './lib/utils.js'
 
 export default function App() {
@@ -39,50 +42,64 @@ export default function App() {
     syncMessage,
     isLocked,
     isRunning,
-    addRunning,
-    removeRunning,
-    replaceRunning,
+    runningSessions,
     accountsLoaded,
     switchAccount,
     refreshSessions,
     refreshAccounts,
   } = useAppState()
 
-  const [activeModel, setActiveModel] = useState<ModelId>('claude-sonnet-4-6')
-  const [activeEffort, setActiveEffort] = useState<EffortLevel>('medium')
-  const [activePermission, setActivePermission] = useState<PermissionMode>('bypassPermissions')
+  const DEFAULT_CONFIG = { ...loadDefaultSessionConfig(), prompt: '' }
+
+  const SESSION_MODEL_MIGRATION: Record<string, string> = {
+    'sonnet': 'claude-sonnet-4-6',
+    'opus':   'claude-opus-4-8',
+    'haiku':  'claude-haiku-4-5-20251001',
+    'fable':  'claude-fable-5',
+  }
+
+  function loadSessionConfig(sessionId: string | null) {
+    if (!sessionId) return DEFAULT_CONFIG
+    try {
+      const raw = localStorage.getItem(`vaeli:session-config:${sessionId}`)
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<typeof DEFAULT_CONFIG>
+        if (parsed.model && SESSION_MODEL_MIGRATION[parsed.model]) {
+          parsed.model = SESSION_MODEL_MIGRATION[parsed.model]
+          localStorage.setItem(`vaeli:session-config:${sessionId}`, JSON.stringify({ ...DEFAULT_CONFIG, ...parsed }))
+        }
+        return { ...DEFAULT_CONFIG, ...parsed }
+      }
+    } catch {}
+    return DEFAULT_CONFIG
+  }
+
+  function saveSessionConfig(sessionId: string, config: typeof DEFAULT_CONFIG) {
+    try {
+      localStorage.setItem(`vaeli:session-config:${sessionId}`, JSON.stringify(config))
+    } catch {}
+  }
+
+  const [sessionConfig, setSessionConfig] = useState(DEFAULT_CONFIG)
+  const [spawnTrigger, setSpawnTrigger] = useState(0)
+  const [spawnedSessions, setSpawnedSessions] = useState<Record<string, number>>({})
+  const [newSessionId, setNewSessionId] = useState<string | null>(null)
+  type StartPhase = 'idle' | 'confetti' | 'fadeout'
+  const [startPhase, setStartPhase] = useState<StartPhase>('idle')
+  const [pendingStart, setPendingStart] = useState<(() => void) | null>(null)
+  const [confettiOrigin, setConfettiOrigin] = useState<DOMRect | undefined>(undefined)
+
   const [page, setPage] = useState<'chat' | 'accounts' | 'settings' | 'memory'>('chat')
   const [sidebarTab, setSidebarTab] = useState<'sessions' | 'pyre' | 'console' | 'memory'>('sessions')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [modules, setModules] = useState<{ id: string; name: string; icon?: string; running: boolean }[]>([])
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null)
   const { push: navPush, goBack, goForward, canGoBack, canGoForward } = useNavHistory()
-  const [ptyAlive, setPtyAlive] = useState(false)
-  const [ptyStarting, setPtyStarting] = useState(false)
-  const [killModal, setKillModal] = useState(false)
 
   const { updateState, handleUpdateClick, tempCleanupBanner, tempCleanupCountdown } = useUpdateManager()
   const { deps, installing, installLog, handleInstallClaude } = useDependencies()
   const { consoleLogs, setConsoleLogs, devConsole } = useConsoleCapture()
 
-  // Poll PTY alive status
-  useEffect(() => {
-    if (!activeSessionId) { setPtyAlive(false); setPtyStarting(false); return }
-    let cancelled = false
-    const poll = async () => {
-      if (cancelled) return
-      try {
-        const { alive } = await api.ptySessionAlive(activeSessionId)
-        if (!cancelled) {
-          setPtyAlive(alive)
-          setPtyStarting(isRunning && !alive)
-        }
-      } catch {}
-      if (!cancelled) setTimeout(poll, 1500)
-    }
-    poll()
-    return () => { cancelled = true }
-  }, [activeSessionId, isRunning])
 
   useEffect(() => {
     api.modulesList().then(list => {
@@ -96,15 +113,6 @@ export default function App() {
   useEffect(() => { restoreSavedTheme() }, [])
 
 
-  // Load defaults from claude settings on startup
-  useEffect(() => {
-    api.getSettings().then(s => {
-      const settings = s as { effortLevel?: string; defaultPermissionMode?: string }
-      if (settings.effortLevel) setActiveEffort(settings.effortLevel as EffortLevel)
-      const pm = settings.defaultPermissionMode
-      if (pm === 'plan' || pm === 'bypassPermissions') setActivePermission(pm)
-    })
-  }, [])
 
   const [memoryTokens, setMemoryTokens] = useState<{ auto: number; total: number } | undefined>()
 
@@ -118,19 +126,6 @@ export default function App() {
     return () => clearInterval(interval)
   }, [])
 
-  const [chatAtBottom, setChatAtBottom] = useState(true)
-  const [scrollTrigger, setScrollTrigger] = useState(0)
-  const [contentPadding, setContentPadding] = useState<number>(() => {
-    try { const s = localStorage.getItem('vaeliUISettings'); return s ? (JSON.parse(s).contentPadding ?? DEFAULT_CONTENT_PADDING) : DEFAULT_CONTENT_PADDING } catch { return DEFAULT_CONTENT_PADDING }
-  })
-  useEffect(() => {
-    const h = () => {
-      try { const s = localStorage.getItem('vaeliUISettings'); setContentPadding(s ? (JSON.parse(s).contentPadding ?? DEFAULT_CONTENT_PADDING) : DEFAULT_CONTENT_PADDING) } catch {}
-    }
-    window.addEventListener('vaeli:uiSettingsChanged', h)
-    return () => window.removeEventListener('vaeli:uiSettingsChanged', h)
-  }, [])
-  const inputBarRef = useRef<InputBarHandle>(null)
   const mainAreaRef = useRef<HTMLDivElement>(null)
   const [dragOver, setDragOver] = useState(false)
 
@@ -166,7 +161,8 @@ export default function App() {
       e.preventDefault()
       setDragOver(false)
       if (mainEl?.contains(e.target as Node) && e.dataTransfer?.files.length) {
-        inputBarRef.current?.addFiles(e.dataTransfer.files)
+        // files handled by active SessionPane's InputBar via DOM event
+        mainEl.dispatchEvent(new CustomEvent('vaeli:dropFiles', { detail: e.dataTransfer.files, bubbles: true }))
       }
     }
 
@@ -191,30 +187,36 @@ export default function App() {
     }
   }, [accountsLoaded, accounts.length])
   const activeSession = sessions.find(s => s.id === activeSessionId) || null
-  const { entries, liveEntries, isStreaming, isThinking, isCompacting, liveTool, appendUserMessage, error, clearError, streamStats, ptyTokens, ptyTokensDelta, finalEntryKey, reloadEntries } = useSession(activeSession)
 
-  useEffect(() => {
-    const unsub = api.onSessionReload((sessionId) => {
-      refreshSessions()
-      if (sessionId === activeSessionId) reloadEntries()
-    })
-    return unsub
-  }, [activeSessionId, reloadEntries, refreshSessions])
+
+  // Map: termId → реальный sessionId (для новых сессий, где termId='__new__')
+  const [termToSession, setTermToSession] = useState<Record<string, string>>({})
 
   useEffect(() => {
     const unsub = api.onSessionCreated((sessionId) => {
-      refreshSessions()
-      setActiveSessionId(sessionId)
-      api.selectSession(sessionId)
+      // Батчим: маппинг + activeSession в одном рендере
+      setTermToSession(prev => ({ ...prev, ['__new__']: sessionId }))
+      setNewSessionId(sessionId)
+      setTimeout(() => {
+        setActiveSessionId(sessionId)
+        api.selectSession(sessionId)
+      }, 600)
+      setTimeout(() => refreshSessions(), 500)
+      setTimeout(() => refreshSessions(), 1500)
+      setTimeout(() => refreshSessions(), 3000)
+      // Сбрасываем highlight через 4с (после последнего refresh slug уже должен быть)
+      setTimeout(() => setNewSessionId(null), 4000)
     })
     return unsub
   }, [refreshSessions, setActiveSessionId])
 
   const handleSelectSession = useCallback((session: Session) => {
     setActiveSessionId(session.id)
+    setSessionConfig(loadSessionConfig(session.id))
+    if (!spawnedSessions[session.id]) setSpawnTrigger(0)
     api.selectSession(session.id)
     navPush({ sessionId: session.id, tab: sidebarTab })
-  }, [setActiveSessionId, sidebarTab, navPush])
+  }, [setActiveSessionId, sidebarTab, navPush, spawnedSessions])
 
   const handleTabChange = useCallback((tab: 'sessions' | 'pyre' | 'console' | 'memory') => {
     setSidebarTab(tab)
@@ -238,55 +240,31 @@ export default function App() {
   }, [goForward, setSidebarTab, setActiveSessionId])
 
   const handleNewSession = useCallback(() => {
-    setActiveSessionId(null)
-  }, [setActiveSessionId])
-
-  const handleSend = useCallback(async (text: string) => {
-    if (!activeAccountId) return
-
-    appendUserMessage(text)
-
-    const effort = getMaxEffort(activeModel) ? activeEffort : null
-    // Ключ для трекинга: реальный sessionId или '__pending__' для новых сессий
-    const sessionKey = activeSessionId ?? '__pending__'
-    addRunning(sessionKey)
-
-    if (activeSessionId) {
-      await api.sendMessage(activeSessionId, text, activeAccountId, activeModel, effort, activePermission)
-    } else {
-      await api.newSession(text, activeAccountId, activeModel, effort, activePermission)
-
-      // capture session_id from system init event — заменяем __pending__ на реальный id
-      const unsubInit = api.onStreamEvent((event) => {
-        if (event.type === 'system' && event.subtype === 'init' && event.session_id) {
-          replaceRunning('__pending__', event.session_id)
-          setActiveSessionId(event.session_id)
-          refreshSessions()
-          unsubInit()
+    setTermToSession(prev => {
+      const resolvedId = prev['__new__']
+      if (!resolvedId) {
+        // __new__ ещё не получил реальный id — просто сбрасываем
+        setSpawnedSessions(sp => { const next = { ...sp }; delete next['__new__']; return next })
+        return prev
+      }
+      // __new__ уже имеет реальный id — перекладываем терминал под реальный id чтобы он остался живым
+      setSpawnedSessions(sp => {
+        const next = { ...sp }
+        if (next['__new__'] !== undefined) {
+          next[resolvedId] = next['__new__']
+          delete next['__new__']
         }
+        return next
       })
-    }
-
-    const doneSessionKey = activeSessionId ?? '__pending__'
-    const unsubDone = api.onStreamDone(async () => {
-      // Убираем по реальному id если он уже известен, иначе по ключу с которым стартовали
-      removeRunning(activeSessionId ?? doneSessionKey)
-      refreshSessions()
-      unsubDone()
+      // Переименовываем ключ в termToSession тоже (новый __new__ будет чистым)
+      const next = { ...prev }
+      delete next['__new__']
+      return next
     })
-  }, [activeAccountId, activeSessionId, activeModel, activeEffort, activePermission, appendUserMessage, refreshSessions, setActiveSessionId, addRunning, removeRunning, replaceRunning])
-
-  const handleAbort = useCallback(() => {
-    api.abortRun()
-    if (activeSessionId) removeRunning(activeSessionId)
-    else removeRunning('__pending__')
-  }, [activeSessionId, removeRunning])
-
-  const handleCommand = useCallback((name: CommandName, fullText: string) => {
-    if (!activeSessionId && (name === 'compact' || name === 'context')) return
-    handleSend(fullText)
-  }, [activeSessionId, handleSend])
-
+    setActiveSessionId(null)
+    setSessionConfig({ ...loadDefaultSessionConfig(), prompt: '' })
+    setSpawnTrigger(0)
+  }, [setActiveSessionId])
 
   const handleDeleteSession = useCallback(async (session: import('./types/index').Session) => {
     const sessionPath = `${session.projectPath}\\${session.id}.jsonl`
@@ -373,7 +351,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-bg-base text-white overflow-hidden">
-      <ErrorToast message={error} onClose={clearError} />
+      <ErrorToast message={null} onClose={() => {}} />
       {/* Temp cleanup banner */}
       {tempCleanupBanner && (
         <div className="fixed top-10 left-1/2 -translate-x-1/2 z-[300] animate-in fade-in slide-in-from-top-2 duration-200">
@@ -417,6 +395,7 @@ export default function App() {
           <Sidebar
             sessions={sessions}
             activeSessionId={activeSessionId}
+            newSessionId={newSessionId}
             onSelect={handleSelectSession}
             onNew={handleNewSession}
             onDelete={handleDeleteSession}
@@ -456,49 +435,141 @@ export default function App() {
         </AnimatePresence>
 
         <div className="h-10 shrink-0 border-b border-border-subtle flex items-center">
-          {/* Drag region fills the header, starts after NavControls width */}
           <div
-            className="app-drag-region flex items-center flex-1 min-w-0 h-full px-5"
+            className="app-drag-region flex items-center flex-1 min-w-0 h-full px-5 gap-3"
             style={{ marginLeft: sidebarCollapsed ? '9rem' : 0 }}
           >
             {activeSession && (
-              <span className="text-sm text-text-faint truncate">{activeSession.title || activeSession.id}</span>
+              <span className="text-sm text-text-faint truncate select-none pointer-events-none">
+                {activeSession.title || activeSession.id}
+              </span>
             )}
           </div>
+          {Object.keys(spawnedSessions).some(tid => {
+            const resolved = termToSession[tid] ?? (tid === '__new__' ? null : tid)
+            return activeSessionId ? resolved === activeSessionId : tid === '__new__'
+          }) && (
+            <button
+              onClick={() => {
+                const termId = Object.keys(spawnedSessions).find(tid => {
+                  const resolved = termToSession[tid] ?? (tid === '__new__' ? null : tid)
+                  return activeSessionId ? resolved === activeSessionId : tid === '__new__'
+                }) ?? (activeSessionId ?? '__new__')
+                api.ptyKill(termId)
+                setSpawnedSessions(prev => { const next = { ...prev }; delete next[termId]; return next })
+                setTermToSession(prev => { const next = { ...prev }; delete next[termId]; return next })
+                setSpawnTrigger(0)
+              }}
+              className="no-drag flex items-center justify-center w-7 h-7 rounded-lg mr-2 transition-colors text-text-ghost hover:text-red-400 hover:bg-surface-hover"
+              title="Завершить сессию"
+            >
+              <X size={13} />
+            </button>
+          )}
           <WindowControls />
         </div>
 
-        {/* ChatView always mounted to preserve stream state */}
-        <div className={cn('flex-1 flex flex-col min-h-0 overflow-hidden relative', sidebarTab !== 'sessions' && 'hidden')}>
-          <ChatView
-            session={activeSession}
-            entries={entries}
-            liveEntries={liveEntries}
-            isStreaming={isStreaming}
-            isThinking={isThinking}
-            isCompacting={isCompacting}
-            contentPadding={contentPadding}
-            liveTool={liveTool}
-            streamStats={streamStats}
-            onScrollStateChange={atBottom => setChatAtBottom(atBottom)}
-            scrollTrigger={scrollTrigger}
-            finalEntryKey={finalEntryKey}
-          />
-          <AnimatePresence>
-            {!chatAtBottom && (
-              <motion.button
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 4 }}
-                transition={{ duration: 0.15 }}
-                onClick={() => setScrollTrigger(v => v + 1)}
-                className="absolute bottom-3 left-1/2 -translate-x-1/2 w-7 h-7 rounded-lg bg-bg-elevated border border-border-default flex items-center justify-center text-text-muted hover:text-text-primary hover:border-border-strong transition-colors shadow-lg z-10"
-              >
-                <ChevronDown size={14} strokeWidth={2} />
-              </motion.button>
+        {/* PTY terminal — main session UI */}
+        {sidebarTab === 'sessions' && (
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative" style={{ background: 'var(--bg-base)' }}>
+            <div className="flex-1 min-h-0 pt-[4px] relative" style={{ background: '#0a0a0a' }}>
+              {/* Render all spawned sessions, show only active */}
+              {Object.keys(spawnedSessions).map(termId => {
+                const resolvedId = termToSession[termId] ?? (termId === '__new__' ? null : termId)
+                const sid = resolvedId
+                const sess = sessions.find(s => s.id === resolvedId)
+                // termId активен если его resolvedId совпадает с activeSessionId,
+                // ИЛИ если activeSessionId=null и это __new__
+                const isActive = activeSessionId
+                  ? resolvedId === activeSessionId
+                  : termId === '__new__'
+                const cfg = loadSessionConfig(sid)
+                return (
+                  <PtyTerminalView
+                    key={termId}
+                    termId={termId}
+                    sessionId={sid}
+                    projectPath={sess?.projectPath ?? null}
+                    configDir={accounts.find(a => a.id === activeAccountId)?.configDir ?? null}
+                    visible={isActive}
+                    spawnTrigger={spawnedSessions[termId] ?? 0}
+                    model={cfg.model}
+                    effort={cfg.effort}
+                    permissionMode={cfg.permissionMode}
+                  />
+                )
+              })}
+            </div>
+
+            <AnimatePresence>
+              {(() => {
+                const isSpawned = Object.keys(spawnedSessions).some(tid => {
+                  const resolved = termToSession[tid] ?? (tid === '__new__' ? null : tid)
+                  return activeSessionId ? resolved === activeSessionId : tid === '__new__'
+                })
+                return !isSpawned
+              })() && (startPhase === 'idle' || startPhase === 'confetti' || startPhase === 'fadeout') && (
+                <motion.div
+                  key="welcome"
+                  className="absolute inset-0"
+                  initial={{ opacity: 1 }}
+                  animate={{ opacity: startPhase === 'fadeout' ? 0 : 1 }}
+                  transition={{ duration: 0.5 }}
+                >
+                  <SessionWelcome
+                    sessionTitle={activeSession?.title}
+                    isNew={!activeSessionId}
+                    config={sessionConfig}
+                    onChange={setSessionConfig}
+                    onSettings={() => setPage('settings')}
+                    onStart={(btnRect) => {
+                      if (activeSessionId) saveSessionConfig(activeSessionId, sessionConfig)
+                      const key = activeSessionId ?? '__new__'
+                      const doSpawn = () => {
+                        setSpawnedSessions(prev => ({ ...prev, [key]: (prev[key] ?? 0) + 1 }))
+                        setSpawnTrigger(t => t + 1)
+                      }
+                      if (!activeSessionId) {
+                        setConfettiOrigin(btnRect)
+                        setPendingStart(() => doSpawn)
+                        setStartPhase('confetti')
+                      } else {
+                        setStartPhase('fadeout')
+                        setTimeout(() => { doSpawn(); setStartPhase('idle') }, 500)
+                      }
+                    }}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {(startPhase === 'confetti' || startPhase === 'fadeout') && (
+              <ConfettiCanvas
+                active={startPhase === 'confetti'}
+                originRect={confettiOrigin}
+                onDone={() => {
+                  setStartPhase('fadeout')
+                  setTimeout(() => {
+                    pendingStart?.()
+                    setPendingStart(null)
+                    setStartPhase('idle')
+                  }, 500)
+                }}
+              />
             )}
-          </AnimatePresence>
-        </div>
+
+            {startPhase === 'fadeout' && (
+              <motion.div
+                className="absolute inset-0"
+                style={{ background: '#0a0a0a' }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.5 }}
+              />
+            )}
+          </div>
+        )}
+
 
         {/* Console */}
         {sidebarTab === 'console' && (
@@ -514,45 +585,6 @@ export default function App() {
         <div className="no-drag" style={{ flex: 1, overflow: 'hidden', display: sidebarTab === 'memory' ? 'flex' : 'none', flexDirection: 'column', minHeight: 0 }}>
           <MemoryPage onBack={() => setSidebarTab('sessions')} />
         </div>
-
-        {sidebarTab === 'sessions' && (
-          <div>
-          <div style={{ height: 24, background: 'linear-gradient(to bottom, transparent, var(--bg-base))', marginTop: -24, pointerEvents: 'none', position: 'relative', zIndex: 1 }} />
-          <div style={{ paddingLeft: contentPadding, paddingRight: contentPadding }}>
-          {ptyTokens !== null && (
-            <div className="flex items-center gap-1.5 mb-1.5 px-0.5">
-              <span className="text-[11px] font-mono text-text-faint tabular-nums">
-                {ptyTokens.toLocaleString()} ctx
-              </span>
-              {ptyTokensDelta !== null && ptyTokensDelta > 0 && (
-                <span className="text-[11px] font-mono text-emerald-400/70 tabular-nums">
-                  +{ptyTokensDelta.toLocaleString()}
-                </span>
-              )}
-            </div>
-          )}
-          <InputBar
-            ref={inputBarRef}
-            activeModel={activeModel}
-            onModelChange={setActiveModel}
-            activeEffort={activeEffort}
-            onEffortChange={setActiveEffort}
-            activePermission={activePermission}
-            onPermissionChange={setActivePermission}
-            onSend={handleSend}
-            onAbort={handleAbort}
-            ptyAlive={ptyAlive}
-            ptyStarting={ptyStarting}
-            onKillPtyRequest={() => setKillModal(true)}
-            onCommand={handleCommand}
-            isLocked={isLocked}
-            isRunning={isRunning}
-            hasSession={!!activeSessionId}
-            sessionId={activeSessionId}
-          />
-          </div>
-          </div>
-        )}
       </div>
 
       {/* Full-screen overlays */}
@@ -593,35 +625,6 @@ export default function App() {
         )
       })()}
 
-      {/* Kill PTY modal */}
-      {killModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setKillModal(false)} />
-          <div className="relative w-80 bg-bg-surface border border-border-default rounded-2xl p-5 shadow-2xl space-y-4">
-            <h2 className="text-base font-semibold text-text-primary">Завершить сессию?</h2>
-            <p className="text-sm text-text-secondary">PTY процесс будет остановлен. История сессии сохранится.</p>
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => setKillModal(false)}
-                className="text-sm px-3 py-1.5 rounded-lg text-text-secondary hover:bg-surface-hover transition-colors"
-              >
-                Отмена
-              </button>
-              <button
-                onClick={async () => {
-                  setKillModal(false)
-                  await api.ptySessionKill(activeSessionId ?? undefined)
-                  setPtyAlive(false)
-                  setPtyStarting(false)
-                }}
-                className="text-sm px-3 py-1.5 rounded-lg text-red-400 bg-red-400/10 hover:bg-red-400/20 transition-colors"
-              >
-                Завершить
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

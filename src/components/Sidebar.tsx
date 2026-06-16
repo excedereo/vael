@@ -23,6 +23,7 @@ interface ModuleInfo {
 interface Props {
   sessions: Session[]
   activeSessionId: string | null
+  newSessionId?: string | null
   onSelect: (session: Session) => void
   onNew: () => void
   onDelete: (session: Session) => void
@@ -90,7 +91,7 @@ function SessionItem({ session, active, onClick, onContextMenu, isRenaming, rena
 }
 
 
-export function Sidebar({ sessions, activeSessionId, onSelect, onNew, onDelete, isLocked, activeTab: tab, onTabChange: setTab, devConsole, memoryTokens, modules = [], activeModuleId, onSelectModule }: Props) {
+export function Sidebar({ sessions, activeSessionId, newSessionId, onSelect, onNew, onDelete, isLocked, activeTab: tab, onTabChange: setTab, devConsole, memoryTokens, modules = [], activeModuleId, onSelectModule }: Props) {
   const [ctxMenu, setCtxMenu] = useState<ContextMenu | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -222,20 +223,58 @@ export function Sidebar({ sessions, activeSessionId, onSelect, onNew, onDelete, 
                 No sessions yet
               </p>
             )}
-            {sessions.map(session => (
-              <SessionItem
-                key={session.id}
-                session={session}
-                active={activeSessionId === session.id}
-                onClick={() => !renamingId && onSelect(session)}
-                onContextMenu={e => handleContextMenu(e, session)}
-                isRenaming={renamingId === session.id}
-                renameValue={renameValue}
-                onRenameChange={setRenameValue}
-                onRenameCommit={commitRename}
-                displayTitle={sessionNames[session.id] || session.title || 'New conversation'}
-              />
-            ))}
+            {sessions.map(session => {
+              const isNew = session.id === newSessionId
+              const title = sessionNames[session.id] || session.title || (isNew ? '...' : 'New conversation')
+              return (
+                <motion.div
+                  key={session.id}
+                  initial={isNew ? { opacity: 0, y: -8 } : false}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25, ease: 'easeOut' }}
+                  className="relative"
+                >
+                  {/* Зелёный пульс — только для новой сессии */}
+                  {isNew && (
+                    <motion.div
+                      className="absolute inset-0 rounded-lg pointer-events-none"
+                      style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)' }}
+                      initial={{ opacity: 1 }}
+                      animate={{ opacity: 0 }}
+                      transition={{ duration: 1.2, ease: 'easeOut', delay: 0.1 }}
+                    />
+                  )}
+                  {/* Глинт */}
+                  {isNew && (
+                    <motion.div
+                      className="absolute inset-0 rounded-lg pointer-events-none overflow-hidden"
+                      initial={{ opacity: 1 }}
+                      animate={{ opacity: 0 }}
+                      transition={{ duration: 0.8, delay: 0.05 }}
+                    >
+                      <motion.div
+                        className="absolute top-0 bottom-0 w-16"
+                        style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)', skewX: '-15deg' }}
+                        initial={{ left: '-4rem' }}
+                        animate={{ left: '110%' }}
+                        transition={{ duration: 0.5, ease: 'easeOut', delay: 0.05 }}
+                      />
+                    </motion.div>
+                  )}
+                  <SessionItem
+                    session={session}
+                    active={activeSessionId === session.id}
+                    onClick={() => !renamingId && onSelect(session)}
+                    onContextMenu={e => handleContextMenu(e, session)}
+                    isRenaming={renamingId === session.id}
+                    renameValue={renameValue}
+                    onRenameChange={setRenameValue}
+                    onRenameCommit={commitRename}
+                    displayTitle={title}
+                  />
+                </motion.div>
+              )
+            })}
           </div>
         </div>
       )}

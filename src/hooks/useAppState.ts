@@ -103,6 +103,7 @@ export function useAppState() {
     syncMessage,
     isLocked,
     isRunning,
+    runningSessions,
     addRunning,
     removeRunning,
     replaceRunning,

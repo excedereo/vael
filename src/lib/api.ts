@@ -45,6 +45,7 @@ export interface ElectronAPI {
   getSessions: (accountId: string) => Promise<Session[]>
   readSession: (sessionPath: string) => Promise<JsonlEntry[]>
   deleteSession: (sessionPath: string) => Promise<{ ok: boolean }>
+  findNewSessions: (configDir: string, excludeIds: string[]) => Promise<string[]>
 
   switchAccount: (fromId: string, toId: string) => Promise<{ ok: boolean; error?: string }>
   setActiveAccount: (id: string) => Promise<{ ok: boolean }>
@@ -53,22 +54,26 @@ export interface ElectronAPI {
   getClaudeVersion: () => Promise<string>
   openExternal: (url: string) => Promise<void>
 
-  sendMessage: (sessionId: string, text: string, accountId: string, model: string, effort: string, permissionMode: string) => Promise<{ ok: boolean }>
-  newSession: (text: string, accountId: string, model: string, effort: string, permissionMode: string) => Promise<{ ok: boolean }>
   abortRun: () => Promise<{ ok: boolean }>
 
-  ptySpawn: (configDir: string, sessionId?: string) => Promise<{ ok: boolean }>
-  ptySend: (command: string) => Promise<{ ok: boolean }>
-  ptyKill: () => Promise<{ ok: boolean }>
-  ptySessionKill: (sessionId?: string) => Promise<{ ok: boolean }>
-  ptySessionAlive: (sessionId: string) => Promise<{ alive: boolean }>
-  sessionCommand: (command: string) => Promise<{ ok: boolean; error?: string }>
+  // PTY terminal
+  ptySpawn: (termId: string, sessionId: string, projectPath: string, configDir: string, cols: number, rows: number, model?: string, effort?: string, permissionMode?: string) => Promise<{ ok: boolean }>
+  ptyWrite: (termId: string, data: string) => void
+  ptyResize: (termId: string, cols: number, rows: number) => Promise<{ ok: boolean }>
+  ptyKill: (termId: string) => Promise<{ ok: boolean }>
+  ptyAlive: (termId: string) => Promise<{ alive: boolean }>
+  onPtyData: (cb: (termId: string, data: string) => void) => () => void
+  onPtyExit: (cb: (termId: string) => void) => () => void
+
+  // Native console window
+  nconSpawn: (sessionPath: string, x: number, y: number, w: number, h: number) => Promise<{ ok: boolean }>
+  nconMove: (x: number, y: number, w: number, h: number) => Promise<{ ok: boolean }>
+  nconKill: () => Promise<{ ok: boolean }>
+  nconIsAlive: () => Promise<{ alive: boolean }>
+  nconSetVisible: (visible: boolean) => Promise<{ ok: boolean }>
 
   pickAvatar: () => Promise<string | null>
 
-  onStreamEvent: (cb: (event: StreamEvent) => void) => () => void
-  onStreamDone: (cb: (code: number | null) => void) => () => void
-  onPtyOutput: (cb: (data: string) => void) => () => void
   onSyncStatus: (cb: (status: string, message?: string) => void) => () => void
   fetchUsage: () => Promise<{ ok: boolean }>
   fetchContext: () => Promise<{ ok: boolean }>
@@ -82,6 +87,7 @@ export interface ElectronAPI {
 
   checkDeps: () => Promise<{ npm: string | null; claude: string | null; ready: boolean }>
   installClaude: () => Promise<{ ok: boolean; log: string }>
+  installClaudeVersion: (version: string) => Promise<{ ok: boolean; log: string }>
   tempSave: (buffer: ArrayBuffer, filename: string) => Promise<{ ok: boolean; filePath: string }>
   tempDelete: (filePath: string) => Promise<{ ok: boolean }>
   tempClear: () => Promise<{ ok: boolean; count: number }>
