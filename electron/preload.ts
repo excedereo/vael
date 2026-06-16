@@ -159,6 +159,15 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('session:created', handler)
   },
 
+  // Session status watching
+  watchSession: (sessionId: string, jsonlPath: string) => ipcRenderer.invoke('pty:watch-session', sessionId, jsonlPath),
+  unwatchSession: (sessionId: string) => ipcRenderer.invoke('pty:unwatch-session', sessionId),
+  onSessionStatus: (cb: (sessionId: string, status: string) => void) => {
+    const handler = (_: unknown, sessionId: string, status: string) => cb(sessionId, status)
+    ipcRenderer.on('session:status', handler)
+    return () => ipcRenderer.removeListener('session:status', handler)
+  },
+
   // Pyre modules
   modulesList: () => ipcRenderer.invoke('modules:list'),
   modulesGetSettings: (id: string) => ipcRenderer.invoke('modules:getSettings', id),
