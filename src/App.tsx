@@ -522,6 +522,19 @@ export default function App() {
                     config={sessionConfig}
                     onChange={setSessionConfig}
                     onSettings={() => setPage('settings')}
+                    onImport={async () => {
+                      const configDir = accounts.find(a => a.id === activeAccountId)?.configDir
+                      if (!configDir) return
+                      const result = await api.importSessions(configDir)
+                      if (!result.ok || result.imported.length === 0) return
+                      // Обновляем список — импортированные сессии появятся с анимацией
+                      await refreshSessions()
+                      // Помечаем последнюю импортированную как новую для анимации
+                      const lastId = result.imported[result.imported.length - 1]
+                      setNewSessionId(lastId)
+                      setActiveSessionId(lastId)
+                      setTimeout(() => setNewSessionId(null), 4000)
+                    }}
                     onStart={(btnRect) => {
                       if (activeSessionId) saveSessionConfig(activeSessionId, sessionConfig)
                       const key = activeSessionId ?? '__new__'

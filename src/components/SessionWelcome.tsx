@@ -140,6 +140,7 @@ interface Props {
   onChange: (c: SessionConfig) => void
   onStart: (btnRect?: DOMRect) => void
   onSettings?: () => void
+  onImport?: () => void
 }
 
 const MODELS: Option[] = [
@@ -169,7 +170,7 @@ const PROMPTS: Option[] = [
   { value: '', label: 'Нет', sub: 'без промпта' },
 ]
 
-export function SessionWelcome({ sessionTitle, isNew = false, config, onChange, onStart, onSettings }: Props) {
+export function SessionWelcome({ sessionTitle, isNew = false, config, onChange, onStart, onSettings, onImport }: Props) {
   const color = isNew ? 'var(--success, #22c55e)' : 'var(--accent, #d97757)'
   const glow  = isNew ? 'var(--success-glow, rgba(34,197,94,0.18))' : 'var(--accent-glow, rgba(217,119,87,0.10))'
   const btnRef = useRef<HTMLButtonElement>(null)
@@ -283,6 +284,18 @@ export function SessionWelcome({ sessionTitle, isNew = false, config, onChange, 
             : <Play size={11} fill="currentColor" />}
           {btnText}
         </motion.button>
+
+        {isNew && onImport && (
+          <button
+            onClick={onImport}
+            className="w-full text-center text-[13px] transition-colors -mt-2"
+            style={{ color: 'var(--text-ghost)' }}
+            onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-faint)')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-ghost)')}
+          >
+            импортировать сессию
+          </button>
+        )}
 
         <style>{`
           .welcome-btn-glint {

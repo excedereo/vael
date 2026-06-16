@@ -46,6 +46,7 @@ export interface ElectronAPI {
   readSession: (sessionPath: string) => Promise<JsonlEntry[]>
   deleteSession: (sessionPath: string) => Promise<{ ok: boolean }>
   findNewSessions: (configDir: string, excludeIds: string[]) => Promise<string[]>
+  importSessions: (configDir: string) => Promise<{ ok: boolean; imported: string[] }>
 
   switchAccount: (fromId: string, toId: string) => Promise<{ ok: boolean; error?: string }>
   setActiveAccount: (id: string) => Promise<{ ok: boolean }>
