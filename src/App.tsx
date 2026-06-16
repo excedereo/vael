@@ -6,6 +6,10 @@ import { useNavHistory } from './hooks/useNavHistory.js'
 import { useUpdateManager } from './hooks/useUpdateManager.js'
 import { useDependencies } from './hooks/useDependencies.js'
 import { useConsoleCapture } from './hooks/useConsoleCapture.js'
+import { useSettings } from './hooks/useSettings.js'
+import { SessionProvider } from './context/SessionContext.js'
+import { panels } from './panels/index.js'
+import { PanelErrorBoundary } from './components/PanelErrorBoundary.js'
 import { Sidebar } from './components/Sidebar.js'
 
 import { StatusBar } from './components/StatusBar.js'
@@ -16,7 +20,6 @@ import { AccountSwitchModal } from './components/AccountSwitchModal.js'
 import { FirstLaunch } from './components/FirstLaunch.js'
 import { ErrorToast } from './components/ErrorToast.js'
 import { ConsoleView } from './components/ConsoleView.js'
-import { MemoryPage } from './components/MemoryPage.js'
 import { NavControls } from './components/NavControls.js'
 import { PtyTerminalView } from './components/PtyTerminalView.js'
 import { SessionToolbar } from './components/SessionToolbar.js'
@@ -24,7 +27,6 @@ import { SessionWelcome } from './components/SessionWelcome.js'
 import { ConfettiCanvas } from './components/ConfettiCanvas.js'
 import { WindowControls } from './components/WindowControls.js'
 import { UpdateBanner } from './components/UpdateBanner.js'
-import { PyrePage } from './components/PyrePage.js'
 import { api } from './lib/api.js'
 import { Session } from './types/index'
 import { restoreSavedTheme } from './lib/theme.js'
@@ -32,6 +34,14 @@ import { loadDefaultSessionConfig } from './components/SettingsPage.js'
 import { cn } from './lib/utils.js'
 
 export default function App() {
+  return (
+    <SessionProvider>
+      <AppInner />
+    </SessionProvider>
+  )
+}
+
+function AppInner() {
   const {
     accounts,
     activeAccountId,
@@ -48,6 +58,9 @@ export default function App() {
     refreshSessions,
     refreshAccounts,
   } = useAppState()
+
+  const { uiSettings } = useSettings()
+  const contentPadding = uiSettings.contentPadding
 
   const DEFAULT_CONFIG = { ...loadDefaultSessionConfig(), prompt: '' }
 
@@ -97,7 +110,7 @@ export default function App() {
   const { push: navPush, goBack, goForward, canGoBack, canGoForward } = useNavHistory()
 
   const { updateState, handleUpdateClick, tempCleanupBanner, tempCleanupCountdown } = useUpdateManager()
-  const { deps, installing, installLog, handleInstallClaude } = useDependencies()
+  const { deps, setDeps, installing, installLog, handleInstallClaude } = useDependencies()
   const { consoleLogs, setConsoleLogs, devConsole } = useConsoleCapture()
 
 
@@ -108,14 +121,11 @@ export default function App() {
     })
   }, [])
 
-
-  // Apply saved theme on startup — reads vars directly from localStorage, no IPC
   useEffect(() => { restoreSavedTheme() }, [])
 
 
 
   const [memoryTokens, setMemoryTokens] = useState<{ auto: number; total: number } | undefined>()
-
   useEffect(() => {
     const fetchTokens = async () => {
       const r = await api.memoryGetTokens()
@@ -130,15 +140,12 @@ export default function App() {
   const [dragOver, setDragOver] = useState(false)
   const [killSessionModal, setKillSessionModal] = useState(false)
 
-  // Native drag listeners on document with capture — fires before Electron's internal handler
+  // Native drag-drop listeners
   useEffect(() => {
     const mainEl = mainAreaRef.current
-
     const onDragOver = (e: DragEvent) => { e.preventDefault() }
-
     const onDragEnter = (e: DragEvent) => {
       e.preventDefault()
-      // Show overlay when entering mainEl itself or any child, from outside mainEl
       if (!mainEl) return
       const into = e.target as Node
       const from = e.relatedTarget as Node | null
@@ -146,18 +153,13 @@ export default function App() {
         if (e.dataTransfer?.types.includes('Files')) setDragOver(true)
       }
     }
-
     const onDragLeave = (e: DragEvent) => {
       e.preventDefault()
       if (!mainEl) return
       const from = e.target as Node
       const to = e.relatedTarget as Node | null
-      // Hide overlay only when leaving mainEl entirely
-      if (mainEl.contains(from) && !mainEl.contains(to)) {
-        setDragOver(false)
-      }
+      if (mainEl.contains(from) && !mainEl.contains(to)) setDragOver(false)
     }
-
     const onDrop = (e: DragEvent) => {
       e.preventDefault()
       setDragOver(false)
@@ -171,7 +173,6 @@ export default function App() {
         }
       }
     }
-
     document.addEventListener('dragenter', onDragEnter, { capture: true })
     document.addEventListener('dragover', onDragOver, { capture: true })
     document.addEventListener('dragleave', onDragLeave, { capture: true })
@@ -186,12 +187,6 @@ export default function App() {
 
   const [switchTarget, setSwitchTarget] = useState<string | null>(null)
 
-  // After first account created — make sure we're on chat page
-  useEffect(() => {
-    if (accountsLoaded && accounts.length > 0 && page === 'accounts') {
-      // Don't auto-redirect if user intentionally opened accounts page
-    }
-  }, [accountsLoaded, accounts.length])
   const activeSession = sessions.find(s => s.id === activeSessionId) || null
 
 
@@ -279,10 +274,12 @@ export default function App() {
     refreshSessions()
   }, [activeSessionId, setActiveSessionId, refreshSessions])
 
+  // Phase: no accounts
   if (accountsLoaded && accounts.length === 0) {
     return <FirstLaunch onCreated={refreshAccounts} />
   }
 
+  // Phase: no deps
   if (deps !== null && !deps.ready) {
     return (
       <div className="flex h-screen bg-bg-base text-white items-center justify-center">
@@ -298,8 +295,6 @@ export default function App() {
                 : 'Vael не может работать без Claude Code. Можем установить автоматически.'}
             </span>
           </div>
-
-          {/* Dependency status */}
           {!installing && (
             <div className="w-full flex flex-col gap-1.5">
               {[
@@ -315,14 +310,11 @@ export default function App() {
               ))}
             </div>
           )}
-
-          {/* Install log on error */}
           {installLog && (
             <div className="w-full px-3 py-2 bg-bg-elevated rounded-xl border border-border-default text-left">
               <span className="text-[12px] text-red-400 font-mono whitespace-pre-wrap break-all">{installLog}</span>
             </div>
           )}
-
           {installing ? (
             <div className="flex items-center gap-2 text-[14px] text-text-muted">
               <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
@@ -330,22 +322,13 @@ export default function App() {
             </div>
           ) : (
             <div className="flex flex-col gap-2 w-full">
-              <button
-                onClick={handleInstallClaude}
-                className="w-full py-2.5 rounded-xl bg-accent text-white text-[14px] font-medium hover:bg-accent/90 transition-colors"
-              >
+              <button onClick={handleInstallClaude} className="w-full py-2.5 rounded-xl bg-accent text-white text-[14px] font-medium hover:bg-accent/90 transition-colors">
                 Установить автоматически
               </button>
-              <button
-                onClick={() => api.openExternal('https://docs.anthropic.com/en/docs/claude-code/setup')}
-                className="w-full py-2.5 rounded-xl border border-border-default text-[14px] text-text-muted hover:text-text-primary hover:border-border-strong transition-colors"
-              >
+              <button onClick={() => api.openExternal('https://docs.anthropic.com/en/docs/claude-code/setup')} className="w-full py-2.5 rounded-xl border border-border-default text-[14px] text-text-muted hover:text-text-primary hover:border-border-strong transition-colors">
                 Открыть документацию
               </button>
-              <button
-                onClick={() => api.checkDeps().then(setDeps)}
-                className="text-[13px] text-text-ghost hover:text-text-faint transition-colors"
-              >
+              <button onClick={() => api.checkDeps().then(setDeps)} className="text-[13px] text-text-ghost hover:text-text-faint transition-colors">
                 Проверить снова
               </button>
             </div>
@@ -355,6 +338,7 @@ export default function App() {
     )
   }
 
+  // Phase: ready — main UI
   return (
     <div className="flex h-screen bg-bg-base text-white overflow-hidden">
       <ErrorToast message={null} onClose={() => {}} />
@@ -364,18 +348,15 @@ export default function App() {
           <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-bg-elevated border border-border-default shadow-2xl shadow-black/60 text-[14px]">
             <span className="text-text-secondary">Очистка temp папки…</span>
             <span className="text-text-faint">{tempCleanupCountdown}с</span>
-            <button
-              onClick={() => api.tempCancelCleanup()}
-              className="text-text-muted hover:text-text-primary transition-colors border border-border-default rounded-lg px-2.5 py-1 text-[13px]"
-            >
+            <button onClick={() => api.tempCancelCleanup()} className="text-text-muted hover:text-text-primary transition-colors border border-border-default rounded-lg px-2.5 py-1 text-[13px]">
               Отмена
             </button>
           </div>
         </div>
       )}
+
       <StatusBar syncStatus={syncStatus} syncMessage={syncMessage} />
 
-      {/* NavControls overlay — hidden when overlay pages are open */}
       <div className={cn("fixed top-0 left-0 z-50 h-10 flex items-center px-2 gap-0.5 no-drag", page !== 'chat' && "hidden")}>
         <NavControls
           canGoBack={canGoBack}
@@ -389,10 +370,7 @@ export default function App() {
 
       {/* Sidebar */}
       <div
-        className={cn(
-          'shrink-0 border-r border-border-subtle flex flex-col bg-bg-sidebar transition-[width] duration-200 ease-out overflow-hidden',
-          sidebarCollapsed ? 'w-0' : 'w-72',
-        )}
+        className={cn('shrink-0 border-r border-border-subtle flex flex-col bg-bg-sidebar transition-[width] duration-200 ease-out overflow-hidden', sidebarCollapsed ? 'w-0' : 'w-72')}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => { e.preventDefault(); e.stopPropagation() }}
       >
@@ -416,7 +394,7 @@ export default function App() {
             onSelectModule={setActiveModuleId}
           />
         </div>
-        {updateState && <UpdateBanner state={updateState} onClick={handleUpdateClick} onDismiss={() => setUpdateState(null)} />}
+        {updateState && <UpdateBanner state={updateState} onClick={handleUpdateClick} onDismiss={() => {}} />}
         <AccountBar
           accounts={accounts}
           activeAccountId={activeAccountId || ''}
@@ -427,7 +405,7 @@ export default function App() {
         />
       </div>
 
-      {/* Main */}
+      {/* Main area */}
       <div ref={mainAreaRef} className="flex-1 flex flex-col min-w-0 relative">
         <AnimatePresence>
           {dragOver && sidebarTab === 'sessions' && (
@@ -623,14 +601,24 @@ export default function App() {
             <ConsoleView logs={consoleLogs} onClear={() => setConsoleLogs([])} />
           </div>
         )}
-        {/* Pyre */}
-        {sidebarTab === 'pyre' && (
-          <PyrePage sessions={sessions} activeModuleId={activeModuleId} onModulesChange={setModules} />
-        )}
-        {/* Memory — always mounted to preserve state */}
-        <div className="no-drag" style={{ flex: 1, overflow: 'hidden', display: sidebarTab === 'memory' ? 'flex' : 'none', flexDirection: 'column', minHeight: 0 }}>
-          <MemoryPage onBack={() => setSidebarTab('sessions')} />
-        </div>
+        {/* Registered panels (Pyre, Memory) */}
+        {panels.map(panel => (
+          <div
+            key={panel.id}
+            className="no-drag"
+            style={{
+              flex: 1,
+              overflow: 'hidden',
+              display: sidebarTab === panel.id ? 'flex' : 'none',
+              flexDirection: 'column',
+              minHeight: 0,
+            }}
+          >
+            <PanelErrorBoundary id={panel.id}>
+              {panel.render()}
+            </PanelErrorBoundary>
+          </div>
+        ))}
       </div>
 
       {/* Full-screen overlays */}
@@ -651,11 +639,7 @@ export default function App() {
           <SettingsPage onBack={() => setPage('chat')} />
         </div>
       )}
-      {page === 'memory' && (
-        <div className="fixed inset-0 z-40 bg-bg-base">
-          <MemoryPage onBack={() => setPage('chat')} />
-        </div>
-      )}
+
       {/* Account switch modal */}
       {switchTarget && (() => {
         const from = accounts.find(a => a.id === activeAccountId)
