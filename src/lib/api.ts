@@ -124,6 +124,11 @@ export interface ElectronAPI {
   onSessionReload: (cb: (sessionId: string) => void) => () => void
   onSessionCreated: (cb: (sessionId: string) => void) => () => void
 
+  // Session status watching
+  watchSession: (sessionId: string, jsonlPath: string) => Promise<{ ok: boolean }>
+  unwatchSession: (sessionId: string) => Promise<{ ok: boolean }>
+  onSessionStatus: (cb: (sessionId: string, status: string) => void) => () => void
+
   // Pyre modules
   modulesList: () => Promise<{ id: string; name: string; icon?: string; running: boolean }[]>
   modulesGetSettings: (id: string) => Promise<Record<string, unknown> | null>

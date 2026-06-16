@@ -43,6 +43,6 @@ export function registerAllHandlers(deps: HandlerDeps) {
   registerModuleHandlers(moduleRegistry)
   registerWindowHandlers(getWindow)
   registerSettingsHandlers(setLastConfigDir, flushLogBuffer)
-  registerPtyHandlers(claudeRunner)
+  registerPtyHandlers(claudeRunner, getWindow)
   registerTempHandlers(getWindow)
 }
