@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('api', {
   readSession: (sessionPath: string) => ipcRenderer.invoke('sessions:read', sessionPath),
   deleteSession: (sessionPath: string) => ipcRenderer.invoke('sessions:delete', sessionPath),
   findNewSessions: (configDir: string, excludeIds: string[]) => ipcRenderer.invoke('sessions:findNew', configDir, excludeIds),
+  importSessions: (configDir: string) => ipcRenderer.invoke('sessions:import', configDir),
 
   // Account switch (sync + set active)
   switchAccount: (fromId: string, toId: string) => ipcRenderer.invoke('account:switch', fromId, toId),
