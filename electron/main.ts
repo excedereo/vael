@@ -55,7 +55,17 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      clipboard: true,
     },
+  })
+
+  // Разрешаем clipboard-read для вставки в терминал
+  mainWindow.webContents.session.setPermissionRequestHandler((_wc, permission, callback) => {
+    if (permission === 'clipboard-read' || permission === 'clipboard-sanitized-write') {
+      callback(true)
+    } else {
+      callback(false)
+    }
   })
 
   mainWindow.webContents.on('will-navigate', (e, url) => {

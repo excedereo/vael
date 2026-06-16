@@ -15,6 +15,11 @@ contextBridge.exposeInMainWorld('api', {
   deleteSession: (sessionPath: string) => ipcRenderer.invoke('sessions:delete', sessionPath),
   findNewSessions: (configDir: string, excludeIds: string[]) => ipcRenderer.invoke('sessions:findNew', configDir, excludeIds),
   importSessions: (configDir: string) => ipcRenderer.invoke('sessions:import', configDir),
+  saveAttachment: (buffer: ArrayBuffer, filename: string) => ipcRenderer.invoke('attachments:save', buffer, filename),
+  clipboardRead: () => ipcRenderer.invoke('clipboard:read'),
+  attachmentsGetDirSize: () => ipcRenderer.invoke('attachments:getDirSize'),
+  attachmentsClear: (maxAgeDays?: number) => ipcRenderer.invoke('attachments:clear', maxAgeDays),
+  attachmentsOpenFolder: () => ipcRenderer.invoke('attachments:openFolder'),
 
   // Account switch (sync + set active)
   switchAccount: (fromId: string, toId: string) => ipcRenderer.invoke('account:switch', fromId, toId),

@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, dialog } from 'electron'
+import { ipcMain, BrowserWindow, dialog, clipboard } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
@@ -42,6 +42,81 @@ export function registerSessionHandlers(
 
   ipcMain.handle('session:reload', (_, sessionId: string) => {
     getWindow()?.webContents.send('session:reload', sessionId)
+  })
+
+  const ATTACHMENTS_DIR = path.join(os.homedir(), '.vael', 'attachments')
+
+  // Читаем clipboard из main process — работает без browser permissions
+  ipcMain.handle('clipboard:read', async () => {
+    // 1. Файлы через нативный CF_HDROP (скопированные в проводнике)
+    try {
+      const { NativeConsole } = await import('../NativeConsole.js')
+      const files = NativeConsole.getClipboardFiles()
+      if (files && files.length > 0) return { type: 'paths', paths: files }
+    } catch (e) {
+      console.log('[clipboard] CF_HDROP error:', e)
+    }
+
+    // 2. Текст
+    const text = clipboard.readText()
+    if (text) return { type: 'text', text }
+
+    // 3. Изображение из буфера (скриншот)
+    const img = clipboard.readImage()
+    if (!img.isEmpty()) {
+      fs.mkdirSync(ATTACHMENTS_DIR, { recursive: true })
+      const fp = path.join(ATTACHMENTS_DIR, `clipboard_${Date.now()}.png`)
+      fs.writeFileSync(fp, img.toPNG())
+      return { type: 'file', filePath: fp }
+    }
+
+    return { type: 'empty' }
+  })
+
+  ipcMain.handle('attachments:save', async (_, buffer: ArrayBuffer, filename: string) => {
+    fs.mkdirSync(ATTACHMENTS_DIR, { recursive: true })
+    const safe = filename.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const fp = path.join(ATTACHMENTS_DIR, `${Date.now()}_${safe}`)
+    fs.writeFileSync(fp, Buffer.from(buffer))
+    return { ok: true, filePath: fp }
+  })
+
+  ipcMain.handle('attachments:getDirSize', async () => {
+    try {
+      if (!fs.existsSync(ATTACHMENTS_DIR)) return { bytes: 0, count: 0 }
+      const files = fs.readdirSync(ATTACHMENTS_DIR)
+      let bytes = 0
+      for (const f of files) {
+        try { bytes += fs.statSync(path.join(ATTACHMENTS_DIR, f)).size } catch {}
+      }
+      return { bytes, count: files.length }
+    } catch { return { bytes: 0, count: 0 } }
+  })
+
+  ipcMain.handle('attachments:clear', async (_, maxAgeDays?: number) => {
+    try {
+      if (!fs.existsSync(ATTACHMENTS_DIR)) return { ok: true, count: 0 }
+      const files = fs.readdirSync(ATTACHMENTS_DIR)
+      const now = Date.now()
+      const maxAgeMs = maxAgeDays ? maxAgeDays * 86400000 : 0
+      let count = 0
+      for (const f of files) {
+        const fp = path.join(ATTACHMENTS_DIR, f)
+        try {
+          if (!maxAgeMs || now - fs.statSync(fp).mtimeMs > maxAgeMs) {
+            fs.unlinkSync(fp); count++
+          }
+        } catch {}
+      }
+      return { ok: true, count }
+    } catch (e) { return { ok: false, count: 0 } }
+  })
+
+  ipcMain.handle('attachments:openFolder', async () => {
+    const { shell } = await import('electron')
+    fs.mkdirSync(ATTACHMENTS_DIR, { recursive: true })
+    shell.openPath(ATTACHMENTS_DIR)
+    return { ok: true }
   })
 
   ipcMain.handle('sessions:import', async (_, configDir: string) => {

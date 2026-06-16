@@ -1,6 +1,7 @@
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <shellapi.h>
 #include <napi.h>
 #include <string>
 #include <thread>
@@ -209,12 +210,43 @@ Napi::Value SetVisible(const Napi::CallbackInfo& info) {
   return env.Undefined();
 }
 
+// Read file paths from clipboard (CF_HDROP)
+Napi::Value GetClipboardFiles(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  Napi::Array result = Napi::Array::New(env);
+
+  if (!OpenClipboard(nullptr)) return result;
+
+  HGLOBAL hDrop = GetClipboardData(CF_HDROP);
+  if (!hDrop) { CloseClipboard(); return result; }
+
+  HDROP hDropData = (HDROP)GlobalLock(hDrop);
+  if (!hDropData) { CloseClipboard(); return result; }
+
+  UINT count = DragQueryFileW(hDropData, 0xFFFFFFFF, nullptr, 0);
+  for (UINT i = 0; i < count; i++) {
+    UINT len = DragQueryFileW(hDropData, i, nullptr, 0);
+    std::wstring wpath(len, L'\0');
+    DragQueryFileW(hDropData, i, &wpath[0], len + 1);
+    // Convert wide string to UTF-8
+    int utf8len = WideCharToMultiByte(CP_UTF8, 0, wpath.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string utf8path(utf8len - 1, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, wpath.c_str(), -1, &utf8path[0], utf8len, nullptr, nullptr);
+    result.Set(i, Napi::String::New(env, utf8path));
+  }
+
+  GlobalUnlock(hDrop);
+  CloseClipboard();
+  return result;
+}
+
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
-  exports.Set("spawn",      Napi::Function::New(env, Spawn));
-  exports.Set("move",       Napi::Function::New(env, Move));
-  exports.Set("kill",       Napi::Function::New(env, Kill));
-  exports.Set("isAlive",    Napi::Function::New(env, IsAlive));
-  exports.Set("setVisible", Napi::Function::New(env, SetVisible));
+  exports.Set("spawn",             Napi::Function::New(env, Spawn));
+  exports.Set("move",              Napi::Function::New(env, Move));
+  exports.Set("kill",              Napi::Function::New(env, Kill));
+  exports.Set("isAlive",           Napi::Function::New(env, IsAlive));
+  exports.Set("setVisible",        Napi::Function::New(env, SetVisible));
+  exports.Set("getClipboardFiles", Napi::Function::New(env, GetClipboardFiles));
   return exports;
 }
 

@@ -1,6 +1,6 @@
 import { useCallback, useState, useEffect, useRef } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { X } from 'lucide-react'
+import { X, StopCircle } from 'lucide-react'
 import { useAppState } from './hooks/useAppState.js'
 import { useNavHistory } from './hooks/useNavHistory.js'
 import { useUpdateManager } from './hooks/useUpdateManager.js'
@@ -128,6 +128,7 @@ export default function App() {
 
   const mainAreaRef = useRef<HTMLDivElement>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [killSessionModal, setKillSessionModal] = useState(false)
 
   // Native drag listeners on document with capture — fires before Electron's internal handler
   useEffect(() => {
@@ -161,8 +162,13 @@ export default function App() {
       e.preventDefault()
       setDragOver(false)
       if (mainEl?.contains(e.target as Node) && e.dataTransfer?.files.length) {
-        // files handled by active SessionPane's InputBar via DOM event
-        mainEl.dispatchEvent(new CustomEvent('vaeli:dropFiles', { detail: e.dataTransfer.files, bubbles: true }))
+        const files = Array.from(e.dataTransfer.files)
+        const paths = files.map(f => (f as File & { path?: string }).path).filter(Boolean) as string[]
+        if (paths.length > 0) {
+          document.dispatchEvent(new CustomEvent('vaeli:dropPaths', { detail: paths }))
+        } else {
+          document.dispatchEvent(new CustomEvent('vaeli:dropFiles', { detail: e.dataTransfer.files }))
+        }
       }
     }
 
@@ -396,6 +402,7 @@ export default function App() {
             sessions={sessions}
             activeSessionId={activeSessionId}
             newSessionId={newSessionId}
+            runningSessionIds={Object.keys(spawnedSessions).map(tid => termToSession[tid] ?? (tid === '__new__' ? null : tid)).filter(Boolean) as string[]}
             onSelect={handleSelectSession}
             onNew={handleNewSession}
             onDelete={handleDeleteSession}
@@ -436,42 +443,70 @@ export default function App() {
 
         <div className="h-10 shrink-0 border-b border-border-subtle flex items-center">
           <div
-            className="app-drag-region flex items-center flex-1 min-w-0 h-full px-5 gap-3"
+            className="app-drag-region flex items-center flex-1 min-w-0 h-full px-5 gap-2"
             style={{ marginLeft: sidebarCollapsed ? '9rem' : 0 }}
           >
+            {(() => {
+              const isSpawned = Object.keys(spawnedSessions).some(tid => {
+                const resolved = termToSession[tid] ?? (tid === '__new__' ? null : tid)
+                return activeSessionId ? resolved === activeSessionId : tid === '__new__'
+              })
+              return isSpawned && (
+                <button
+                  onClick={() => setKillSessionModal(true)}
+                  className="no-drag flex items-center gap-1.5 px-2 h-6 rounded-md transition-colors text-text-ghost hover:text-red-400 hover:bg-surface-hover shrink-0 text-[12px]"
+                  title="Завершить сессию"
+                >
+                  <StopCircle size={12} />
+                  <span>Закрыть сессию</span>
+                </button>
+              )
+            })()}
             {activeSession && (
               <span className="text-sm text-text-faint truncate select-none pointer-events-none">
                 {activeSession.title || activeSession.id}
               </span>
             )}
           </div>
-          {Object.keys(spawnedSessions).some(tid => {
-            const resolved = termToSession[tid] ?? (tid === '__new__' ? null : tid)
-            return activeSessionId ? resolved === activeSessionId : tid === '__new__'
-          }) && (
-            <button
-              onClick={() => {
-                const termId = Object.keys(spawnedSessions).find(tid => {
-                  const resolved = termToSession[tid] ?? (tid === '__new__' ? null : tid)
-                  return activeSessionId ? resolved === activeSessionId : tid === '__new__'
-                }) ?? (activeSessionId ?? '__new__')
-                api.ptyKill(termId)
-                setSpawnedSessions(prev => { const next = { ...prev }; delete next[termId]; return next })
-                setTermToSession(prev => { const next = { ...prev }; delete next[termId]; return next })
-                setSpawnTrigger(0)
-              }}
-              className="no-drag flex items-center justify-center w-7 h-7 rounded-lg mr-2 transition-colors text-text-ghost hover:text-red-400 hover:bg-surface-hover"
-              title="Завершить сессию"
-            >
-              <X size={13} />
-            </button>
-          )}
           <WindowControls />
         </div>
 
-        {/* PTY terminal — main session UI */}
-        {sidebarTab === 'sessions' && (
-          <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative" style={{ background: 'var(--bg-base)' }}>
+        {killSessionModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setKillSessionModal(false)} />
+            <div className="relative w-80 bg-bg-surface border border-border-default rounded-2xl p-5 shadow-2xl space-y-4">
+              <h2 className="text-base font-semibold text-text-primary">Закрыть сессию?</h2>
+              <p className="text-sm text-text-secondary">PTY процесс будет убит. Сама сессия никуда не денется — её можно будет открыть снова.</p>
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setKillSessionModal(false)} className="text-sm px-3 py-1.5 rounded-lg text-text-secondary hover:bg-surface-hover transition-colors">
+                  Отмена
+                </button>
+                <button
+                  onClick={() => {
+                    setKillSessionModal(false)
+                    const termId = Object.keys(spawnedSessions).find(tid => {
+                      const resolved = termToSession[tid] ?? (tid === '__new__' ? null : tid)
+                      return activeSessionId ? resolved === activeSessionId : tid === '__new__'
+                    }) ?? (activeSessionId ?? '__new__')
+                    api.ptyKill(termId)
+                    setSpawnedSessions(prev => { const next = { ...prev }; delete next[termId]; return next })
+                    setTermToSession(prev => { const next = { ...prev }; delete next[termId]; return next })
+                    setSpawnTrigger(0)
+                  }}
+                  className="text-sm px-3 py-1.5 rounded-lg text-red-400 bg-red-400/10 hover:bg-red-400/20 transition-colors"
+                >
+                  Завершить
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PTY terminal — main session UI, всегда в DOM чтобы не убивать процессы при смене вкладок */}
+        <div
+          className="flex-1 min-h-0 flex flex-col overflow-hidden relative"
+          style={{ background: 'var(--bg-base)', display: sidebarTab === 'sessions' ? 'flex' : 'none' }}
+        >
             <div className="flex-1 min-h-0 pt-[4px] relative" style={{ background: '#0a0a0a' }}>
               {/* Render all spawned sessions, show only active */}
               {Object.keys(spawnedSessions).map(termId => {
@@ -580,9 +615,7 @@ export default function App() {
                 transition={{ duration: 0.5 }}
               />
             )}
-          </div>
-        )}
-
+        </div>
 
         {/* Console */}
         {sidebarTab === 'console' && (
