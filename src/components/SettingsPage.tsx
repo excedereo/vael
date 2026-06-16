@@ -17,6 +17,8 @@ import {
   Section, ToggleRow, SelectRow, TextRow, LockedRow,
   PendingSection, PendingRow, SettingRow, ThemePicker, PtyOptSection, Dropdown,
 } from './SettingsComponents.js'
+import { useSettings, DEFAULT_CONTENT_PADDING as SETTINGS_DEFAULT_CONTENT_PADDING } from '../hooks/useSettings.js'
+import type { UISettings } from '../hooks/useSettings.js'
 
 interface Props {
   onBack: () => void
@@ -48,15 +50,8 @@ interface ClaudeSettings {
   pushNotifWhenClaudeDecides?: boolean
 }
 
-// Settings stored in localStorage (Vael-only)
-interface UISettings {
-  reduceMotion: boolean
-  showTurnDuration: boolean
-  autoScroll: boolean
-  contentPadding: number
-}
-
-export const DEFAULT_CONTENT_PADDING = 160
+// Re-export для обратной совместимости с App.tsx
+export const DEFAULT_CONTENT_PADDING = SETTINGS_DEFAULT_CONTENT_PADDING
 
 type Tab = 'interface' | 'icons' | 'claude' | 'system'
 
@@ -65,18 +60,6 @@ const PERMISSION_OPTIONS = ['bypassPermissions', 'plan']
 const OUTPUT_OPTIONS   = ['default', 'compact', 'verbose']
 const UPDATE_OPTIONS   = ['latest', 'beta', 'disabled']
 const NOTIF_OPTIONS    = ['auto', 'always', 'never']
-
-function loadUISettings(): UISettings {
-  try {
-    const s = localStorage.getItem('vaeliUISettings')
-    const parsed = s ? JSON.parse(s) : {}
-    return { reduceMotion: false, showTurnDuration: false, autoScroll: true, contentPadding: DEFAULT_CONTENT_PADDING, ...parsed }
-  } catch { return { reduceMotion: false, showTurnDuration: false, autoScroll: true, contentPadding: DEFAULT_CONTENT_PADDING } }
-}
-
-function saveUISettings(s: UISettings) {
-  localStorage.setItem('vaeliUISettings', JSON.stringify(s))
-}
 
 // PTY-recommended values — applied when applyPtyOptimizations is true
 const PTY_RECOMMENDED: Partial<ClaudeSettings> = {
@@ -204,12 +187,11 @@ export function SettingsPage({ onBack }: Props) {
   const [claude, setClaude] = useState<ClaudeSettings>({})
   const [saving, setSaving] = useState(false)
   const [version, setVersion] = useState<string>('')
-  const [uiSettings, setUiSettings] = useState<UISettings>(() => loadUISettings())
+  const { uiSettings, setUISettings } = useSettings()
 
   const updateUI = (patch: Partial<UISettings>) => {
     const next = { ...uiSettings, ...patch }
-    setUiSettings(next)
-    saveUISettings(next)
+    setUISettings(next)
     window.dispatchEvent(new Event('vaeli:uiSettingsChanged'))
   }
   const [slotOverrides, setSlotOverrides] = useState<SlotOverrides>(() => loadSlotOverrides())
