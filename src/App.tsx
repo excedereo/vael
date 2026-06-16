@@ -7,28 +7,38 @@ import { useNavHistory } from './hooks/useNavHistory.js'
 import { useUpdateManager } from './hooks/useUpdateManager.js'
 import { useDependencies } from './hooks/useDependencies.js'
 import { useConsoleCapture } from './hooks/useConsoleCapture.js'
+import { useSettings } from './hooks/useSettings.js'
+import { SessionProvider } from './context/SessionContext.js'
+import { panels } from './panels/index.js'
+import { PanelErrorBoundary } from './components/PanelErrorBoundary.js'
 import { Sidebar } from './components/Sidebar.js'
 import { ChatView } from './components/ChatView.js'
 import { InputBar, InputBarHandle, ModelId, EffortLevel, PermissionMode, CommandName, getMaxEffort } from './components/InputBar.js'
 import { StatusBar } from './components/StatusBar.js'
 import { AccountBar } from './components/AccountBar.js'
 import { AccountsPage } from './components/AccountsPage.js'
-import { SettingsPage, DEFAULT_CONTENT_PADDING } from './components/SettingsPage.js'
+import { SettingsPage } from './components/SettingsPage.js'
 import { AccountSwitchModal } from './components/AccountSwitchModal.js'
 import { FirstLaunch } from './components/FirstLaunch.js'
 import { ErrorToast } from './components/ErrorToast.js'
 import { ConsoleView } from './components/ConsoleView.js'
-import { MemoryPage } from './components/MemoryPage.js'
 import { NavControls } from './components/NavControls.js'
 import { WindowControls } from './components/WindowControls.js'
 import { UpdateBanner } from './components/UpdateBanner.js'
-import { PyrePage } from './components/PyrePage.js'
 import { api } from './lib/api.js'
 import { Session } from './types/index'
 import { restoreSavedTheme } from './lib/theme.js'
 import { cn } from './lib/utils.js'
 
 export default function App() {
+  return (
+    <SessionProvider>
+      <AppInner />
+    </SessionProvider>
+  )
+}
+
+function AppInner() {
   const {
     accounts,
     activeAccountId,
@@ -48,6 +58,9 @@ export default function App() {
     refreshAccounts,
   } = useAppState()
 
+  const { uiSettings } = useSettings()
+  const contentPadding = uiSettings.contentPadding
+
   const [activeModel, setActiveModel] = useState<ModelId>('claude-sonnet-4-6')
   const [activeEffort, setActiveEffort] = useState<EffortLevel>('medium')
   const [activePermission, setActivePermission] = useState<PermissionMode>('bypassPermissions')
@@ -62,7 +75,7 @@ export default function App() {
   const [killModal, setKillModal] = useState(false)
 
   const { updateState, handleUpdateClick, tempCleanupBanner, tempCleanupCountdown } = useUpdateManager()
-  const { deps, installing, installLog, handleInstallClaude } = useDependencies()
+  const { deps, setDeps, installing, installLog, handleInstallClaude } = useDependencies()
   const { consoleLogs, setConsoleLogs, devConsole } = useConsoleCapture()
 
   // Poll PTY alive status
@@ -91,12 +104,8 @@ export default function App() {
     })
   }, [])
 
-
-  // Apply saved theme on startup — reads vars directly from localStorage, no IPC
   useEffect(() => { restoreSavedTheme() }, [])
 
-
-  // Load defaults from claude settings on startup
   useEffect(() => {
     api.getSettings().then(s => {
       const settings = s as { effortLevel?: string; defaultPermissionMode?: string }
@@ -107,7 +116,6 @@ export default function App() {
   }, [])
 
   const [memoryTokens, setMemoryTokens] = useState<{ auto: number; total: number } | undefined>()
-
   useEffect(() => {
     const fetchTokens = async () => {
       const r = await api.memoryGetTokens()
@@ -120,29 +128,16 @@ export default function App() {
 
   const [chatAtBottom, setChatAtBottom] = useState(true)
   const [scrollTrigger, setScrollTrigger] = useState(0)
-  const [contentPadding, setContentPadding] = useState<number>(() => {
-    try { const s = localStorage.getItem('vaeliUISettings'); return s ? (JSON.parse(s).contentPadding ?? DEFAULT_CONTENT_PADDING) : DEFAULT_CONTENT_PADDING } catch { return DEFAULT_CONTENT_PADDING }
-  })
-  useEffect(() => {
-    const h = () => {
-      try { const s = localStorage.getItem('vaeliUISettings'); setContentPadding(s ? (JSON.parse(s).contentPadding ?? DEFAULT_CONTENT_PADDING) : DEFAULT_CONTENT_PADDING) } catch {}
-    }
-    window.addEventListener('vaeli:uiSettingsChanged', h)
-    return () => window.removeEventListener('vaeli:uiSettingsChanged', h)
-  }, [])
   const inputBarRef = useRef<InputBarHandle>(null)
   const mainAreaRef = useRef<HTMLDivElement>(null)
   const [dragOver, setDragOver] = useState(false)
 
-  // Native drag listeners on document with capture — fires before Electron's internal handler
+  // Native drag-drop listeners
   useEffect(() => {
     const mainEl = mainAreaRef.current
-
     const onDragOver = (e: DragEvent) => { e.preventDefault() }
-
     const onDragEnter = (e: DragEvent) => {
       e.preventDefault()
-      // Show overlay when entering mainEl itself or any child, from outside mainEl
       if (!mainEl) return
       const into = e.target as Node
       const from = e.relatedTarget as Node | null
@@ -150,18 +145,13 @@ export default function App() {
         if (e.dataTransfer?.types.includes('Files')) setDragOver(true)
       }
     }
-
     const onDragLeave = (e: DragEvent) => {
       e.preventDefault()
       if (!mainEl) return
       const from = e.target as Node
       const to = e.relatedTarget as Node | null
-      // Hide overlay only when leaving mainEl entirely
-      if (mainEl.contains(from) && !mainEl.contains(to)) {
-        setDragOver(false)
-      }
+      if (mainEl.contains(from) && !mainEl.contains(to)) setDragOver(false)
     }
-
     const onDrop = (e: DragEvent) => {
       e.preventDefault()
       setDragOver(false)
@@ -169,7 +159,6 @@ export default function App() {
         inputBarRef.current?.addFiles(e.dataTransfer.files)
       }
     }
-
     document.addEventListener('dragenter', onDragEnter, { capture: true })
     document.addEventListener('dragover', onDragOver, { capture: true })
     document.addEventListener('dragleave', onDragLeave, { capture: true })
@@ -184,12 +173,6 @@ export default function App() {
 
   const [switchTarget, setSwitchTarget] = useState<string | null>(null)
 
-  // After first account created — make sure we're on chat page
-  useEffect(() => {
-    if (accountsLoaded && accounts.length > 0 && page === 'accounts') {
-      // Don't auto-redirect if user intentionally opened accounts page
-    }
-  }, [accountsLoaded, accounts.length])
   const activeSession = sessions.find(s => s.id === activeSessionId) || null
   const { entries, liveEntries, isStreaming, isThinking, isCompacting, liveTool, appendUserMessage, error, clearError, streamStats, ptyTokens, ptyTokensDelta, finalEntryKey, reloadEntries } = useSession(activeSession)
 
@@ -243,20 +226,14 @@ export default function App() {
 
   const handleSend = useCallback(async (text: string) => {
     if (!activeAccountId) return
-
     appendUserMessage(text)
-
     const effort = getMaxEffort(activeModel) ? activeEffort : null
-    // Ключ для трекинга: реальный sessionId или '__pending__' для новых сессий
     const sessionKey = activeSessionId ?? '__pending__'
     addRunning(sessionKey)
-
     if (activeSessionId) {
       await api.sendMessage(activeSessionId, text, activeAccountId, activeModel, effort, activePermission)
     } else {
       await api.newSession(text, activeAccountId, activeModel, effort, activePermission)
-
-      // capture session_id from system init event — заменяем __pending__ на реальный id
       const unsubInit = api.onStreamEvent((event) => {
         if (event.type === 'system' && event.subtype === 'init' && event.session_id) {
           replaceRunning('__pending__', event.session_id)
@@ -266,10 +243,8 @@ export default function App() {
         }
       })
     }
-
     const doneSessionKey = activeSessionId ?? '__pending__'
     const unsubDone = api.onStreamDone(async () => {
-      // Убираем по реальному id если он уже известен, иначе по ключу с которым стартовали
       removeRunning(activeSessionId ?? doneSessionKey)
       refreshSessions()
       unsubDone()
@@ -287,18 +262,19 @@ export default function App() {
     handleSend(fullText)
   }, [activeSessionId, handleSend])
 
-
-  const handleDeleteSession = useCallback(async (session: import('./types/index').Session) => {
+  const handleDeleteSession = useCallback(async (session: Session) => {
     const sessionPath = `${session.projectPath}\\${session.id}.jsonl`
     await api.deleteSession(sessionPath)
     if (activeSessionId === session.id) setActiveSessionId(null)
     refreshSessions()
   }, [activeSessionId, setActiveSessionId, refreshSessions])
 
+  // Phase: no accounts
   if (accountsLoaded && accounts.length === 0) {
     return <FirstLaunch onCreated={refreshAccounts} />
   }
 
+  // Phase: no deps
   if (deps !== null && !deps.ready) {
     return (
       <div className="flex h-screen bg-bg-base text-white items-center justify-center">
@@ -314,8 +290,6 @@ export default function App() {
                 : 'Vael не может работать без Claude Code. Можем установить автоматически.'}
             </span>
           </div>
-
-          {/* Dependency status */}
           {!installing && (
             <div className="w-full flex flex-col gap-1.5">
               {[
@@ -331,14 +305,11 @@ export default function App() {
               ))}
             </div>
           )}
-
-          {/* Install log on error */}
           {installLog && (
             <div className="w-full px-3 py-2 bg-bg-elevated rounded-xl border border-border-default text-left">
               <span className="text-[12px] text-red-400 font-mono whitespace-pre-wrap break-all">{installLog}</span>
             </div>
           )}
-
           {installing ? (
             <div className="flex items-center gap-2 text-[14px] text-text-muted">
               <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
@@ -346,22 +317,13 @@ export default function App() {
             </div>
           ) : (
             <div className="flex flex-col gap-2 w-full">
-              <button
-                onClick={handleInstallClaude}
-                className="w-full py-2.5 rounded-xl bg-accent text-white text-[14px] font-medium hover:bg-accent/90 transition-colors"
-              >
+              <button onClick={handleInstallClaude} className="w-full py-2.5 rounded-xl bg-accent text-white text-[14px] font-medium hover:bg-accent/90 transition-colors">
                 Установить автоматически
               </button>
-              <button
-                onClick={() => api.openExternal('https://docs.anthropic.com/en/docs/claude-code/setup')}
-                className="w-full py-2.5 rounded-xl border border-border-default text-[14px] text-text-muted hover:text-text-primary hover:border-border-strong transition-colors"
-              >
+              <button onClick={() => api.openExternal('https://docs.anthropic.com/en/docs/claude-code/setup')} className="w-full py-2.5 rounded-xl border border-border-default text-[14px] text-text-muted hover:text-text-primary hover:border-border-strong transition-colors">
                 Открыть документацию
               </button>
-              <button
-                onClick={() => api.checkDeps().then(setDeps)}
-                className="text-[13px] text-text-ghost hover:text-text-faint transition-colors"
-              >
+              <button onClick={() => api.checkDeps().then(setDeps)} className="text-[13px] text-text-ghost hover:text-text-faint transition-colors">
                 Проверить снова
               </button>
             </div>
@@ -371,27 +333,25 @@ export default function App() {
     )
   }
 
+  // Phase: ready — main UI
   return (
     <div className="flex h-screen bg-bg-base text-white overflow-hidden">
       <ErrorToast message={error} onClose={clearError} />
-      {/* Temp cleanup banner */}
+
       {tempCleanupBanner && (
         <div className="fixed top-10 left-1/2 -translate-x-1/2 z-[300] animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-bg-elevated border border-border-default shadow-2xl shadow-black/60 text-[14px]">
             <span className="text-text-secondary">Очистка temp папки…</span>
             <span className="text-text-faint">{tempCleanupCountdown}с</span>
-            <button
-              onClick={() => api.tempCancelCleanup()}
-              className="text-text-muted hover:text-text-primary transition-colors border border-border-default rounded-lg px-2.5 py-1 text-[13px]"
-            >
+            <button onClick={() => api.tempCancelCleanup()} className="text-text-muted hover:text-text-primary transition-colors border border-border-default rounded-lg px-2.5 py-1 text-[13px]">
               Отмена
             </button>
           </div>
         </div>
       )}
+
       <StatusBar syncStatus={syncStatus} syncMessage={syncMessage} />
 
-      {/* NavControls overlay — hidden when overlay pages are open */}
       <div className={cn("fixed top-0 left-0 z-50 h-10 flex items-center px-2 gap-0.5 no-drag", page !== 'chat' && "hidden")}>
         <NavControls
           canGoBack={canGoBack}
@@ -405,10 +365,7 @@ export default function App() {
 
       {/* Sidebar */}
       <div
-        className={cn(
-          'shrink-0 border-r border-border-subtle flex flex-col bg-bg-sidebar transition-[width] duration-200 ease-out overflow-hidden',
-          sidebarCollapsed ? 'w-0' : 'w-72',
-        )}
+        className={cn('shrink-0 border-r border-border-subtle flex flex-col bg-bg-sidebar transition-[width] duration-200 ease-out overflow-hidden', sidebarCollapsed ? 'w-0' : 'w-72')}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => { e.preventDefault(); e.stopPropagation() }}
       >
@@ -430,7 +387,7 @@ export default function App() {
             onSelectModule={setActiveModuleId}
           />
         </div>
-        {updateState && <UpdateBanner state={updateState} onClick={handleUpdateClick} onDismiss={() => setUpdateState(null)} />}
+        {updateState && <UpdateBanner state={updateState} onClick={handleUpdateClick} onDismiss={() => {}} />}
         <AccountBar
           accounts={accounts}
           activeAccountId={activeAccountId || ''}
@@ -441,7 +398,7 @@ export default function App() {
         />
       </div>
 
-      {/* Main */}
+      {/* Main area */}
       <div ref={mainAreaRef} className="flex-1 flex flex-col min-w-0 relative">
         <AnimatePresence>
           {dragOver && sidebarTab === 'sessions' && (
@@ -456,19 +413,13 @@ export default function App() {
         </AnimatePresence>
 
         <div className="h-10 shrink-0 border-b border-border-subtle flex items-center">
-          {/* Drag region fills the header, starts after NavControls width */}
-          <div
-            className="app-drag-region flex items-center flex-1 min-w-0 h-full px-5"
-            style={{ marginLeft: sidebarCollapsed ? '9rem' : 0 }}
-          >
-            {activeSession && (
-              <span className="text-sm text-text-faint truncate">{activeSession.title || activeSession.id}</span>
-            )}
+          <div className="app-drag-region flex items-center flex-1 min-w-0 h-full px-5" style={{ marginLeft: sidebarCollapsed ? '9rem' : 0 }}>
+            {activeSession && <span className="text-sm text-text-faint truncate">{activeSession.title || activeSession.id}</span>}
           </div>
           <WindowControls />
         </div>
 
-        {/* ChatView always mounted to preserve stream state */}
+        {/* Chat — always mounted */}
         <div className={cn('flex-1 flex flex-col min-h-0 overflow-hidden relative', sidebarTab !== 'sessions' && 'hidden')}>
           <ChatView
             session={activeSession}
@@ -487,9 +438,7 @@ export default function App() {
           <AnimatePresence>
             {!chatAtBottom && (
               <motion.button
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 4 }}
+                initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}
                 transition={{ duration: 0.15 }}
                 onClick={() => setScrollTrigger(v => v + 1)}
                 className="absolute bottom-3 left-1/2 -translate-x-1/2 w-7 h-7 rounded-lg bg-bg-elevated border border-border-default flex items-center justify-center text-text-muted hover:text-text-primary hover:border-border-strong transition-colors shadow-lg z-10"
@@ -506,51 +455,59 @@ export default function App() {
             <ConsoleView logs={consoleLogs} onClear={() => setConsoleLogs([])} />
           </div>
         )}
-        {/* Pyre */}
-        {sidebarTab === 'pyre' && (
-          <PyrePage sessions={sessions} activeModuleId={activeModuleId} onModulesChange={setModules} />
-        )}
-        {/* Memory — always mounted to preserve state */}
-        <div className="no-drag" style={{ flex: 1, overflow: 'hidden', display: sidebarTab === 'memory' ? 'flex' : 'none', flexDirection: 'column', minHeight: 0 }}>
-          <MemoryPage onBack={() => setSidebarTab('sessions')} />
-        </div>
 
+        {/* Registered panels (Pyre, Memory) */}
+        {panels.map(panel => (
+          <div
+            key={panel.id}
+            className="no-drag"
+            style={{
+              flex: 1,
+              overflow: 'hidden',
+              display: sidebarTab === panel.id ? 'flex' : 'none',
+              flexDirection: 'column',
+              minHeight: 0,
+            }}
+          >
+            <PanelErrorBoundary id={panel.id}>
+              {panel.render()}
+            </PanelErrorBoundary>
+          </div>
+        ))}
+
+        {/* InputBar */}
         {sidebarTab === 'sessions' && (
           <div>
-          <div style={{ height: 24, background: 'linear-gradient(to bottom, transparent, var(--bg-base))', marginTop: -24, pointerEvents: 'none', position: 'relative', zIndex: 1 }} />
-          <div style={{ paddingLeft: contentPadding, paddingRight: contentPadding }}>
-          {ptyTokens !== null && (
-            <div className="flex items-center gap-1.5 mb-1.5 px-0.5">
-              <span className="text-[11px] font-mono text-text-faint tabular-nums">
-                {ptyTokens.toLocaleString()} ctx
-              </span>
-              {ptyTokensDelta !== null && ptyTokensDelta > 0 && (
-                <span className="text-[11px] font-mono text-emerald-400/70 tabular-nums">
-                  +{ptyTokensDelta.toLocaleString()}
-                </span>
+            <div style={{ height: 24, background: 'linear-gradient(to bottom, transparent, var(--bg-base))', marginTop: -24, pointerEvents: 'none', position: 'relative', zIndex: 1 }} />
+            <div style={{ paddingLeft: contentPadding, paddingRight: contentPadding }}>
+              {ptyTokens !== null && (
+                <div className="flex items-center gap-1.5 mb-1.5 px-0.5">
+                  <span className="text-[11px] font-mono text-text-faint tabular-nums">{ptyTokens.toLocaleString()} ctx</span>
+                  {ptyTokensDelta !== null && ptyTokensDelta > 0 && (
+                    <span className="text-[11px] font-mono text-emerald-400/70 tabular-nums">+{ptyTokensDelta.toLocaleString()}</span>
+                  )}
+                </div>
               )}
+              <InputBar
+                ref={inputBarRef}
+                activeModel={activeModel}
+                onModelChange={setActiveModel}
+                activeEffort={activeEffort}
+                onEffortChange={setActiveEffort}
+                activePermission={activePermission}
+                onPermissionChange={setActivePermission}
+                onSend={handleSend}
+                onAbort={handleAbort}
+                ptyAlive={ptyAlive}
+                ptyStarting={ptyStarting}
+                onKillPtyRequest={() => setKillModal(true)}
+                onCommand={handleCommand}
+                isLocked={isLocked}
+                isRunning={isRunning}
+                hasSession={!!activeSessionId}
+                sessionId={activeSessionId}
+              />
             </div>
-          )}
-          <InputBar
-            ref={inputBarRef}
-            activeModel={activeModel}
-            onModelChange={setActiveModel}
-            activeEffort={activeEffort}
-            onEffortChange={setActiveEffort}
-            activePermission={activePermission}
-            onPermissionChange={setActivePermission}
-            onSend={handleSend}
-            onAbort={handleAbort}
-            ptyAlive={ptyAlive}
-            ptyStarting={ptyStarting}
-            onKillPtyRequest={() => setKillModal(true)}
-            onCommand={handleCommand}
-            isLocked={isLocked}
-            isRunning={isRunning}
-            hasSession={!!activeSessionId}
-            sessionId={activeSessionId}
-          />
-          </div>
           </div>
         )}
       </div>
@@ -573,11 +530,7 @@ export default function App() {
           <SettingsPage onBack={() => setPage('chat')} />
         </div>
       )}
-      {page === 'memory' && (
-        <div className="fixed inset-0 z-40 bg-bg-base">
-          <MemoryPage onBack={() => setPage('chat')} />
-        </div>
-      )}
+
       {/* Account switch modal */}
       {switchTarget && (() => {
         const from = accounts.find(a => a.id === activeAccountId)
@@ -601,10 +554,7 @@ export default function App() {
             <h2 className="text-base font-semibold text-text-primary">Завершить сессию?</h2>
             <p className="text-sm text-text-secondary">PTY процесс будет остановлен. История сессии сохранится.</p>
             <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => setKillModal(false)}
-                className="text-sm px-3 py-1.5 rounded-lg text-text-secondary hover:bg-surface-hover transition-colors"
-              >
+              <button onClick={() => setKillModal(false)} className="text-sm px-3 py-1.5 rounded-lg text-text-secondary hover:bg-surface-hover transition-colors">
                 Отмена
               </button>
               <button
