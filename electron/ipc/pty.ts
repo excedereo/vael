@@ -102,17 +102,41 @@ function detectCliStatus(jsonlPath: string, sessionId: string): string | null {
   let files: string[]
   try { files = fs.readdirSync(sessionsDir) } catch { return null }
 
+  // На одну сессию может быть НЕСКОЛЬКО файлов: старый процесс завершился, но
+  // его <pid>.json остался и навсегда застыл в 'idle'. Берём самый свежий по
+  // updatedAt, иначе читаем статус трупа и статус никогда не меняется.
+  let best: { status: string; updatedAt: number } | null = null
+
   for (const file of files) {
     if (!file.endsWith('.json')) continue
     try {
       const data = JSON.parse(fs.readFileSync(path.join(sessionsDir, file), 'utf-8')) as {
         sessionId?: string
         status?: string
+        updatedAt?: number
+        pid?: number
       }
-      if (data.sessionId === sessionId && data.status) return data.status
+      if (data.sessionId !== sessionId || !data.status) continue
+
+      // Отсеиваем мёртвые процессы — их файл остаётся лежать после выхода
+      if (typeof data.pid === 'number' && !isProcessAlive(data.pid)) continue
+
+      const ts = typeof data.updatedAt === 'number' ? data.updatedAt : 0
+      if (!best || ts > best.updatedAt) best = { status: data.status, updatedAt: ts }
     } catch {}
   }
-  return null
+  return best?.status ?? null
+}
+
+/** Жив ли процесс с таким pid (сигнал 0 — проверка без отправки). */
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    // EPERM — процесс есть, но чужой; ESRCH — процесса нет
+    return (err as NodeJS.ErrnoException)?.code === 'EPERM'
+  }
 }
 
 /** Останавливает watcher и poller сессии, если они были заведены. */
