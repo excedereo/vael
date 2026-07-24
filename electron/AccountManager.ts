@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { Account, Session } from '../shared/types.js'
+import { readMeta } from './services/SessionMetaService.js'
 
 const ACCOUNTS_ROOT = path.join(process.env.USERPROFILE || '', '.claude-accounts')
 const REGISTRY_PATH = path.join(ACCOUNTS_ROOT, 'accounts.json')
@@ -265,17 +266,9 @@ export class AccountManager {
           } catch { /* skip */ }
         }
 
-        // Check meta for custom user-set title (takes priority over everything)
-        const metaPath = filePath.replace('.jsonl', '.meta.json')
-        let customTitle: string | undefined
-        if (fs.existsSync(metaPath)) {
-          try {
-            const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
-            if (meta.customTitle) customTitle = meta.customTitle
-          } catch {}
-        }
-
-        title = customTitle ?? slug ?? (firstUserMsg ? firstUserMsg.slice(0, 60) : undefined)
+        // Пользовательские метаданные из <id>.meta.json (имя главнее slug и первого сообщения)
+        const meta = readMeta(filePath)
+        title = meta.customTitle ?? slug ?? (firstUserMsg ? firstUserMsg.slice(0, 60) : undefined)
 
         // Hide internal PTY sessions (usage session or context queries)
         const usageId = this.getUsageSessionId(accountId)
@@ -288,8 +281,12 @@ export class AccountManager {
           projectName: decodeURIComponent(proj.name.replace(/-/g, '/')),
           accountId,
           lastModified: stat.mtimeMs,
+          createdAt: stat.birthtimeMs || stat.mtimeMs,
           messageCount: msgCount,
           title,
+          archived: meta.archived,
+          tags: meta.tags,
+          order: meta.order,
         })
       }
     }

@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import path from 'path'
+import { appendFileSync } from 'fs'
 import os from 'os'
 import { fileURLToPath } from 'url'
 
@@ -12,7 +13,10 @@ import { ModuleRegistry } from './ModuleRegistry.js'
 import { loadVaeliSettings, saveVaeliSettings, PATHS } from './services/SettingsService.js'
 import { rebuildAllIndexes, startMemoryWatcher } from './services/MemoryService.js'
 import { registerAllHandlers } from './ipc/index.js'
+import { watchSessionDirect, unsubscribeSessionReply, subscribeSessionReply, ptyWriteBySessionId, stopAllSessionWatches, killAllPtys } from './ipc/pty.js'
 import { runStartupTempCleanup } from './ipc/temp.js'
+import { registerNotificationIpc } from './ipc/notifications.js'
+import { destroyNotificationWindow } from './services/NotificationWindow.js'
 
 // ── Singletons ────────────────────────────────────────────────────────────────
 
@@ -31,8 +35,10 @@ const originalError = console.error.bind(console)
 function sendLog(level: string, args: unknown[]) {
   const text = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')
   const entry = { level, text, ts: Date.now() }
-  if (mainWindow?.webContents && !mainWindow.isDestroyed()) mainWindow.webContents.send('console:log', entry)
-  else logBuffer.push(entry)
+  try {
+    if (mainWindow?.webContents && !mainWindow.isDestroyed()) mainWindow.webContents.send('console:log', entry)
+    else logBuffer.push(entry)
+  } catch { logBuffer.push(entry) }
 }
 
 function flushLogBuffer() {
@@ -42,6 +48,31 @@ function flushLogBuffer() {
 console.log = (...args) => { originalLog(...args); sendLog('log', args) }
 console.warn = (...args) => { originalWarn(...args); sendLog('warn', args) }
 console.error = (...args) => { originalError(...args); sendLog('error', args) }
+
+// Все необработанные исключения main-процесса логируем в файл с полным стеком
+// (диалог Electron показывает только верхний фрейм — по нему первопричину не
+// найти). Файл: <userData>/crash-trace.log.
+process.on('uncaughtException', (err) => {
+  try {
+    appendFileSync(
+      path.join(app.getPath('userData'), 'crash-trace.log'),
+      `\n[${new Date().toISOString()}] ${err.stack || err}\n`,
+    )
+  } catch {}
+  originalError('[uncaughtException]', err)
+
+  // «Object has been destroyed» — это всегда гонка: отложенный колбэк дошёл до
+  // окна/webContents, которое между делом закрыли. Уронить из-за неё весь Vael
+  // непропорционально — просто игнорируем, приложение работает дальше.
+  //
+  // Любое ДРУГОЕ исключение — настоящий баг, приложению нельзя оставаться в
+  // подвешенном состоянии. НЕ делаем re-throw внутри обработчика (Node после
+  // этого оставляет процесс-зомби без окна) — завершаемся явно через exit.
+  if (!/Object has been destroyed/i.test(String(err?.message))) {
+    app.quit()
+    process.exit(1)
+  }
+})
 
 // ── Window ────────────────────────────────────────────────────────────────────
 
@@ -76,6 +107,15 @@ function createWindow() {
   })
   mainWindow.webContents.on('will-redirect', (e) => e.preventDefault())
   mainWindow.webContents.on('did-navigate', (_, url) => console.log('[nav] did-navigate:', url))
+
+  // Закрытие главного окна = выход. Окно уведомлений — это отдельный alwaysOnTop
+  // BrowserWindow: пока оно живо, window-all-closed НЕ стреляет (окна не «все»
+  // закрыты), и процесс остаётся зомби, держа кэш и singleInstanceLock. Поэтому
+  // гасим приложение явно, а before-quit уберёт окно уведомлений.
+  mainWindow.on('closed', () => {
+    mainWindow = null
+    app.quit()
+  })
 
   if (process.env.VITE_DEV_SERVER_URL) {
     const tryLoad = async (retries = 20): Promise<void> => {
@@ -136,9 +176,18 @@ app.whenReady().then(() => {
     accountManager,
     getLastConfigDir: () => '',
     getLastSessionId: () => null,
-    sendToWindow: (channel, ...args) => mainWindow?.webContents.send(channel, ...args),
+    sendToWindow: (channel, ...args) => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, ...args)
+    },
+    watchSession: (sessionId, jsonlPath) => watchSessionDirect(sessionId, jsonlPath, () => mainWindow),
+    unwatchSession: (sessionId) => unsubscribeSessionReply(sessionId),
+    subscribeReply: (sessionId, cb) => subscribeSessionReply(sessionId, cb),
+    unsubscribeReply: (sessionId) => unsubscribeSessionReply(sessionId),
+    ptyWrite: (sessionId, data) => ptyWriteBySessionId(sessionId, data),
     userData: app.getPath('userData'),
   })
+
+  registerNotificationIpc(() => mainWindow)
 
   setupAutoUpdater()
 
@@ -150,6 +199,9 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
   moduleRegistry.destroy()
+  stopAllSessionWatches()
+  killAllPtys()
+  destroyNotificationWindow()
 })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })

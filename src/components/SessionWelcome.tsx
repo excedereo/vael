@@ -2,6 +2,26 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Play, ChevronDown, Check, Plus, Zap } from 'lucide-react'
 import { loadCustomOptions } from '../lib/customOptions.js'
+import { api, type SessionInfo } from '../lib/api.js'
+
+// Красивые ярлыки для чипов Resume-экрана
+const MODEL_LABEL: Record<string, string> = {
+  'claude-sonnet-4-6': 'Sonnet 4.6',
+  'claude-opus-4-8': 'Opus 4.8',
+  'claude-fable-5': 'Fable 5',
+  'claude-haiku-4-5-20251001': 'Haiku 4.5',
+}
+const PERM_LABEL: Record<string, string> = {
+  bypassPermissions: 'Bypass',
+  acceptEdits: 'Accept Edits',
+  default: 'Default',
+  plan: 'Plan',
+  auto: 'Auto',
+}
+function prettyModel(m: string | null): string | null {
+  if (!m) return null
+  return MODEL_LABEL[m] ?? m
+}
 
 interface Option {
   value: string
@@ -50,7 +70,7 @@ function Dropdown({ label, value, options, onChange }: {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="text-xs font-mono uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>
+      <div className="text-[10.5px] uppercase tracking-[0.12em]" style={{ color: 'var(--text-faint)' }}>
         {label}
       </div>
       <button
@@ -136,11 +156,30 @@ interface SessionConfig {
 interface Props {
   sessionTitle?: string
   isNew?: boolean
+  /** путь к jsonl существующей сессии — чтобы прочитать реальные параметры */
+  jsonlPath?: string | null
+  messageCount?: number
+  lastModified?: number
   config: SessionConfig
   onChange: (c: SessionConfig) => void
   onStart: (btnRect?: DOMRect) => void
   onSettings?: () => void
   onImport?: () => void
+}
+
+// «5 минут назад», «вчера», дата
+function relTime(ms?: number): string {
+  if (!ms) return ''
+  const diff = Date.now() - ms
+  const m = Math.floor(diff / 60000)
+  if (m < 1) return 'только что'
+  if (m < 60) return `${m} мин назад`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h} ч назад`
+  const d = Math.floor(h / 24)
+  if (d === 1) return 'вчера'
+  if (d < 7) return `${d} дн назад`
+  return new Date(ms).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
 }
 
 const MODELS: Option[] = [
@@ -170,15 +209,25 @@ const PROMPTS: Option[] = [
   { value: '', label: 'Нет', sub: 'без промпта' },
 ]
 
-export function SessionWelcome({ sessionTitle, isNew = false, config, onChange, onStart, onSettings, onImport }: Props) {
-  const color = isNew ? 'var(--success, #22c55e)' : 'var(--accent, #d97757)'
-  const glow  = isNew ? 'var(--success-glow, rgba(34,197,94,0.18))' : 'var(--accent-glow, rgba(217,119,87,0.10))'
+export function SessionWelcome({ sessionTitle, isNew = false, jsonlPath, messageCount, lastModified, config, onChange, onStart, onSettings, onImport }: Props) {
+  const color = isNew ? 'var(--accent, #d97757)' : 'var(--accent, #d97757)'
+  const glow  = 'var(--accent-glow, rgba(217,119,87,0.14))'
   const btnRef = useRef<HTMLButtonElement>(null)
   const [clicked, setClicked] = useState(false)
 
   const [customModels, setCustomModels]      = useState(() => loadCustomOptions('model'))
   const [customEfforts, setCustomEfforts]    = useState(() => loadCustomOptions('effort'))
   const [customPerms, setCustomPerms]        = useState(() => loadCustomOptions('permission'))
+
+  // Фактические параметры существующей сессии из jsonl (не из локального конфига —
+  // модель могли поменять командой /model внутри сессии)
+  const [info, setInfo] = useState<SessionInfo | null>(null)
+  useEffect(() => {
+    if (isNew || !jsonlPath) { setInfo(null); return }
+    let alive = true
+    api.getSessionInfo(jsonlPath).then(r => { if (alive) setInfo(r) })
+    return () => { alive = false }
+  }, [isNew, jsonlPath])
 
   useEffect(() => {
     const refresh = () => {
@@ -193,10 +242,11 @@ export function SessionWelcome({ sessionTitle, isNew = false, config, onChange, 
   const allModels      = [...MODELS,      ...customModels]
   const allEfforts     = [...EFFORTS,     ...customEfforts]
   const allPermissions = [...PERMISSIONS, ...customPerms]
-  const label = isNew ? 'новая сессия' : 'продолжить сессию'
   const btnText = isNew
     ? (clicked ? 'Запуск' : 'Начать')
     : 'Продолжить'
+
+  const chips = [prettyModel(info?.model ?? null), info?.effort ?? null, info?.permissionMode ? (PERM_LABEL[info.permissionMode] ?? info.permissionMode) : null].filter(Boolean) as string[]
 
   return (
     <motion.div
@@ -213,56 +263,91 @@ export function SessionWelcome({ sessionTitle, isNew = false, config, onChange, 
         transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
         className="w-full max-w-[520px] px-4 flex flex-col gap-5"
       >
-        <div className="flex flex-col gap-2">
-          <div className="text-xs font-mono uppercase tracking-widest" style={{ color }}>
-            {label}
-          </div>
-          {!isNew && sessionTitle && (
-            <div className="flex items-center gap-2.5">
-              <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: color, boxShadow: `0 0 8px ${glow}` }} />
-              <div className="text-lg font-medium leading-snug overflow-hidden" style={{ color: 'var(--text-primary)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, textOverflow: 'ellipsis' }}>
-                {sessionTitle}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="flex-1 h-px" style={{ background: 'var(--border-subtle)' }} />
-          {onSettings && (
-            <button
-              onClick={onSettings}
-              title="Добавить кастомные опции"
-              className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono uppercase tracking-wider transition-colors"
-              style={{ color: 'var(--text-faint)' }}
-              onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-muted)')}
-              onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-faint)')}
-            >
-              <Plus size={10} />
-              настроить
-            </button>
-          )}
-        </div>
-
         {isNew ? (
-          <div className="grid grid-cols-2 gap-3">
-            <Dropdown label="модель"     value={config.model}          options={allModels}      onChange={v => onChange({ ...config, model: v })} />
-            <Dropdown label="мышление"   value={config.effort}         options={allEfforts}     onChange={v => onChange({ ...config, effort: v })} />
-            <Dropdown label="разрешения" value={config.permissionMode} options={allPermissions} onChange={v => onChange({ ...config, permissionMode: v })} />
-            <Dropdown label="промпт"     value={config.prompt}         options={PROMPTS}        onChange={v => onChange({ ...config, prompt: v })} />
+          <div className="flex flex-col items-center text-center gap-1.5 mb-1">
+            <div className="w-[52px] h-[52px] rounded-[16px] flex items-center justify-center mb-2 relative overflow-hidden"
+              style={{ background: 'var(--accent-crystal, var(--accent))', boxShadow: '0 8px 24px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.25)' }}>
+              <Plus size={23} style={{ color: 'white' }} strokeWidth={2} />
+            </div>
+            <div className="text-[20px] font-medium tracking-tight" style={{ color: 'var(--text-primary)' }}>
+              Что делаем?
+            </div>
+            <div className="text-[13.5px]" style={{ color: 'var(--text-muted)' }}>
+              Настрой сессию и запусти — или просто начни пустую.
+            </div>
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
-            <div className="grid grid-cols-2 gap-3">
-              <Dropdown label="модель"     value={config.model}          options={allModels}  onChange={v => onChange({ ...config, model: v })} />
-              <Dropdown label="мышление"   value={config.effort}         options={allEfforts} onChange={v => onChange({ ...config, effort: v })} />
-            </div>
-            <div className="flex justify-center">
-              <div className="w-[calc(50%-6px)]">
-                <Dropdown label="разрешения" value={config.permissionMode} options={allPermissions} onChange={v => onChange({ ...config, permissionMode: v })} />
+          <div className="flex flex-col gap-2">
+            {sessionTitle && (
+              <div className="flex items-center gap-2.5">
+                <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: color, boxShadow: `0 0 8px ${glow}` }} />
+                <div className="text-lg font-medium leading-snug overflow-hidden" style={{ color: 'var(--text-primary)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, textOverflow: 'ellipsis' }}>
+                  {sessionTitle}
+                </div>
               </div>
+            )}
+            <div className="text-[12.5px] pl-[22px]" style={{ color: 'var(--text-faint)' }}>
+              {[relTime(lastModified), messageCount ? `${messageCount} сообщений` : null].filter(Boolean).join(' · ')}
             </div>
           </div>
+        )}
+
+        {isNew ? (
+          <>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-px" style={{ background: 'var(--border-subtle)' }} />
+              {onSettings && (
+                <button
+                  onClick={onSettings}
+                  title="Добавить кастомные опции"
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] uppercase tracking-wider transition-colors"
+                  style={{ color: 'var(--text-faint)' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-faint)')}
+                >
+                  <Plus size={10} />
+                  настроить
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Dropdown label="модель"     value={config.model}          options={allModels}      onChange={v => onChange({ ...config, model: v })} />
+              <Dropdown label="мышление"   value={config.effort}         options={allEfforts}     onChange={v => onChange({ ...config, effort: v })} />
+              <Dropdown label="разрешения" value={config.permissionMode} options={allPermissions} onChange={v => onChange({ ...config, permissionMode: v })} />
+              <Dropdown label="промпт"     value={config.prompt}         options={PROMPTS}        onChange={v => onChange({ ...config, prompt: v })} />
+            </div>
+          </>
+        ) : (
+          <>
+            {/* «На чём остановились» — кусок последнего ответа из jsonl */}
+            {info?.lastText && (
+              <div className="rounded-xl overflow-hidden" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-default)' }}>
+                <div className="px-3.5 py-2 text-[10px] uppercase tracking-[0.15em]" style={{ color: 'var(--text-faint)', borderBottom: '1px solid var(--border-subtle)' }}>
+                  На чём остановились
+                </div>
+                <div className="px-3.5 py-3 text-[13px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                  <span style={{ display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
+                    {info.lastText}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Реальные параметры сессии — факт из jsonl, не контрол */}
+            {chips.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {chips.map((c, i) => (
+                  <span key={i} className="text-[11.5px] px-2.5 py-1 rounded-full"
+                    style={{ color: 'var(--text-muted)', border: '1px solid var(--border-strong)' }}>
+                    {c}
+                  </span>
+                ))}
+                <span className="ml-auto text-[11px]" style={{ color: 'var(--text-ghost)' }}>
+                  параметры из сессии — менять только командой внутри
+                </span>
+              </div>
+            )}
+          </>
         )}
 
         <motion.button
@@ -272,8 +357,8 @@ export function SessionWelcome({ sessionTitle, isNew = false, config, onChange, 
           onClick={() => { setClicked(true); onStart(btnRef.current?.getBoundingClientRect()) }}
           className="welcome-start-btn w-full flex items-center justify-center gap-2 py-3 rounded-xl text-base font-semibold mt-1 overflow-hidden relative"
           style={{
-            background: color,
-            boxShadow: `0 0 20px ${glow}`,
+            background: 'var(--accent-crystal, var(--accent))',
+            boxShadow: `0 0 22px ${glow}, inset 0 1px 0 rgba(255,255,255,0.18)`,
             color: 'white',
             willChange: 'transform',
           }}

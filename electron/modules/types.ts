@@ -7,6 +7,11 @@ export interface ModuleContext {
   getLastConfigDir: () => string
   getLastSessionId: () => string | null
   sendToWindow: (channel: string, ...args: unknown[]) => void
+  watchSession: (sessionId: string, jsonlPath: string) => void
+  unwatchSession: (sessionId: string) => void
+  subscribeReply: (sessionId: string, cb: (text: string) => void) => void
+  unsubscribeReply: (sessionId: string) => void
+  ptyWrite: (sessionId: string, data: string) => void
   userData: string
 }
 

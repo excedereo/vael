@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
-import { ArrowLeft, ExternalLink, Trash2, HardDrive, Loader2, X, Plus, FolderOpen } from 'lucide-react'
+import { ExternalLink, Trash2, HardDrive, Loader2, X, Plus, FolderOpen } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { cn } from '../lib/utils.js'
-import { WindowControls } from './WindowControls.js'
 import { loadActiveThemeFile, applyTheme } from '../lib/theme.js'
 import { BUILTIN_THEMES } from '../lib/builtinThemes.js'
 import {
   Section, ToggleRow, SettingRow, ThemePicker, Dropdown,
   PendingSection, PendingRow,
 } from './SettingsComponents.js'
+import { NotificationSettingsSection } from './NotificationSettings.js'
+import { useSettingsTab } from '../lib/sectionTabs.js'
 import {
   loadCustomOptions, saveCustomOptions,
   CustomOption, OptionCategory,
@@ -49,7 +50,6 @@ interface ClaudeSettings {
 // Re-export для обратной совместимости с App.tsx
 export const DEFAULT_CONTENT_PADDING = SETTINGS_DEFAULT_CONTENT_PADDING
 
-type Tab = 'interface' | 'sessions' | 'system'
 
 export interface DefaultSessionConfig {
   model: string
@@ -310,11 +310,11 @@ function CustomOptionsTable() {
   )
 }
 
-export function SettingsPage({ onBack }: Props) {
-  const [tab, setTab] = useState<Tab>('interface')
+export function SettingsPage(_props: Props) {
+  const tab = useSettingsTab()
   const [saving, _setSaving] = useState(false)
   const [version, setVersion] = useState<string>('')
-  const { uiSettings, setUISettings } = useSettings()
+  const { uiSettings, setUISettings, notifications, setNotifications } = useSettings()
   const [defaultConfig, setDefaultConfig] = useState<DefaultSessionConfig>(() => loadDefaultSessionConfig())
   const [customModels, setCustomModels]      = useState(() => loadCustomOptions('model'))
   const [customEfforts, setCustomEfforts]    = useState(() => loadCustomOptions('effort'))
@@ -364,7 +364,7 @@ export function SettingsPage({ onBack }: Props) {
     try { return JSON.parse(localStorage.getItem('vaeliDevConsole') ?? 'false') } catch { return false }
   })
   const [showDev, setShowDev] = useState<boolean>(() => {
-    try { return JSON.parse(localStorage.getItem('vaeliDevConsole') || 'false') } catch { return false }
+    try { return JSON.parse(localStorage.getItem('vaeliShowDev') ?? 'false') } catch { return false }
   })
   const [autoDownload, setAutoDownload] = useState(() => {
     try { return JSON.parse(localStorage.getItem('vaeliAutoDownload') || 'false') } catch { return false }
@@ -420,49 +420,11 @@ export function SettingsPage({ onBack }: Props) {
     })
   }
 
-  const TABS: { id: Tab; label: string }[] = [
-    { id: 'interface', label: 'Интерфейс' },
-    { id: 'sessions',  label: 'Сессии' },
-    { id: 'system',    label: 'Система' },
-  ]
-
   return (
     <div className="flex flex-col h-full bg-bg-base">
-      <div className="flex items-center gap-3 px-4 border-b border-border-subtle app-drag-region h-10 shrink-0">
-        <button
-          onClick={onBack}
-          className="flex items-center justify-center w-7 h-7 rounded-lg hover:bg-surface-selected transition-colors text-text-muted hover:text-text-secondary no-drag"
-        >
-          <ArrowLeft size={15} />
-        </button>
-        <h1 className="text-[14px] font-semibold text-text-primary flex-1">Settings</h1>
-        {saving && <span className="text-[12px] text-text-faint">Saving...</span>}
-        <div className="no-drag">
-          <WindowControls />
-        </div>
-      </div>
-
       <div className="flex flex-1 min-h-0 overflow-y-auto">
-        <div className={cn("flex w-full mx-auto transition-all duration-300", "max-w-6xl")}>
-          <div className="w-44 shrink-0 py-4 flex flex-col gap-0.5 px-3">
-            {TABS.map(t => (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={cn(
-                  'w-full text-left px-3 py-2 rounded-lg text-[14px] transition-all duration-150',
-                  'hover:bg-surface-hover active:scale-[0.98]',
-                  tab === t.id
-                    ? 'text-text-primary bg-surface-selected font-medium'
-                    : 'text-text-muted hover:text-text-secondary',
-                )}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex-1 py-5 px-8 space-y-5 border-l border-border-subtle overflow-y-auto">
+        <div className="flex w-full">
+          <div className="flex-1 py-6 px-8 space-y-5 overflow-y-auto max-w-[560px] mx-auto">
 
             {tab === 'interface' && (<>
               <SettingRow label="Тема">
@@ -492,6 +454,10 @@ export function SettingsPage({ onBack }: Props) {
                 </div>
               </Section>
             </>)}
+
+            {tab === 'notifications' && (
+              <NotificationSettingsSection settings={notifications} onChange={setNotifications} />
+            )}
 
             {tab === 'sessions' && (<>
               <Section label="По умолчанию">
@@ -631,12 +597,21 @@ export function SettingsPage({ onBack }: Props) {
                   label="Включить Dev-настройки"
                   desc="Показать расширенные настройки для разработчиков"
                   value={showDev}
-                  onChange={v => setShowDev(v)}
+                  onChange={v => {
+                    setShowDev(v)
+                    localStorage.setItem('vaeliShowDev', JSON.stringify(v))
+                    // При выключении — сбрасываем devConsole, при включении — восстанавливаем
+                    if (!v && devConsole) {
+                      setDevConsole(false)
+                      localStorage.setItem('vaeliDevConsole', 'false')
+                      window.dispatchEvent(new Event('vaeli:devConsoleChanged'))
+                    }
+                  }}
                 />
                 {showDev && (
                   <ToggleRow
-                    label="Developer console"
-                    desc="Показывать вкладку Console в сайдбаре с логами main process"
+                    label="Dev окно"
+                    desc="Показывать вкладку Dev в сайдбаре для тестирования"
                     value={devConsole}
                     onChange={v => {
                       setDevConsole(v)

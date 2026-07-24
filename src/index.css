@@ -61,45 +61,51 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  /* === Backgrounds === */
-  --bg-base:     #0a0a0a;
-  --bg-sidebar:  #0d0d0d;
-  --bg-surface:  #111111;
-  --bg-elevated: #1a1a1a;
+  /* === Backgrounds (нейтрально-холодный уголь под изумруд) === */
+  --bg-base:     #090a0a;
+  --bg-sidebar:  #0b0c0c;
+  --bg-surface:  #101211;
+  --bg-elevated: #171a19;
 
   /* === Text === */
-  --text-primary:   rgba(255,255,255,0.85);
-  --text-secondary: rgba(255,255,255,0.70);
-  --text-muted:     rgba(255,255,255,0.40);
-  --text-faint:     rgba(255,255,255,0.25);
-  --text-ghost:     rgba(255,255,255,0.15);
+  --text-primary:   rgba(250,253,251,0.87);
+  --text-secondary: rgba(250,253,251,0.68);
+  --text-muted:     rgba(250,253,251,0.42);
+  --text-faint:     rgba(250,253,251,0.26);
+  --text-ghost:     rgba(250,253,251,0.15);
 
   /* === Borders === */
   --border-subtle:  rgba(255,255,255,0.05);
   --border-default: rgba(255,255,255,0.08);
-  --border-strong:  rgba(255,255,255,0.15);
+  --border-strong:  rgba(255,255,255,0.13);
 
   /* === Interactive surfaces === */
-  --surface-hover:    rgba(255,255,255,0.06);
-  --surface-selected: rgba(255,255,255,0.08);
-  --surface-active:   rgba(255,255,255,0.15);
+  --surface-hover:    rgba(255,255,255,0.05);
+  --surface-selected: var(--accent-wash);
+  --surface-active:   rgba(255,255,255,0.13);
 
   /* === Code blocks === */
-  --code-bg: #141414;
+  --code-bg: #141312;
 
-  /* === Accent (violet) === */
-  --accent:       #8b5cf6;
-  --accent-dim:   rgba(139,92,246,0.20);
+  /* === Accent (emerald / crystal) === */
+  --accent:       #4fb083;
+  --accent-hi:    #7fcaa5;
+  --accent-deep:  #37855f;
+  --accent-wash:  rgba(79,176,131,0.13);
+  --accent-dim:   rgba(79,176,131,0.20);
+  /* Кристаллический градиент — только для акцентных жестов (не заливать всё) */
+  --accent-crystal: linear-gradient(135deg, #7fcaa5 0%, #4fb083 45%, #2f9d78 75%, #37855f 100%);
+  --accent-glow:  rgba(79,176,131,0.14);
 
   /* === Semantic === */
-  --color-success: #34d399;
-  --color-warning: #fbbf24;
-  --color-error:   #f87171;
+  --color-success: #4ade80;
+  --color-warning: #e8b339;
+  --color-error:   #e26d6d;
 
   /* === Error bubble === */
-  --error-bg:     rgba(239,68,68,0.10);
-  --error-border: rgba(239,68,68,0.25);
-  --error-text:   rgba(255,180,180,0.90);
+  --error-bg:     rgba(226,109,109,0.10);
+  --error-border: rgba(226,109,109,0.25);
+  --error-text:   rgba(255,190,190,0.90);
 }
 
 @theme {
@@ -122,8 +128,11 @@
   --color-surface-selected: var(--surface-selected);
   --color-surface-active:   var(--surface-active);
 
-  --color-accent:     var(--accent);
-  --color-accent-dim: var(--accent-dim);
+  --color-accent:      var(--accent);
+  --color-accent-hi:   var(--accent-hi);
+  --color-accent-deep: var(--accent-deep);
+  --color-accent-wash: var(--accent-wash);
+  --color-accent-dim:  var(--accent-dim);
 
   --color-success: var(--color-success);
   --color-warning: var(--color-warning);

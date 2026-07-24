@@ -37,8 +37,9 @@ export function AccountBar({ accounts, activeAccountId, isRunning, onSwitch, onM
         )}
       >
         {/* Avatar */}
-        <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style={{ backgroundColor: 'color-mix(in srgb, var(--accent) 50%, transparent)' }}>
-          <span className="text-[12px] font-semibold text-text-primary">
+        <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
+          style={{ background: 'var(--accent-crystal, var(--accent))', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.25)' }}>
+          <span className="text-[12px] font-semibold text-white">
             {(active?.name || '?')[0].toUpperCase()}
           </span>
         </div>

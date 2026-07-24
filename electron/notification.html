@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    user-select: none;
+    cursor: default;
+  }
+
+  /* Направление роста зависит от угла: снизу — вверх, сверху — вниз.
+     Новая карточка всегда появляется у ближнего к углу края. */
+  #stack {
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    display: flex;
+    gap: 8px;
+  }
+  #stack.grow-up   { bottom: 16px; flex-direction: column-reverse; }
+  #stack.grow-down { top: 16px;    flex-direction: column; }
+
+  .card {
+    position: relative;
+    height: calc(78px * var(--scale, 1));
+    padding: calc(12px * var(--scale, 1)) calc(14px * var(--scale, 1));
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    background: #141414;
+    border: 1px solid #262626;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .55);
+
+    opacity: 0;
+    transform: translateY(12px) scale(.97);
+    transition: opacity .22s ease, transform .22s ease;
+  }
+  .card.in     { opacity: 1; transform: translateY(0) scale(1); }
+  .card.out    { opacity: 0; transform: translateY(6px) scale(.97); }
+
+  .card:hover { border-color: #3a3a3a; background: #181818; }
+
+  /* Цветная полоса слева — тип события */
+  .card::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 12px; bottom: 12px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--accent);
+  }
+
+  .icon {
+    width: calc(34px * var(--scale, 1));
+    height: calc(34px * var(--scale, 1));
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--accent);
+  }
+  .icon svg {
+    width: calc(18px * var(--scale, 1));
+    height: calc(18px * var(--scale, 1));
+  }
+
+  /* Правый отступ — чтобы заголовок не заезжал под кольцо таймера */
+  .text { flex: 1; min-width: 0; padding-right: calc(26px * var(--scale, 1)); }
+  .title {
+    font-size: calc(13px * var(--scale, 1));
+    font-weight: 600;
+    color: #ededed;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .body {
+    margin-top: 2px;
+    font-size: calc(11.5px * var(--scale, 1));
+    color: #8a8a8a;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Таймер-кольцо в правом верхнем углу: цельный круг, который «подтаивает» */
+  .timer {
+    position: absolute;
+    top: calc(8px * var(--scale, 1));
+    right: calc(8px * var(--scale, 1));
+    width: calc(20px * var(--scale, 1));
+    height: calc(20px * var(--scale, 1));
+    flex-shrink: 0;
+  }
+  .timer svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .timer .track { stroke: #2e2e2e; }
+  .timer .fill  { stroke: var(--accent); transition: stroke-dashoffset .1s linear; }
+
+  /* При наведении внутри кольца проявляется крестик — само кольцо остаётся,
+     оно замирает (таймер на паузе) и служит рамкой кнопки */
+  .close {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    color: #8a8a8a;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity .15s ease, color .15s ease, background .15s ease;
+    pointer-events: none;
+  }
+  .card:hover .close { opacity: 1; pointer-events: auto; }
+  .close:hover { color: #ededed; background: rgba(42, 42, 42, .85); }
+  .close svg {
+    width: calc(9px * var(--scale, 1));
+    height: calc(9px * var(--scale, 1));
+  }
+</style>
+</head>
+<body>
+<div id="stack"></div>
+
+<script>
+  // Значения по умолчанию — main пришлёт актуальные через notification:config
+  const cfg = { holdMs: 5000, maxStack: 4, scale: 1, grow: 'up' }
+  const R = 8
+  const CIRC = 2 * Math.PI * R
+
+  const KIND = {
+    asking: { accent: '#d97757', icon: '<path d="M12 17h.01M12 14c0-2 2.5-2.5 2.5-4.5A2.5 2.5 0 0 0 12 7a2.5 2.5 0 0 0-2.5 2.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" fill="none"/>' },
+    done:   { accent: '#4ade80', icon: '<path d="m5 13 4 4L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' },
+    error:  { accent: '#e26d6d', icon: '<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 7.5v5.5M12 16.5h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' },
+  }
+
+  const stack = document.getElementById('stack')
+  const live = new Map()   // id → { el, deadline, rafId, paused }
+
+  stack.classList.add('grow-up')
+
+  window.notifyApi.onConfig((next) => {
+    Object.assign(cfg, next)
+    stack.classList.toggle('grow-up', cfg.grow === 'up')
+    stack.classList.toggle('grow-down', cfg.grow === 'down')
+    document.documentElement.style.setProperty('--scale', String(cfg.scale))
+    // Настройки могли ужать стопку — лишние карточки убираем сразу
+    while (live.size > cfg.maxStack) dismiss(live.keys().next().value)
+  })
+
+  function syncInteractive() {
+    const has = live.size > 0
+    window.notifyApi.setInteractive(has)
+    if (!has) window.notifyApi.notifyEmpty()
+  }
+
+  function dismiss(id) {
+    const item = live.get(id)
+    if (!item) return
+    live.delete(id)
+    cancelAnimationFrame(item.rafId)
+    item.el.classList.remove('in')
+    item.el.classList.add('out')
+    setTimeout(() => { item.el.remove(); syncInteractive() }, 220)
+  }
+
+  function tick(id) {
+    const item = live.get(id)
+    if (!item) return
+
+    if (!item.paused) {
+      const left = item.deadline - Date.now()
+      if (left <= 0) { dismiss(id); return }
+      const ratio = left / cfg.holdMs
+      item.fill.style.strokeDashoffset = String(CIRC * (1 - ratio))
+    }
+    item.rafId = requestAnimationFrame(() => tick(id))
+  }
+
+  function push(payload) {
+    const kind = KIND[payload.kind] ?? KIND.done
+
+    const el = document.createElement('div')
+    el.className = 'card'
+    el.style.setProperty('--accent', kind.accent)
+    el.innerHTML = `
+      <div class="icon"><svg viewBox="0 0 24 24">${kind.icon}</svg></div>
+      <div class="text">
+        <div class="title"></div>
+        <div class="body"></div>
+      </div>
+      <div class="timer">
+        <svg viewBox="0 0 20 20">
+          <circle class="track" cx="10" cy="10" r="${R}" fill="none" stroke-width="2"/>
+          <circle class="fill"  cx="10" cy="10" r="${R}" fill="none" stroke-width="2"
+                  stroke-dasharray="${CIRC}" stroke-dashoffset="0" stroke-linecap="round"/>
+        </svg>
+        <div class="close" title="Закрыть">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+        </div>
+      </div>`
+
+    // textContent, а не innerHTML — заголовок и текст приходят из данных сессии
+    el.querySelector('.title').textContent = payload.title
+    el.querySelector('.body').textContent = payload.body
+
+    const item = {
+      el,
+      fill: el.querySelector('.fill'),
+      deadline: Date.now() + cfg.holdMs,
+      paused: false,
+      rafId: 0,
+    }
+
+    // Наведение замораживает таймер — карточка не исчезнет, пока читаешь
+    el.addEventListener('mouseenter', () => { item.paused = true })
+    el.addEventListener('mouseleave', () => {
+      item.paused = false
+      item.deadline = Date.now() + cfg.holdMs
+    })
+
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.close')) return
+      window.notifyApi.activate(payload.sessionId)
+      dismiss(payload.id)
+    })
+    el.querySelector('.close').addEventListener('click', (e) => {
+      e.stopPropagation()
+      dismiss(payload.id)
+    })
+
+    stack.appendChild(el)
+    live.set(payload.id, item)
+    requestAnimationFrame(() => el.classList.add('in'))
+    tick(payload.id)
+
+    // Стопка ограничена — самые старые уходят
+    while (live.size > cfg.maxStack) {
+      dismiss(live.keys().next().value)
+    }
+
+    syncInteractive()
+  }
+
+  window.notifyApi.onPush(push)
+</script>
+</body>
+</html>

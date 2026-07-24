@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
-import { ArrowLeft, Plus, Trash2, LogOut, LogIn, RotateCcw } from 'lucide-react'
+import { Plus, Trash2, LogOut, LogIn, RotateCcw } from 'lucide-react'
 import { Account } from '../types/index'
 import { api, StatsCache } from '../lib/api.js'
 import { cn } from '../lib/utils.js'
-import { WindowControls } from './WindowControls.js'
+import { useAccountsTab } from '../lib/sectionTabs.js'
 
 interface Props {
   accounts: Account[]
@@ -15,7 +15,6 @@ interface Props {
 }
 
 type ConfirmAction = { type: 'delete' | 'logout'; id: string }
-type Tab = 'accounts' | 'stats'
 
 // ── Stats helpers ──────────────────────────────────────────────
 function fmtNumber(n: number) {
@@ -275,8 +274,8 @@ function StatsTab() {
 }
 
 // ── Main component ────────────────────────────────────────────
-export function AccountsPage({ accounts, activeAccountId, isRunning, onBack, onAccountsChange, onSwitchAccount }: Props) {
-  const [tab, setTab] = useState<Tab>('accounts')
+export function AccountsPage({ accounts, activeAccountId, isRunning, onAccountsChange, onSwitchAccount }: Props) {
+  const tab = useAccountsTab()
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState(false)
   const [pendingAuth, setPendingAuth] = useState<Account | null>(null)
@@ -349,11 +348,6 @@ export function AccountsPage({ accounts, activeAccountId, isRunning, onBack, onA
 
   const confirmAcc = confirm ? accounts.find(a => a.id === confirm.id) : null
 
-  const TABS: { id: Tab; label: string }[] = [
-    { id: 'accounts', label: 'Аккаунты' },
-    { id: 'stats', label: 'Статистика' },
-  ]
-
   return (
     <div className="flex flex-col h-full">
 
@@ -395,44 +389,11 @@ export function AccountsPage({ accounts, activeAccountId, isRunning, onBack, onA
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex items-center gap-2 px-4 border-b border-border-subtle shrink-0 app-drag-region h-10">
-        <button
-          onClick={onBack}
-          className="p-1 rounded-md text-text-faint hover:text-text-secondary hover:bg-surface-hover transition-colors no-drag"
-        >
-          <ArrowLeft size={15} />
-        </button>
-        <span className="text-sm font-medium text-text-secondary flex-1">Manage accounts</span>
-        <div className="no-drag">
-          <WindowControls />
-        </div>
-      </div>
-
       {/* Body */}
       <div className="flex flex-1 min-h-0 overflow-y-auto">
-        <div className="flex w-full mx-auto max-w-6xl">
-        {/* Sidebar */}
-        <div className="w-44 shrink-0 py-4 px-3 flex flex-col gap-0.5">
-          {TABS.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={cn(
-                'w-full text-left px-3 py-2 rounded-lg text-[14px] transition-all duration-150',
-                'hover:bg-surface-hover active:scale-[0.98]',
-                tab === t.id
-                  ? 'text-text-primary bg-surface-selected font-medium'
-                  : 'text-text-muted hover:text-text-secondary'
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
+        <div className="flex w-full">
         {/* Content */}
-        <div className="flex-1 py-5 px-8 space-y-5 border-l border-border-subtle overflow-y-auto">
+        <div className="flex-1 py-6 px-8 space-y-5 overflow-y-auto max-w-[620px] mx-auto">
           {tab === 'accounts' && (
             <div className="space-y-6">
               {pendingAuth && (

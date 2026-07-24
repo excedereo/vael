@@ -12,8 +12,22 @@ export interface Session {
   projectName: string
   accountId: string
   lastModified: number
+  createdAt: number
   messageCount: number
   title?: string
+  /** Пользовательские метаданные из <id>.meta.json */
+  archived?: boolean
+  tags?: string[]
+  order?: number
+}
+
+/** Содержимое <id>.meta.json — пользовательская надстройка над сессией */
+export interface SessionMeta {
+  customTitle?: string
+  archived?: boolean
+  tags?: string[]
+  /** позиция в режиме «свой порядок»; меньше — выше */
+  order?: number
 }
 
 export type SyncStatus = 'idle' | 'syncing' | 'running' | 'error'

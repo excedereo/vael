@@ -1,6 +1,7 @@
 // Build script for electron main + preload
 import { build } from 'vite'
 import path from 'path'
+import fs from 'fs'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -61,5 +62,28 @@ await build({
     },
   },
 })
+
+// Preload для окна уведомлений — отдельная точка входа со своим API
+await build({
+  ...shared,
+  configFile: false,
+  build: {
+    ...shared.build,
+    lib: {
+      entry: path.resolve(__dirname, 'electron/preload-notification.ts'),
+      formats: ['cjs'],
+      fileName: () => 'preload-notification.js',
+    },
+    rollupOptions: {
+      ...shared.build.rollupOptions,
+    },
+  },
+})
+
+// HTML окна уведомлений — статика, просто копируем рядом с бандлами
+fs.copyFileSync(
+  path.resolve(__dirname, 'electron/notification.html'),
+  path.resolve(__dirname, 'dist-electron/notification.html'),
+)
 
 console.log('Electron build done')

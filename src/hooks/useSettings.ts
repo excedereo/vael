@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { api } from '../lib/api.js'
 
 export interface DefaultSessionConfig {
   model: string
@@ -13,7 +14,31 @@ export interface UISettings {
   contentPadding: number
 }
 
+export type NotificationCorner = 'bottom-left' | 'bottom-right' | 'top-right'
+
+export interface NotificationSettings {
+  enabled: boolean
+  corner: NotificationCorner
+  /** Ширина карточки, px */
+  width: number
+  /** Масштаб содержимого карточки (шрифты, иконка, высота) */
+  scale: number
+  /** Сколько карточек держим на экране одновременно */
+  maxStack: number
+  /** Сколько секунд карточка висит без наведения */
+  holdSeconds: number
+}
+
 export const DEFAULT_CONTENT_PADDING = 160
+
+export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  enabled: true,
+  corner: 'bottom-right',
+  width: 340,
+  scale: 1.15,
+  maxStack: 5,
+  holdSeconds: 5,
+}
 
 export const DEFAULT_SESSION_CONFIG: DefaultSessionConfig = {
   model: 'claude-sonnet-4-6',
@@ -72,9 +97,22 @@ function saveUISettings(s: UISettings) {
   localStorage.setItem('vaeliUISettings', JSON.stringify(s))
 }
 
+export function loadNotificationSettings(): NotificationSettings {
+  try {
+    const raw = localStorage.getItem('vaeli:notification-settings')
+    if (raw) return { ...DEFAULT_NOTIFICATION_SETTINGS, ...JSON.parse(raw) as Partial<NotificationSettings> }
+  } catch {}
+  return { ...DEFAULT_NOTIFICATION_SETTINGS }
+}
+
+function saveNotificationSettings(s: NotificationSettings) {
+  localStorage.setItem('vaeli:notification-settings', JSON.stringify(s))
+}
+
 export function useSettings() {
   const [sessionDefaults, setSessionDefaultsState] = useState<DefaultSessionConfig>(() => loadDefaultSessionConfig())
   const [uiSettings, setUISettingsState] = useState<UISettings>(() => loadUISettings())
+  const [notifications, setNotificationsState] = useState<NotificationSettings>(() => loadNotificationSettings())
 
   function setSessionDefaults(c: DefaultSessionConfig) {
     setSessionDefaultsState(c)
@@ -86,10 +124,18 @@ export function useSettings() {
     saveUISettings(s)
   }
 
+  function setNotifications(s: NotificationSettings) {
+    setNotificationsState(s)
+    saveNotificationSettings(s)
+    api.applyNotificationSettings(s)
+  }
+
   return {
     sessionDefaults,
     setSessionDefaults,
     uiSettings,
     setUISettings,
+    notifications,
+    setNotifications,
   }
 }

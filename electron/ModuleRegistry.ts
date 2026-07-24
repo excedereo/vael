@@ -54,13 +54,23 @@ export class ModuleRegistry {
   start(id: string) {
     const mod = this.modules.get(id)
     if (!mod || !this.ctx) return false
-    mod.destroy()
-    mod.init(this.ctx)
+    if ('start' in mod && typeof (mod as { start?: () => void }).start === 'function') {
+      (mod as { start: () => void }).start()
+    } else {
+      mod.destroy()
+      mod.init(this.ctx)
+    }
     return true
   }
 
   stop(id: string) {
-    this.modules.get(id)?.destroy()
+    const mod = this.modules.get(id)
+    if (!mod) return true
+    if ('stop' in mod && typeof (mod as { stop?: () => void }).stop === 'function') {
+      (mod as { stop: () => void }).stop()
+    } else {
+      mod.destroy()
+    }
     return true
   }
 

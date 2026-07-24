@@ -3,6 +3,9 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import type { AccountManager } from '../AccountManager.js'
+import { readMeta, writeMeta } from '../services/SessionMetaService.js'
+import { readSessionInfo } from '../services/SessionInfoService.js'
+import type { SessionMeta } from '../../shared/types.js'
 
 export function registerSessionHandlers(
   accountManager: AccountManager,
@@ -35,6 +38,15 @@ export function registerSessionHandlers(
   ipcMain.handle('session:select', () => {
     return { ok: true }
   })
+
+  // Пользовательские метаданные (<id>.meta.json): имя, архив, теги, порядок
+  ipcMain.handle('session:readMeta', (_, jsonlPath: string) => readMeta(jsonlPath))
+  ipcMain.handle('session:writeMeta', (_, jsonlPath: string, patch: Partial<SessionMeta>) =>
+    writeMeta(jsonlPath, patch)
+  )
+
+  // Фактические параметры сессии из jsonl (model/effort/permissionMode + последний ответ)
+  ipcMain.handle('session:info', (_, jsonlPath: string) => readSessionInfo(jsonlPath))
 
   ipcMain.handle('sessions:findNew', (_, configDir: string, excludeIds: string[]) => {
     return accountManager.findNewSessions(configDir, new Set(excludeIds), 5)
