@@ -22,7 +22,7 @@ export function PtyOptSection({ applyPty, onToggle }: { applyPty: boolean; onTog
         <div className="flex items-center justify-between px-4 py-3 gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 text-[14px] text-text-secondary">
-              <ShieldCheck size={13} className="text-orange-400/70 shrink-0" />
+              <ShieldCheck size={13} className="text-accent shrink-0" />
               Применять рекомендованные настройки
             </div>
             <div className="text-[12px] text-text-faint mt-0.5">Vael выставит оптимальные значения при каждом сохранении</div>
@@ -31,7 +31,7 @@ export function PtyOptSection({ applyPty, onToggle }: { applyPty: boolean; onTog
             onClick={() => onToggle(!applyPty)}
             className={cn(
               'relative shrink-0 transition-colors duration-200 w-[42px] h-[26px] rounded-full',
-              applyPty ? 'bg-[#34c759]' : 'bg-surface-active',
+              applyPty ? 'bg-[var(--color-success)]' : 'bg-surface-active',
             )}
           >
             <span className={cn('absolute top-[3px] w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200', applyPty ? 'left-[19px]' : 'left-[3px]')} />
@@ -144,7 +144,7 @@ export function ToggleRow({ label, desc, value, onChange, claude: isClaude }: {
     <div className="flex items-center justify-between px-4 py-3 gap-4">
       <div className="min-w-0">
         <div className="flex items-center gap-1.5 text-[14px] text-text-secondary">
-          {isClaude && <span className="w-1.5 h-1.5 rounded-full bg-orange-400/70 shrink-0" />}
+          {isClaude && <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />}
           {label}
         </div>
         {desc && <div className="text-[12px] text-text-faint mt-0.5">{desc}</div>}
@@ -239,7 +239,7 @@ export function SelectRow({ label, value, options, onChange, claude: isClaude }:
   return (
     <div className="flex items-center justify-between px-4 py-3">
       <div className="flex items-center gap-1.5 text-[14px] text-text-secondary">
-        {isClaude && <span className="w-1.5 h-1.5 rounded-full bg-orange-400/70 shrink-0" />}
+        {isClaude && <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />}
         {label}
       </div>
       <Dropdown value={value} options={options} onChange={onChange} />
@@ -295,7 +295,7 @@ export function TextRow({ label, desc, value, placeholder, onChange, claude: isC
     <div className="flex items-center justify-between px-4 py-3 gap-4">
       <div className="min-w-0">
         <div className="flex items-center gap-1.5 text-[14px] text-text-secondary">
-          {isClaude && <span className="w-1.5 h-1.5 rounded-full bg-orange-400/70 shrink-0" />}
+          {isClaude && <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />}
           {label}
         </div>
         {desc && <div className="text-[12px] text-text-faint mt-0.5">{desc}</div>}

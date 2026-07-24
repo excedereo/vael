@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback } from 'react'
+import type { Section } from '../components/NavRail.js'
 
-type NavEntry = { sessionId: string | null; tab: 'sessions' | 'pyre' | 'console' }
+type NavEntry = { sessionId: string | null; tab: Section }
 
 export function useNavHistory() {
   const stackRef = useRef<NavEntry[]>([])

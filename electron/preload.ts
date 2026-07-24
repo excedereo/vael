@@ -13,6 +13,9 @@ contextBridge.exposeInMainWorld('api', {
   getSessions: (accountId: string) => ipcRenderer.invoke('sessions:get', accountId),
   readSession: (sessionPath: string) => ipcRenderer.invoke('sessions:read', sessionPath),
   deleteSession: (sessionPath: string) => ipcRenderer.invoke('sessions:delete', sessionPath),
+  readSessionMeta: (jsonlPath: string) => ipcRenderer.invoke('session:readMeta', jsonlPath),
+  writeSessionMeta: (jsonlPath: string, patch: Record<string, unknown>) => ipcRenderer.invoke('session:writeMeta', jsonlPath, patch),
+  getSessionInfo: (jsonlPath: string) => ipcRenderer.invoke('session:info', jsonlPath),
   findNewSessions: (configDir: string, excludeIds: string[]) => ipcRenderer.invoke('sessions:findNew', configDir, excludeIds),
   importSessions: (configDir: string) => ipcRenderer.invoke('sessions:import', configDir),
   saveAttachment: (buffer: ArrayBuffer, filename: string) => ipcRenderer.invoke('attachments:save', buffer, filename),
@@ -167,6 +170,29 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('session:status', handler)
     return () => ipcRenderer.removeListener('session:status', handler)
   },
+  onSessionReply: (cb: (sessionId: string, text: string) => void) => {
+    const handler = (_: unknown, sessionId: string, text: string) => cb(sessionId, text)
+    ipcRenderer.on('session:reply', handler)
+    return () => ipcRenderer.removeListener('session:reply', handler)
+  },
+  // Диагностика: каждое срабатывание jsonl-watcher'а с переходом статуса
+  onSessionStatusLog: (cb: (sessionId: string, transition: string) => void) => {
+    const handler = (_: unknown, sessionId: string, transition: string) => cb(sessionId, transition)
+    ipcRenderer.on('session:status-log', handler)
+    return () => ipcRenderer.removeListener('session:status-log', handler)
+  },
+
+  // Уведомления
+  setActiveSessionForNotify: (sessionId: string | null) => ipcRenderer.send('notification:set-active-session', sessionId),
+  setSessionTitleForNotify: (sessionId: string, title: string) => ipcRenderer.send('notification:set-session-title', sessionId, title),
+  onNotificationOpenSession: (cb: (sessionId: string) => void) => {
+    const handler = (_: unknown, sessionId: string) => cb(sessionId)
+    ipcRenderer.on('notification:open-session', handler)
+    return () => ipcRenderer.removeListener('notification:open-session', handler)
+  },
+  applyNotificationSettings: (settings: unknown) => ipcRenderer.send('notification:apply-settings', settings),
+  previewNotifications: () => ipcRenderer.send('notification:preview'),
+  getNotificationMaxStack: (scale: number) => ipcRenderer.invoke('notification:max-stack', scale) as Promise<number>,
 
   // Pyre modules
   modulesList: () => ipcRenderer.invoke('modules:list'),

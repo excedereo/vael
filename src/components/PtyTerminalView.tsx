@@ -119,7 +119,21 @@ export function PtyTerminalView({ termId, sessionId, projectPath, configDir, vis
     }
 
     // Ctrl+V / Ctrl+М — читаем clipboard через IPC (main process, без browser permissions)
+    // Ctrl+C — копирует выделение (терминал не шлёт SIGINT никогда, см. rules.md)
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'KeyC' && e.ctrlKey) {
+        e.preventDefault()
+        e.stopPropagation()
+        const selection = term.getSelection()
+        if (selection) {
+          navigator.clipboard.writeText(selection)
+          term.clearSelection()
+          // clearSelection() doesn't always force a repaint with the WebGL
+          // renderer — nudge it so the highlight actually disappears.
+          term.refresh(0, term.rows - 1)
+        }
+        return
+      }
       if ((e.code === 'KeyV' || e.code === 'KeyM') && e.ctrlKey) {
         e.preventDefault()
         e.stopPropagation()

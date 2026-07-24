@@ -1,4 +1,12 @@
-import { Account, Session, JsonlEntry, StreamEvent, UsageData, ContextData } from '../types/index'
+import { Account, Session, JsonlEntry, StreamEvent, UsageData, ContextData, SessionMeta } from '../types/index'
+
+export interface SessionInfo {
+  model: string | null
+  effort: string | null
+  permissionMode: string | null
+  lastText: string | null
+  lastAt: string | null
+}
 
 export interface FsEntry {
   name: string
@@ -45,6 +53,9 @@ export interface ElectronAPI {
   getSessions: (accountId: string) => Promise<Session[]>
   readSession: (sessionPath: string) => Promise<JsonlEntry[]>
   deleteSession: (sessionPath: string) => Promise<{ ok: boolean }>
+  readSessionMeta: (jsonlPath: string) => Promise<SessionMeta>
+  writeSessionMeta: (jsonlPath: string, patch: Partial<SessionMeta>) => Promise<SessionMeta>
+  getSessionInfo: (jsonlPath: string) => Promise<SessionInfo>
   findNewSessions: (configDir: string, excludeIds: string[]) => Promise<string[]>
   importSessions: (configDir: string) => Promise<{ ok: boolean; imported: string[] }>
   saveAttachment: (buffer: ArrayBuffer, filename: string) => Promise<{ ok: boolean; filePath: string }>
@@ -140,6 +151,21 @@ export interface ElectronAPI {
   watchSession: (sessionId: string, jsonlPath: string) => Promise<{ ok: boolean }>
   unwatchSession: (sessionId: string) => Promise<{ ok: boolean }>
   onSessionStatus: (cb: (sessionId: string, status: string) => void) => () => void
+  onSessionStatusLog: (cb: (sessionId: string, transition: string) => void) => () => void
+  setActiveSessionForNotify: (sessionId: string | null) => void
+  setSessionTitleForNotify: (sessionId: string, title: string) => void
+  onNotificationOpenSession: (cb: (sessionId: string) => void) => () => void
+  applyNotificationSettings: (settings: {
+    enabled: boolean
+    corner: string
+    width: number
+    scale: number
+    maxStack: number
+    holdSeconds: number
+  }) => void
+  previewNotifications: () => void
+  getNotificationMaxStack: (scale: number) => Promise<number>
+  onSessionReply: (cb: (sessionId: string, text: string) => void) => () => void
 
   // Pyre modules
   modulesList: () => Promise<{ id: string; name: string; icon?: string; running: boolean }[]>

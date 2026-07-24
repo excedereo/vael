@@ -1,11 +1,13 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { createPortal } from 'react-dom'
-import { Session } from '../types/index'
+import { Session, Account } from '../types/index'
 import { cn } from '../lib/utils.js'
-import { Plus, Zap, Settings, Trash2, Pencil } from 'lucide-react'
-
-type SidebarTab = 'sessions' | 'pyre' | 'console' | 'memory'
+import { Plus, Zap, Trash2, Pencil, ArrowDownUp, Archive, ArchiveRestore, ChevronRight } from 'lucide-react'
+import type { Section } from './NavRail.js'
+import { api } from '../lib/api.js'
+import { useSettingsTab, setSettingsTab, useAccountsTab, setAccountsTab } from '../lib/sectionTabs.js'
+import type { SettingsTab, AccountsTab } from '../lib/sectionTabs.js'
 
 interface ContextMenu {
   x: number
@@ -21,6 +23,7 @@ interface ModuleInfo {
 }
 
 interface Props {
+  section: Section
   sessions: Session[]
   activeSessionId: string | null
   newSessionId?: string | null
@@ -29,13 +32,78 @@ interface Props {
   onNew: () => void
   onDelete: (session: Session) => void
   isLocked: boolean
-  activeTab: SidebarTab
-  onTabChange: (tab: SidebarTab) => void
-  devConsole: boolean
   memoryTokens?: { auto: number; total: number }
   modules?: ModuleInfo[]
   activeModuleId?: string | null
   onSelectModule?: (id: string) => void
+  accounts?: Account[]
+  activeAccountId?: string
+  isRunning?: boolean
+  onSwitchAccount?: (id: string) => void
+  /** вызвать после записи .meta.json — App перечитает список сессий */
+  onMetaChange?: () => void
+}
+
+// Человеко-читаемый заголовок раздела для шапки сайдбара
+const SECTION_LABEL: Record<Section, string> = {
+  sessions: 'Sessions',
+  memory:   'Memory',
+  pyre:     'Pyre',
+  dev:      'Dev',
+  accounts: 'Accounts',
+  settings: 'Settings',
+}
+
+const SETTINGS_TAB_LABEL: Record<SettingsTab, string> = {
+  interface: 'Interface',
+  sessions: 'Sessions',
+  notifications: 'Notifications',
+  system: 'System',
+}
+const ACCOUNTS_TAB_LABEL: Record<AccountsTab, string> = {
+  accounts: 'Accounts',
+  stats: 'Statistics',
+}
+
+function TabRow({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'relative flex items-center px-3 py-2 rounded-lg text-[13.5px] transition-colors text-left w-full',
+        active ? 'bg-accent-wash text-text-primary' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+      )}
+    >
+      {active && <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-accent" />}
+      {label}
+    </button>
+  )
+}
+
+type SortMode = 'recent' | 'created' | 'name' | 'custom'
+const SORT_LABEL: Record<SortMode, string> = {
+  recent:  'Последний ответ',
+  created: 'Дате создания',
+  name:    'Названию',
+  custom:  'Своему порядку',
+}
+
+function sortSessions(list: Session[], mode: SortMode): Session[] {
+  const arr = [...list]
+  switch (mode) {
+    case 'recent':  return arr.sort((a, b) => b.lastModified - a.lastModified)
+    case 'created': return arr.sort((a, b) => b.createdAt - a.createdAt)
+    case 'name':    return arr.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'ru'))
+    case 'custom':
+      // с order — по возрастанию; без order (новые) — наверх, между собой по свежести
+      return arr.sort((a, b) => {
+        const ao = a.order, bo = b.order
+        if (ao === undefined && bo === undefined) return b.lastModified - a.lastModified
+        if (ao === undefined) return -1
+        if (bo === undefined) return 1
+        return ao - bo
+      })
+  }
 }
 
 function SessionItem({ session, active, onClick, onContextMenu, isRenaming, renameValue, onRenameChange, onRenameCommit, displayTitle, isRunning }: {
@@ -68,7 +136,7 @@ function SessionItem({ session, active, onClick, onContextMenu, isRenaming, rena
       className={cn(
         'relative flex items-center gap-1 px-2.5 py-2 rounded-lg transition-colors group cursor-pointer overflow-hidden',
         active ? 'bg-surface-selected' : 'hover:bg-surface-hover',
-        isRunning && 'border-l-2 border-emerald-400 pl-[8px]',
+        isRunning && 'border-l-2 border-[var(--color-success)] pl-[8px]',
       )}
       onClick={handleClick}
     >
@@ -135,37 +203,91 @@ function SessionItem({ session, active, onClick, onContextMenu, isRenaming, rena
 }
 
 
-export function Sidebar({ sessions, activeSessionId, newSessionId, runningSessionIds = [], onSelect, onNew, onDelete, isLocked, activeTab: tab, onTabChange: setTab, devConsole, memoryTokens, modules = [], activeModuleId, onSelectModule }: Props) {
+export function Sidebar({ section, sessions, activeSessionId, newSessionId, runningSessionIds = [], onSelect, onNew, onDelete, isLocked, memoryTokens, modules = [], activeModuleId, onSelectModule, onMetaChange }: Props) {
   const [ctxMenu, setCtxMenu] = useState<ContextMenu | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  const settingsTab = useSettingsTab()
+  const accountsTab = useAccountsTab()
 
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
-  const [sessionNames, setSessionNames] = useState<Record<string, string>>(() => {
-    try { return JSON.parse(localStorage.getItem('vaeliSessionNames') || '{}') } catch { return {} }
-  })
 
-  const saveSessionName = (id: string, name: string) => {
-    const updated = { ...sessionNames, [id]: name }
-    setSessionNames(updated)
-    localStorage.setItem('vaeliSessionNames', JSON.stringify(updated))
+  const jsonlPathFor = (s: Session) => `${s.projectPath}\\${s.id}.jsonl`
+
+  // Сортировка + архив
+  const [sortMode, setSortMode] = useState<SortMode>(() => {
+    const saved = localStorage.getItem('vaeli:sortMode')
+    return (saved === 'recent' || saved === 'created' || saved === 'name' || saved === 'custom') ? saved : 'recent'
+  })
+  const [sortOpen, setSortOpen] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
+  const [archiveExpanded, setArchiveExpanded] = useState(false)
+  const sortRef = useRef<HTMLDivElement>(null)
+
+  const changeSort = (m: SortMode) => {
+    setSortMode(m)
+    localStorage.setItem('vaeli:sortMode', m)
+    setSortOpen(false)
   }
 
-  const startRename = (session: Session) => {
-    setRenamingId(session.id)
-    setRenameValue(sessionNames[session.id] || session.title || '')
+  useEffect(() => {
+    if (!sortOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (sortRef.current && !sortRef.current.contains(e.target as Node)) setSortOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [sortOpen])
+
+  // Живые (не архив) и архив — раздельно; сортировка применяется к обеим группам
+  const { liveSessions, archivedSessions } = useMemo(() => {
+    const live: Session[] = []
+    const arch: Session[] = []
+    for (const s of sessions) (s.archived ? arch : live).push(s)
+    return { liveSessions: sortSessions(live, sortMode), archivedSessions: sortSessions(arch, 'recent') }
+  }, [sessions, sortMode])
+
+  const toggleArchive = async (s: Session) => {
+    await api.writeSessionMeta(jsonlPathFor(s), { archived: !s.archived })
+    onMetaChange?.()
     setCtxMenu(null)
   }
 
-  const commitRename = () => {
+  // Разовая миграция старых имён из localStorage (vaeliSessionNames) в .meta.json.
+  // После — ключ удаляется, чтобы не мигрировать повторно.
+  useEffect(() => {
+    let legacy: Record<string, string> = {}
+    try { legacy = JSON.parse(localStorage.getItem('vaeliSessionNames') || '{}') } catch { return }
+    const ids = Object.keys(legacy)
+    if (ids.length === 0) return
+    ;(async () => {
+      for (const id of ids) {
+        const s = sessions.find(x => x.id === id)
+        if (s && legacy[id]?.trim()) {
+          await api.writeSessionMeta(jsonlPathFor(s), { customTitle: legacy[id].trim() })
+        }
+      }
+      localStorage.removeItem('vaeliSessionNames')
+      onMetaChange?.()
+    })()
+    // один раз, когда список сессий уже загружен
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions.length > 0])
+
+  const startRename = (session: Session) => {
+    setRenamingId(session.id)
+    setRenameValue(session.title || '')
+    setCtxMenu(null)
+  }
+
+  const commitRename = async () => {
     if (renamingId) {
-      const trimmed = renameValue.trim()
-      if (trimmed) saveSessionName(renamingId, trimmed)
-      else {
-        const updated = { ...sessionNames }
-        delete updated[renamingId]
-        setSessionNames(updated)
-        localStorage.setItem('vaeliSessionNames', JSON.stringify(updated))
+      const s = sessions.find(x => x.id === renamingId)
+      if (s) {
+        const trimmed = renameValue.trim()
+        // пустое имя → сбрасываем customTitle (writeMeta сам удалит поле)
+        await api.writeSessionMeta(jsonlPathFor(s), { customTitle: trimmed })
+        onMetaChange?.()
       }
     }
     setRenamingId(null)
@@ -191,46 +313,71 @@ export function Sidebar({ sessions, activeSessionId, newSessionId, runningSessio
     setCtxMenu({ x, y, session })
   }, [])
 
+  const renderSessionRow = (session: Session) => {
+    const isNew = session.id === newSessionId
+    const title = session.title || (isNew ? '...' : 'New conversation')
+    return (
+      <motion.div
+        key={session.id}
+        initial={isNew ? { opacity: 0, y: -8 } : false}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, ease: 'easeOut' }}
+        className="relative"
+        whileHover={{ scale: 1.025 }}
+        style={{ originX: 0.5, originY: 0.5 }}
+      >
+        {/* Пульс акцента — только для новой сессии */}
+        {isNew && (
+          <motion.div
+            className="absolute inset-0 rounded-lg pointer-events-none"
+            style={{ background: 'var(--accent-wash)', border: '1px solid var(--accent-dim)' }}
+            initial={{ opacity: 1 }}
+            animate={{ opacity: 0 }}
+            transition={{ duration: 1.2, ease: 'easeOut', delay: 0.1 }}
+          />
+        )}
+        {/* Глинт */}
+        {isNew && (
+          <motion.div
+            className="absolute inset-0 rounded-lg pointer-events-none overflow-hidden"
+            initial={{ opacity: 1 }}
+            animate={{ opacity: 0 }}
+            transition={{ duration: 0.8, delay: 0.05 }}
+          >
+            <motion.div
+              className="absolute top-0 bottom-0 w-16"
+              style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)', skewX: '-15deg' }}
+              initial={{ left: '-4rem' }}
+              animate={{ left: '110%' }}
+              transition={{ duration: 0.5, ease: 'easeOut', delay: 0.05 }}
+            />
+          </motion.div>
+        )}
+        <SessionItem
+          session={session}
+          active={activeSessionId === session.id}
+          onClick={() => !renamingId && onSelect(session)}
+          onContextMenu={e => handleContextMenu(e, session)}
+          isRenaming={renamingId === session.id}
+          renameValue={renameValue}
+          onRenameChange={setRenameValue}
+          onRenameCommit={commitRename}
+          displayTitle={title}
+          isRunning={runningSessionIds.includes(session.id)}
+        />
+      </motion.div>
+    )
+  }
+
   return (
     <div className="flex flex-col h-full">
-      {/* Tab switcher */}
-      <div className="px-2.5 pt-2.5 pb-2.5">
-        {(() => {
-          const tabs = ['sessions', 'memory', 'pyre', ...(devConsole ? ['console'] : [])] as SidebarTab[]
-          const activeIdx = tabs.indexOf(tab)
-          const pct = 100 / tabs.length
-          return (
-            <div className="relative flex bg-surface-hover rounded-lg p-0.5">
-              {/* Sliding indicator */}
-              <motion.div
-                className="absolute top-0.5 bottom-0.5 rounded-md pointer-events-none"
-                style={{
-                  width: `calc(${pct}% - 2px)`,
-                  backgroundColor: 'var(--accent)',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
-                }}
-                animate={{ x: `calc(${activeIdx * 100}% + ${activeIdx * 2}px)` }}
-                transition={{ type: 'spring', stiffness: 500, damping: 40 }}
-              />
-              {tabs.map(t => (
-                <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  className={cn(
-                    'relative flex-1 text-[13px] py-1.5 rounded-md font-medium capitalize transition-colors duration-150 z-10',
-                    tab === t ? 'text-text-primary' : 'text-text-faint hover:text-text-muted',
-                  )}
-                >
-                  {t === 'sessions' ? 'Sessions' : t === 'pyre' ? 'Pyre' : t === 'memory' ? 'Memory' : 'Console'}
-                </button>
-              ))}
-            </div>
-          )
-        })()}
+      {/* Заголовок раздела */}
+      <div className="px-3.5 pt-3 pb-2.5">
+        <span className="text-[13.5px] font-medium text-text-primary">{SECTION_LABEL[section]}</span>
       </div>
 
       {/* Memory token stats */}
-      {tab === 'memory' && memoryTokens && (
+      {section === 'memory' && memoryTokens && (
         <div style={{ padding: '0 12px 8px', textAlign: 'center' }}>
           <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>
             {memoryTokens.auto >= 1000 ? (Math.round(memoryTokens.auto / 100) / 10) + 'k' : memoryTokens.auto} auto / {memoryTokens.total >= 1000 ? (Math.round(memoryTokens.total / 100) / 10) + 'k' : memoryTokens.total} total tok
@@ -238,17 +385,20 @@ export function Sidebar({ sessions, activeSessionId, newSessionId, runningSessio
         </div>
       )}
 
-      {/* Sessions tab */}
-      {tab === 'sessions' && (
+      {/* Sessions */}
+      {section === 'sessions' && (
         <div className="flex flex-col flex-1 min-h-0">
-          <div className="flex items-center justify-between px-3 pb-1.5">
-            <span className="text-[11px] text-text-faint uppercase tracking-widest">Recents</span>
+          <div ref={sortRef} className="relative flex items-center justify-between px-3 pb-1.5">
+            <span className="text-[11px] text-text-faint uppercase tracking-widest">
+              Recents{sortMode !== 'recent' && <span className="normal-case tracking-normal text-text-ghost"> · {SORT_LABEL[sortMode].toLowerCase()}</span>}
+            </span>
             <div className="flex items-center gap-0.5">
               <button
-                className="p-1 rounded text-text-faint hover:text-text-secondary transition-colors"
-                title="Display settings"
+                onClick={() => setSortOpen(v => !v)}
+                className={cn('p-1 rounded transition-colors', sortOpen ? 'text-accent bg-accent-wash' : 'text-text-faint hover:text-text-secondary')}
+                title="Sort"
               >
-                <Settings size={14} />
+                <ArrowDownUp size={14} />
               </button>
               <button
                 onClick={onNew}
@@ -259,75 +409,74 @@ export function Sidebar({ sessions, activeSessionId, newSessionId, runningSessio
                 <Plus size={15} />
               </button>
             </div>
+
+            {/* Поповер сортировки */}
+            {sortOpen && (
+              <div className="absolute top-7 right-2 z-30 w-[204px] rounded-[11px] border border-border-strong bg-bg-elevated p-1.5 shadow-[0_20px_44px_-14px_rgba(0,0,0,0.9)]">
+                <div className="px-2.5 pt-1.5 pb-1 text-[9.5px] uppercase tracking-[0.15em] text-text-faint">Сортировать по</div>
+                {(['recent', 'created', 'name', 'custom'] as SortMode[]).map(m => (
+                  <button
+                    key={m}
+                    onClick={() => changeSort(m)}
+                    className={cn('w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12.5px] transition-colors',
+                      sortMode === m ? 'text-text-primary' : 'text-text-secondary hover:bg-surface-hover')}
+                  >
+                    <span className={cn('w-[13px] h-[13px] rounded-full border flex-none relative', sortMode === m ? 'border-accent' : 'border-text-faint')}>
+                      {sortMode === m && <span className="absolute inset-[2.5px] rounded-full bg-accent" />}
+                    </span>
+                    {SORT_LABEL[m]}
+                  </button>
+                ))}
+                {archivedSessions.length > 0 && <>
+                  <div className="h-px bg-border-subtle mx-1.5 my-1" />
+                  <button
+                    onClick={() => { setShowArchived(v => !v); setSortOpen(false) }}
+                    className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12.5px] text-text-secondary hover:bg-surface-hover transition-colors"
+                  >
+                    <Archive size={14} className="text-text-faint flex-none" />
+                    Показывать архив
+                    <span className={cn('ml-auto w-7 h-4 rounded-full relative flex-none transition-colors', showArchived ? 'bg-accent-deep' : 'bg-surface-active')}>
+                      <span className={cn('absolute top-0.5 w-3 h-3 rounded-full transition-all', showArchived ? 'right-0.5 bg-white' : 'left-0.5 bg-text-muted')} />
+                    </span>
+                  </button>
+                </>}
+              </div>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto px-2 space-y-1">
-            {sessions.length === 0 && (
+            {liveSessions.length === 0 && (
               <p className="px-2 py-6 text-center text-[13px] text-text-ghost">
                 No sessions yet
               </p>
             )}
-            {sessions.map(session => {
-              const isNew = session.id === newSessionId
-              const title = sessionNames[session.id] || session.title || (isNew ? '...' : 'New conversation')
-              return (
-                <motion.div
-                  key={session.id}
-                  initial={isNew ? { opacity: 0, y: -8 } : false}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.25, ease: 'easeOut' }}
-                  className="relative"
-                  whileHover={{ scale: 1.025 }}
-                  style={{ originX: 0.5, originY: 0.5 }}
+            {liveSessions.map(session => renderSessionRow(session))}
+
+            {/* Архив — свёрнут по умолчанию */}
+            {showArchived && archivedSessions.length > 0 && (
+              <div className="pt-2">
+                <button
+                  onClick={() => setArchiveExpanded(v => !v)}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[12.5px] text-text-faint hover:text-text-secondary transition-colors"
                 >
-                  {/* Зелёный пульс — только для новой сессии */}
-                  {isNew && (
-                    <motion.div
-                      className="absolute inset-0 rounded-lg pointer-events-none"
-                      style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)' }}
-                      initial={{ opacity: 1 }}
-                      animate={{ opacity: 0 }}
-                      transition={{ duration: 1.2, ease: 'easeOut', delay: 0.1 }}
-                    />
-                  )}
-                  {/* Глинт */}
-                  {isNew && (
-                    <motion.div
-                      className="absolute inset-0 rounded-lg pointer-events-none overflow-hidden"
-                      initial={{ opacity: 1 }}
-                      animate={{ opacity: 0 }}
-                      transition={{ duration: 0.8, delay: 0.05 }}
-                    >
-                      <motion.div
-                        className="absolute top-0 bottom-0 w-16"
-                        style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)', skewX: '-15deg' }}
-                        initial={{ left: '-4rem' }}
-                        animate={{ left: '110%' }}
-                        transition={{ duration: 0.5, ease: 'easeOut', delay: 0.05 }}
-                      />
-                    </motion.div>
-                  )}
-                  <SessionItem
-                    session={session}
-                    active={activeSessionId === session.id}
-                    onClick={() => !renamingId && onSelect(session)}
-                    onContextMenu={e => handleContextMenu(e, session)}
-                    isRenaming={renamingId === session.id}
-                    renameValue={renameValue}
-                    onRenameChange={setRenameValue}
-                    onRenameCommit={commitRename}
-                    displayTitle={title}
-                    isRunning={runningSessionIds.includes(session.id)}
-                  />
-                </motion.div>
-              )
-            })}
+                  <ChevronRight size={12} className={cn('flex-none transition-transform', archiveExpanded && 'rotate-90')} />
+                  <Archive size={13} className="flex-none" />
+                  Архив
+                  <span className="ml-auto text-[11px] text-text-faint bg-surface-hover rounded-full px-2 py-px">{archivedSessions.length}</span>
+                </button>
+                {archiveExpanded && (
+                  <div className="mt-0.5 space-y-1 opacity-70">
+                    {archivedSessions.map(session => renderSessionRow(session))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* Pyre tab — modules */}
-      {tab === 'pyre' && (
+      {/* Pyre — modules */}
+      {section === 'pyre' && (
         <div className="flex flex-col flex-1 min-h-0 overflow-y-auto">
           <div className="flex items-center justify-between px-3 pb-1.5">
             <span className="text-[11px] text-text-faint uppercase tracking-widest">Modules</span>
@@ -352,12 +501,30 @@ export function Sidebar({ sessions, activeSessionId, newSessionId, runningSessio
               >
                 <span className={cn(
                   'w-1.5 h-1.5 rounded-full flex-shrink-0 transition-colors',
-                  m.running ? 'bg-emerald-400' : 'bg-text-ghost',
+                  m.running ? 'bg-[var(--color-success)]' : 'bg-text-ghost',
                 )} />
                 {m.name}
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Settings — под-вкладки раздела */}
+      {section === 'settings' && (
+        <div className="flex flex-col flex-1 min-h-0 overflow-y-auto px-2">
+          {(['interface', 'sessions', 'notifications', 'system'] as SettingsTab[]).map(t => (
+            <TabRow key={t} label={SETTINGS_TAB_LABEL[t]} active={settingsTab === t} onClick={() => setSettingsTab(t)} />
+          ))}
+        </div>
+      )}
+
+      {/* Accounts — под-вкладки раздела */}
+      {section === 'accounts' && (
+        <div className="flex flex-col flex-1 min-h-0 overflow-y-auto px-2">
+          {(['accounts', 'stats'] as AccountsTab[]).map(t => (
+            <TabRow key={t} label={ACCOUNTS_TAB_LABEL[t]} active={accountsTab === t} onClick={() => setAccountsTab(t)} />
+          ))}
         </div>
       )}
 
@@ -384,8 +551,16 @@ export function Sidebar({ sessions, activeSessionId, newSessionId, runningSessio
               Переименовать
             </button>
             <button
+              onClick={() => toggleArchive(ctxMenu.session)}
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[14px] text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
+            >
+              {ctxMenu.session.archived ? <ArchiveRestore size={13} /> : <Archive size={13} />}
+              {ctxMenu.session.archived ? 'Разархивировать' : 'Заархивировать'}
+            </button>
+            <div className="h-px bg-border-subtle mx-1 my-1" />
+            <button
               onClick={() => { onDelete(ctxMenu.session); setCtxMenu(null) }}
-              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[14px] text-red-400/80 hover:text-red-400 hover:bg-red-400/8 transition-colors"
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[14px] text-[var(--color-error)]/80 hover:text-[var(--color-error)] hover:bg-[var(--error-bg)] transition-colors"
             >
               <Trash2 size={13} />
               Удалить

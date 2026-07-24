@@ -1,6 +1,7 @@
 import { ReactNode } from 'react'
 
-export type SessionStatus = 'idle' | 'thinking' | 'streaming' | 'tool'
+export type { SessionStatus } from '../context/SessionContext.js'
+import type { SessionStatus } from '../context/SessionContext.js'
 
 export interface VaeliPanel {
   id: string

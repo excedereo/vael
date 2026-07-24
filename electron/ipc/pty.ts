@@ -17,27 +17,332 @@ const sessions = new Map<string, PtyEntry>()
 
 // Map: sessionId → FSWatcher
 const sessionWatchers = new Map<string, fs.FSWatcher>()
+// Map: sessionId → polling-таймер (см. STATUS_POLL_MS)
+const sessionPollers = new Map<string, NodeJS.Timeout>()
+// Map: sessionId → последний отправленный статус (для детекции idle после streaming)
+const sessionLastStatus = new Map<string, string>()
+// Main-process колбэки на reply (для модулей) — очередь, FIFO
+const replyCallbacks = new Map<string, Array<(text: string) => void>>()
 
-function detectStatus(jsonlPath: string): 'thinking' | 'streaming' | 'idle' {
+export type StatusChangeListener = (
+  sessionId: string,
+  status: string,
+  prev: string,
+  replyText: string | null,
+) => void
+
+// Подписчики на смену статуса (уведомления и т.п.) — чтобы не вшивать их сюда
+const statusChangeListeners = new Set<StatusChangeListener>()
+
+export function onSessionStatusChange(listener: StatusChangeListener): () => void {
+  statusChangeListeners.add(listener)
+  return () => { statusChangeListeners.delete(listener) }
+}
+
+export type PtyErrorListener = (sessionId: string, message: string) => void
+
+const ptyErrorListeners = new Set<PtyErrorListener>()
+
+export function onPtyError(listener: PtyErrorListener): () => void {
+  ptyErrorListeners.add(listener)
+  return () => { ptyErrorListeners.delete(listener) }
+}
+
+// fs.watch на Windows схлопывает события во время активной записи в jsonl:
+// пока Claude Code пишет ответ, коллбэк молчит и стреляет один раз в конце —
+// промежуточные состояния (tool, asking) так не увидеть вообще. Поэтому поверх
+// watcher'а крутим лёгкий опрос: пара readFileSync в секунду на сессию.
+const STATUS_POLL_MS = 400
+
+export function ptyWriteDirect(termId: string, data: string) {
+  sessions.get(termId)?.proc.write(data)
+}
+
+export function ptyWriteBySessionId(sessionId: string, data: string) {
+  for (const [, entry] of sessions) {
+    if (entry.sessionPath === sessionId) {
+      entry.proc.write(data)
+      return
+    }
+  }
+}
+
+export function subscribeSessionReply(sessionId: string, cb: (text: string) => void) {
+  const queue = replyCallbacks.get(sessionId) ?? []
+  queue.push(cb)
+  replyCallbacks.set(sessionId, queue)
+}
+
+export function unsubscribeSessionReply(sessionId: string) {
+  replyCallbacks.delete(sessionId)
+}
+
+function fireNextReplyCallback(sessionId: string, text: string) {
+  const queue = replyCallbacks.get(sessionId)
+  if (!queue || queue.length === 0) return
+  const cb = queue.shift()!
+  if (queue.length === 0) replyCallbacks.delete(sessionId)
+  cb(text)
+}
+/**
+ * Статус сессии по данным самого CLI.
+ *
+ * claude пишет живое состояние процесса в `<configDir>/sessions/<pid>.json`
+ * (поля sessionId + status). Это ЕДИНСТВЕННЫЙ источник, где видно, что сессия
+ * ждёт ответа на вопрос: в jsonl запись про AskUserQuestion попадает только
+ * ПОСЛЕ того, как пользователь ответил, поэтому по jsonl «ждёт» не поймать.
+ *
+ * @returns 'waiting' | 'busy' | 'idle' по версии CLI, либо null если файла нет
+ */
+function detectCliStatus(jsonlPath: string, sessionId: string): string | null {
+  // jsonlPath = <configDir>/projects/<encoded-cwd>/<sessionId>.jsonl
+  const configDir = path.dirname(path.dirname(path.dirname(jsonlPath)))
+  const sessionsDir = path.join(configDir, 'sessions')
+
+  let files: string[]
+  try { files = fs.readdirSync(sessionsDir) } catch { return null }
+
+  for (const file of files) {
+    if (!file.endsWith('.json')) continue
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(sessionsDir, file), 'utf-8')) as {
+        sessionId?: string
+        status?: string
+      }
+      if (data.sessionId === sessionId && data.status) return data.status
+    } catch {}
+  }
+  return null
+}
+
+/** Останавливает watcher и poller сессии, если они были заведены. */
+function stopSessionWatch(sessionId: string) {
+  const watcher = sessionWatchers.get(sessionId)
+  if (watcher) {
+    try { watcher.close() } catch {}
+    sessionWatchers.delete(sessionId)
+  }
+  const poller = sessionPollers.get(sessionId)
+  if (poller) {
+    clearInterval(poller)
+    sessionPollers.delete(sessionId)
+  }
+}
+
+/**
+ * Единая точка подписки на статус сессии: fs.watch + polling поверх него.
+ * Оба варианта входа (IPC-хендлер и watchSessionDirect для модулей) идут сюда,
+ * чтобы логика не разъезжалась между копиями.
+ */
+function startSessionWatch(
+  sessionId: string,
+  jsonlPath: string,
+  getWindow: () => import('electron').BrowserWindow | null,
+) {
+  stopSessionWatch(sessionId)
+
+  try {
+    // Сразу читаем текущий статус и последний ответ при подписке
+    const initStatus = detectStatus(jsonlPath, sessionId)
+    sessionLastStatus.set(sessionId, initStatus)
+    const win0 = getWindow()
+    if (win0 && !win0.isDestroyed()) {
+      win0.webContents.send('session:status', sessionId, initStatus)
+      if (initStatus === 'idle') {
+        const initText = extractLastAssistantText(jsonlPath)
+        if (initText) win0.webContents.send('session:reply', sessionId, initText)
+      }
+    }
+
+    const check = () => {
+      const status = detectStatus(jsonlPath, sessionId)
+      const prev = sessionLastStatus.get(sessionId)
+      if (status === prev) return   // шлём только реальные переходы
+      sessionLastStatus.set(sessionId, status)
+
+      const win = getWindow()
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('session:status', sessionId, status)
+        win.webContents.send('session:status-log', sessionId, `${prev ?? '-'} → ${status}`)
+      }
+
+      const shouldFire = status === 'idle' && prev !== undefined && prev !== 'idle'
+      const replyText = shouldFire ? extractLastAssistantText(jsonlPath) : null
+      if (replyText) {
+        const win2 = getWindow()
+        if (win2 && !win2.isDestroyed()) win2.webContents.send('session:reply', sessionId, replyText)
+        fireNextReplyCallback(sessionId, replyText)
+      }
+
+      if (prev !== undefined) {
+        for (const listener of statusChangeListeners) {
+          try { listener(sessionId, status, prev, replyText) } catch {}
+        }
+      }
+    }
+
+    // Отдельная ветка: ответ на мета-команду (/context и т.п.) приходит без
+    // смены статуса (idle → idle), поэтому check() его пропустит.
+    let lastMetaSize = -1
+    const checkMetaReply = () => {
+      if (sessionLastStatus.get(sessionId) !== 'idle') return
+      let size = -1
+      try { size = fs.statSync(jsonlPath).size } catch { return }
+      if (size === lastMetaSize) return
+      const known = lastMetaSize !== -1
+      lastMetaSize = size
+      if (!known || !isLastEntryMeta(jsonlPath)) return
+      const text = extractLastAssistantText(jsonlPath)
+      if (text) {
+        const win = getWindow()
+        if (win && !win.isDestroyed()) win.webContents.send('session:reply', sessionId, text)
+        fireNextReplyCallback(sessionId, text)
+      }
+    }
+
+    const watcher = fs.watch(jsonlPath, { persistent: false }, () => { check(); checkMetaReply() })
+    sessionWatchers.set(sessionId, watcher)
+
+    const poller = setInterval(() => { check(); checkMetaReply() }, STATUS_POLL_MS)
+    sessionPollers.set(sessionId, poller)
+  } catch (e) {
+    console.warn(`[startSessionWatch] failed to watch ${jsonlPath}:`, e)
+  }
+}
+
+export function watchSessionDirect(sessionId: string, jsonlPath: string, getWindow: () => import('electron').BrowserWindow | null) {
+  startSessionWatch(sessionId, jsonlPath, getWindow)
+}
+
+/** Гасит все watcher'ы и polling-таймеры — вызывать при выходе из приложения. */
+export function stopAllSessionWatches() {
+  for (const sessionId of [...sessionWatchers.keys(), ...sessionPollers.keys()]) {
+    stopSessionWatch(sessionId)
+  }
+}
+
+// Убить все живые PTY при выходе — иначе node-pty/claude процессы остаются
+// висеть после закрытия окна. Зовётся из before-quit.
+export function killAllPtys() {
+  for (const [termId, entry] of sessions) {
+    try { entry.proc.kill() } catch {}
+    sessions.delete(termId)
+  }
+}
+
+function isLastEntryMeta(jsonlPath: string): boolean {
+  try {
+    const content = fs.readFileSync(jsonlPath, 'utf-8')
+    const lines = content.trim().split('\n').filter(Boolean)
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const entry = JSON.parse(lines[i]) as { type?: string; isMeta?: boolean }
+        if (entry.type === 'user' && entry.isMeta) return true
+        break
+      } catch {}
+    }
+  } catch {}
+  return false
+}
+
+// Инструменты, которые блокируют сессию в ожидании действия пользователя.
+// Пока такой tool_use не получил tool_result — Клод не «думает», а ждёт нас.
+const WAITING_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode'])
+
+/** Статус по одной содержательной записи jsonl, или null если запись служебная. */
+function statusFromEntry(entry: JsonlLike): SessionStatusValue | null {
+  if (entry.type === 'user') {
+    // isMeta — служебные ответы команд (/context и т.п.), не запрос к модели
+    return entry.isMeta ? 'idle' : 'thinking'
+  }
+  if (entry.type !== 'assistant') return null
+
+  const stopReason = entry.message?.stop_reason
+  if (!stopReason) return 'streaming'
+
+  // stop_reason: 'tool_use' — Claude Code пишет текст и tool_use как отдельные
+  // assistant-записи, каждая со своим stop_reason. Пока не пройден tool_result
+  // и не пришёл финальный ответ — это не idle.
+  if (stopReason === 'tool_use') {
+    const blocks = Array.isArray(entry.message?.content) ? entry.message!.content as ContentBlock[] : []
+    const toolUses = blocks.filter(b => b.type === 'tool_use')
+    if (toolUses.length === 0) return 'thinking'
+    if (toolUses.some(b => b.name && WAITING_TOOLS.has(b.name))) return 'asking'
+    return 'tool'
+  }
+  return 'idle'
+}
+
+/**
+ * Итоговый статус сессии: CLI-файл + jsonl.
+ *
+ * CLI знает только busy/waiting/idle, зато знает про ожидание ответа.
+ * jsonl не знает про ожидание, зато различает streaming/tool/thinking.
+ * Берём waiting от CLI, детализацию — от jsonl.
+ */
+function detectStatus(jsonlPath: string, sessionId?: string): SessionStatusValue {
+  if (sessionId) {
+    const cliStatus = detectCliStatus(jsonlPath, sessionId)
+    if (cliStatus === 'waiting') return 'asking'
+    if (cliStatus === 'idle') return 'idle'
+    // 'busy' — работаем дальше и уточняем по jsonl, чем именно занята сессия
+  }
+  return detectJsonlStatus(jsonlPath)
+}
+
+function detectJsonlStatus(jsonlPath: string): SessionStatusValue {
   try {
     const content = fs.readFileSync(jsonlPath, 'utf-8')
     const lines = content.trim().split('\n').filter(Boolean)
     if (lines.length === 0) return 'idle'
 
-    // Ищем последнюю валидную запись
-    let lastEntry: { type?: string; message?: { stop_reason?: string } } | null = null
+    // Идём с конца: служебные записи (attachment, system, last-prompt, ai-title,
+    // mode, permission-mode и т.п.) сами по себе не меняют статус — берём первую
+    // содержательную (user/assistant) запись.
     for (let i = lines.length - 1; i >= 0; i--) {
-      try { lastEntry = JSON.parse(lines[i]); break } catch {}
-    }
-    if (!lastEntry) return 'idle'
-
-    if (lastEntry.type === 'user') return 'thinking'
-    if (lastEntry.type === 'assistant') {
-      if (lastEntry.message?.stop_reason) return 'idle'
-      return 'streaming'
+      let entry: JsonlLike | null = null
+      try { entry = JSON.parse(lines[i]) } catch { continue }
+      if (!entry) continue
+      const status = statusFromEntry(entry)
+      if (status) return status
     }
   } catch {}
   return 'idle'
+}
+
+type ContentBlock = { type: string; text?: string; name?: string }
+type AssistantMessage = { role?: string; content?: ContentBlock[] | string; stop_reason?: string }
+type JsonlLike = { type?: string; isMeta?: boolean; message?: AssistantMessage }
+/** Держать в синхроне с SessionStatus в src/context/SessionContext.tsx */
+type SessionStatusValue = 'idle' | 'thinking' | 'streaming' | 'tool' | 'asking'
+
+function extractLastAssistantText(jsonlPath: string): string | null {
+  try {
+    const content = fs.readFileSync(jsonlPath, 'utf-8')
+    const lines = content.trim().split('\n').filter(Boolean)
+
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const entry = JSON.parse(lines[i]) as { type?: string; isMeta?: boolean; message?: AssistantMessage & { role?: string; content?: unknown } }
+        // Мета-ответы команд вроде /context
+        if (entry.type === 'user' && entry.isMeta && typeof entry.message?.content === 'string' && entry.message.content) {
+          return entry.message.content
+        }
+        if (entry.type !== 'assistant' || !entry.message?.stop_reason) continue
+        const msg = entry.message
+        if (Array.isArray(msg.content)) {
+          const text = (msg.content as ContentBlock[])
+            .filter((b: ContentBlock) => b.type === 'text' && b.text)
+            .map((b: ContentBlock) => b.text!)
+            .join('')
+          if (text) return text
+        } else if (typeof msg.content === 'string' && msg.content) {
+          return msg.content
+        }
+      } catch {}
+    }
+  } catch {}
+  return null
 }
 
 export function registerPtyHandlers(getWindow: () => BrowserWindow | null) {
@@ -151,11 +456,17 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null) {
       }
     })
 
-    proc.onExit(() => {
+    proc.onExit(({ exitCode }) => {
       sessions.delete(termId)
       const win = getWindow()
       if (win && !win.isDestroyed()) {
         win.webContents.send('pty:exit', termId)
+      }
+      // Ненулевой код — процесс упал, а не был закрыт штатно
+      if (exitCode !== 0 && sessionId) {
+        for (const listener of ptyErrorListeners) {
+          try { listener(sessionId, `Процесс завершился с кодом ${exitCode}`) } catch {}
+        }
       }
     })
 
@@ -185,35 +496,15 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null) {
     return { alive: sessions.has(termId) }
   })
 
-  // Запустить fs.watch на jsonl файл сессии
+  // Запустить слежение за jsonl файлом сессии (fs.watch + polling)
   ipcMain.handle('pty:watch-session', (_, sessionId: string, jsonlPath: string) => {
-    if (sessionWatchers.has(sessionId)) {
-      try { sessionWatchers.get(sessionId)!.close() } catch {}
-    }
-
-    try {
-      const watcher = fs.watch(jsonlPath, { persistent: false }, () => {
-        const status = detectStatus(jsonlPath)
-        const win = getWindow()
-        if (win && !win.isDestroyed()) {
-          win.webContents.send('session:status', sessionId, status)
-        }
-      })
-      sessionWatchers.set(sessionId, watcher)
-    } catch (e) {
-      console.warn(`[pty:watch-session] failed to watch ${jsonlPath}:`, e)
-    }
-
+    startSessionWatch(sessionId, jsonlPath, getWindow)
     return { ok: true }
   })
 
-  // Остановить fs.watch
+  // Остановить слежение
   ipcMain.handle('pty:unwatch-session', (_, sessionId: string) => {
-    const watcher = sessionWatchers.get(sessionId)
-    if (watcher) {
-      try { watcher.close() } catch {}
-      sessionWatchers.delete(sessionId)
-    }
+    stopSessionWatch(sessionId)
     return { ok: true }
   })
 }

@@ -7,10 +7,12 @@ import { useUpdateManager } from './hooks/useUpdateManager.js'
 import { useDependencies } from './hooks/useDependencies.js'
 import { useConsoleCapture } from './hooks/useConsoleCapture.js'
 import { useSettings } from './hooks/useSettings.js'
-import { SessionProvider } from './context/SessionContext.js'
+import { SessionProvider, useSessionContext } from './context/SessionContext.js'
 import { panels } from './panels/index.js'
 import { PanelErrorBoundary } from './components/PanelErrorBoundary.js'
 import { Sidebar } from './components/Sidebar.js'
+import { NavRail } from './components/NavRail.js'
+import type { Section } from './components/NavRail.js'
 
 import { StatusBar } from './components/StatusBar.js'
 import { AccountBar } from './components/AccountBar.js'
@@ -19,7 +21,7 @@ import { SettingsPage } from './components/SettingsPage.js'
 import { AccountSwitchModal } from './components/AccountSwitchModal.js'
 import { FirstLaunch } from './components/FirstLaunch.js'
 import { ErrorToast } from './components/ErrorToast.js'
-import { ConsoleView } from './components/ConsoleView.js'
+import { DevPanel } from './components/DevPanel.js'
 import { NavControls } from './components/NavControls.js'
 import { PtyTerminalView } from './components/PtyTerminalView.js'
 import { SessionToolbar } from './components/SessionToolbar.js'
@@ -30,6 +32,8 @@ import { UpdateBanner } from './components/UpdateBanner.js'
 import { api } from './lib/api.js'
 import { Session } from './types/index'
 import { restoreSavedTheme } from './lib/theme.js'
+import { statusLog } from './lib/statusLog.js'
+import { loadNotificationSettings } from './hooks/useSettings.js'
 import { loadDefaultSessionConfig } from './components/SettingsPage.js'
 import { cn } from './lib/utils.js'
 
@@ -93,18 +97,32 @@ function AppInner() {
     } catch {}
   }
 
+  const { spawnedSessions, setSpawnedSessions, termToSession, setTermToSession, watchSession, unwatchSession } = useSessionContext()
+
   const [sessionConfig, setSessionConfig] = useState(DEFAULT_CONFIG)
   const [spawnTrigger, setSpawnTrigger] = useState(0)
-  const [spawnedSessions, setSpawnedSessions] = useState<Record<string, number>>({})
   const [newSessionId, setNewSessionId] = useState<string | null>(null)
   type StartPhase = 'idle' | 'confetti' | 'fadeout'
   const [startPhase, setStartPhase] = useState<StartPhase>('idle')
   const [pendingStart, setPendingStart] = useState<(() => void) | null>(null)
   const [confettiOrigin, setConfettiOrigin] = useState<DOMRect | undefined>(undefined)
 
-  const [page, setPage] = useState<'chat' | 'accounts' | 'settings' | 'memory'>('chat')
-  const [sidebarTab, setSidebarTab] = useState<'sessions' | 'pyre' | 'console' | 'memory'>('sessions')
+  // Единая навигация: раздел определяет, что показано в главной области.
+  // Раньше было два стейта — page ('chat'|'accounts'|'settings'|'memory') и
+  // sidebarTab ('sessions'|'pyre'|'dev'|'memory'). Settings/Accounts больше не оверлеи.
+  const [section, setSection] = useState<Section>('sessions')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  // Memory скрыта по умолчанию, включается флагом в настройках
+  const [showMemory, setShowMemory] = useState(() => localStorage.getItem('vaeli:showMemory') === '1')
+  useEffect(() => {
+    const h = () => setShowMemory(localStorage.getItem('vaeli:showMemory') === '1')
+    window.addEventListener('vaeli:showMemoryChanged', h)
+    return () => window.removeEventListener('vaeli:showMemoryChanged', h)
+  }, [])
+  // Если Memory скрыта, а раздел на ней — увести на Sessions
+  useEffect(() => {
+    if (!showMemory && section === 'memory') setSection('sessions')
+  }, [showMemory, section])
   const [modules, setModules] = useState<{ id: string; name: string; icon?: string; running: boolean }[]>([])
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null)
   const { push: navPush, goBack, goForward, canGoBack, canGoForward } = useNavHistory()
@@ -122,6 +140,10 @@ function AppInner() {
   }, [])
 
   useEffect(() => { restoreSavedTheme() }, [])
+
+  // Копим историю переходов статуса с самого старта — Dev-панель рендерится
+  // условно и может открыться сильно позже первых событий.
+  useEffect(() => { statusLog.start() }, [])
 
 
 
@@ -189,9 +211,35 @@ function AppInner() {
 
   const activeSession = sessions.find(s => s.id === activeSessionId) || null
 
+  useEffect(() => {
+    if (!activeSession) return
+    const jsonlPath = `${activeSession.projectPath}\\${activeSession.id}.jsonl`
+    watchSession(activeSession.id, jsonlPath)
+    return () => { unwatchSession(activeSession.id) }
+  }, [activeSession?.id])
 
-  // Map: termId → реальный sessionId (для новых сессий, где termId='__new__')
-  const [termToSession, setTermToSession] = useState<Record<string, string>>({})
+  // ── Уведомления ────────────────────────────────────────────────────────────
+  // Настройки живут в localStorage renderer'а — при старте отдаём их в main,
+  // иначе окно уведомлений работало бы на дефолтах до первого захода в настройки
+  useEffect(() => { api.applyNotificationSettings(loadNotificationSettings()) }, [])
+
+  // Открытая сессия: про неё не уведомляем, пока окно на виду.
+  useEffect(() => { api.setActiveSessionForNotify(activeSessionId) }, [activeSessionId])
+
+  // Названия сессий — чтобы в уведомлении был заголовок, а не голый uuid
+  useEffect(() => {
+    for (const s of sessions) {
+      if (s.title) api.setSessionTitleForNotify(s.id, s.title)
+    }
+  }, [sessions])
+
+  // Клик по уведомлению открывает нужную сессию
+  useEffect(() => {
+    return api.onNotificationOpenSession((sessionId) => {
+      setActiveSessionId(sessionId)
+      setSection('sessions')
+    })
+  }, [setActiveSessionId])
 
   useEffect(() => {
     const unsub = api.onSessionCreated((sessionId) => {
@@ -216,29 +264,29 @@ function AppInner() {
     setSessionConfig(loadSessionConfig(session.id))
     if (!spawnedSessions[session.id]) setSpawnTrigger(0)
     api.selectSession(session.id)
-    navPush({ sessionId: session.id, tab: sidebarTab })
-  }, [setActiveSessionId, sidebarTab, navPush, spawnedSessions])
+    navPush({ sessionId: session.id, tab: 'sessions' })
+  }, [setActiveSessionId, navPush, spawnedSessions])
 
-  const handleTabChange = useCallback((tab: 'sessions' | 'pyre' | 'console' | 'memory') => {
-    setSidebarTab(tab)
-    navPush({ sessionId: activeSessionId, tab })
+  const handleSectionChange = useCallback((next: Section) => {
+    setSection(next)
+    navPush({ sessionId: activeSessionId, tab: next })
   }, [activeSessionId, navPush])
 
   const handleGoBack = useCallback(() => {
     goBack(({ sessionId, tab }) => {
-      setSidebarTab(tab)
+      setSection(tab)
       setActiveSessionId(sessionId)
       if (sessionId) api.selectSession(sessionId)
     })
-  }, [goBack, setSidebarTab, setActiveSessionId])
+  }, [goBack, setActiveSessionId])
 
   const handleGoForward = useCallback(() => {
     goForward(({ sessionId, tab }) => {
-      setSidebarTab(tab)
+      setSection(tab)
       setActiveSessionId(sessionId)
       if (sessionId) api.selectSession(sessionId)
     })
-  }, [goForward, setSidebarTab, setActiveSessionId])
+  }, [goForward, setActiveSessionId])
 
   const handleNewSession = useCallback(() => {
     setTermToSession(prev => {
@@ -357,7 +405,7 @@ function AppInner() {
 
       <StatusBar syncStatus={syncStatus} syncMessage={syncMessage} />
 
-      <div className={cn("fixed top-0 left-0 z-50 h-10 flex items-center px-2 gap-0.5 no-drag", page !== 'chat' && "hidden")}>
+      <div className="fixed top-0 left-0 z-50 h-10 flex items-center px-2 gap-0.5 no-drag">
         <NavControls
           canGoBack={canGoBack}
           canGoForward={canGoForward}
@@ -368,15 +416,25 @@ function AppInner() {
         />
       </div>
 
-      {/* Sidebar */}
+      {/* Иконочный столбец разделов */}
+      <NavRail
+        active={section}
+        onSelect={handleSectionChange}
+        showDev={devConsole}
+        showMemory={showMemory}
+        busySections={runningSessions.size > 0 ? ['sessions'] : []}
+      />
+
+      {/* Sidebar — список под текущий раздел */}
       <div
-        className={cn('shrink-0 border-r border-border-subtle flex flex-col bg-bg-sidebar transition-[width] duration-200 ease-out overflow-hidden', sidebarCollapsed ? 'w-0' : 'w-72')}
+        className={cn('shrink-0 border-r border-border-subtle flex flex-col bg-bg-sidebar transition-[width] duration-200 ease-out overflow-hidden', sidebarCollapsed ? 'w-0' : 'w-[214px]')}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => { e.preventDefault(); e.stopPropagation() }}
       >
         <div className="h-10 shrink-0" />
         <div className="flex-1 min-h-0">
           <Sidebar
+            section={section}
             sessions={sessions}
             activeSessionId={activeSessionId}
             newSessionId={newSessionId}
@@ -385,13 +443,15 @@ function AppInner() {
             onNew={handleNewSession}
             onDelete={handleDeleteSession}
             isLocked={isLocked}
-            activeTab={sidebarTab}
-            onTabChange={handleTabChange}
-            devConsole={devConsole}
             memoryTokens={memoryTokens}
             modules={modules}
             activeModuleId={activeModuleId}
             onSelectModule={setActiveModuleId}
+            accounts={accounts}
+            activeAccountId={activeAccountId || ''}
+            isRunning={isRunning}
+            onSwitchAccount={(id) => setSwitchTarget(id)}
+            onMetaChange={refreshSessions}
           />
         </div>
         {updateState && <UpdateBanner state={updateState} onClick={handleUpdateClick} onDismiss={() => {}} />}
@@ -400,15 +460,15 @@ function AppInner() {
           activeAccountId={activeAccountId || ''}
           isRunning={isRunning}
           onSwitch={(id) => setSwitchTarget(id)}
-          onManage={() => setPage('accounts')}
-          onSettings={() => setPage('settings')}
+          onManage={() => setSection('accounts')}
+          onSettings={() => setSection('settings')}
         />
       </div>
 
       {/* Main area */}
       <div ref={mainAreaRef} className="flex-1 flex flex-col min-w-0 relative">
         <AnimatePresence>
-          {dragOver && sidebarTab === 'sessions' && (
+          {dragOver && section === 'sessions' && (
             <motion.div
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}
@@ -424,7 +484,7 @@ function AppInner() {
             className="app-drag-region flex items-center flex-1 min-w-0 h-full px-5 gap-2"
             style={{ marginLeft: sidebarCollapsed ? '9rem' : 0 }}
           >
-            {(() => {
+            {section === 'sessions' && (() => {
               const isSpawned = Object.keys(spawnedSessions).some(tid => {
                 const resolved = termToSession[tid] ?? (tid === '__new__' ? null : tid)
                 return activeSessionId ? resolved === activeSessionId : tid === '__new__'
@@ -432,7 +492,7 @@ function AppInner() {
               return isSpawned && (
                 <button
                   onClick={() => setKillSessionModal(true)}
-                  className="no-drag flex items-center gap-1.5 px-2 h-6 rounded-md transition-colors text-text-ghost hover:text-red-400 hover:bg-surface-hover shrink-0 text-[12px]"
+                  className="no-drag flex items-center gap-1.5 px-2 h-6 rounded-md transition-colors text-text-ghost hover:text-[var(--color-error)] hover:bg-surface-hover shrink-0 text-[12px]"
                   title="Завершить сессию"
                 >
                   <StopCircle size={12} />
@@ -440,9 +500,14 @@ function AppInner() {
                 </button>
               )
             })()}
-            {activeSession && (
+            {section === 'sessions' && activeSession && (
               <span className="text-sm text-text-faint truncate select-none pointer-events-none">
                 {activeSession.title || activeSession.id}
+              </span>
+            )}
+            {section !== 'sessions' && (
+              <span className="text-sm text-text-secondary truncate select-none pointer-events-none capitalize">
+                {section}
               </span>
             )}
           </div>
@@ -483,7 +548,7 @@ function AppInner() {
         {/* PTY terminal — main session UI, всегда в DOM чтобы не убивать процессы при смене вкладок */}
         <div
           className="flex-1 min-h-0 flex flex-col overflow-hidden relative"
-          style={{ background: 'var(--bg-base)', display: sidebarTab === 'sessions' ? 'flex' : 'none' }}
+          style={{ background: 'var(--bg-base)', display: section === 'sessions' ? 'flex' : 'none' }}
         >
             <div className="flex-1 min-h-0 pt-[4px] relative" style={{ background: '#0a0a0a' }}>
               {/* Render all spawned sessions, show only active */}
@@ -532,9 +597,12 @@ function AppInner() {
                   <SessionWelcome
                     sessionTitle={activeSession?.title}
                     isNew={!activeSessionId}
+                    jsonlPath={activeSession ? `${activeSession.projectPath}\\${activeSession.id}.jsonl` : null}
+                    messageCount={activeSession?.messageCount}
+                    lastModified={activeSession?.lastModified}
                     config={sessionConfig}
                     onChange={setSessionConfig}
-                    onSettings={() => setPage('settings')}
+                    onSettings={() => setSection('settings')}
                     onImport={async () => {
                       const configDir = accounts.find(a => a.id === activeAccountId)?.configDir
                       if (!configDir) return
@@ -553,6 +621,7 @@ function AppInner() {
                       const key = activeSessionId ?? '__new__'
                       const doSpawn = () => {
                         setSpawnedSessions(prev => ({ ...prev, [key]: (prev[key] ?? 0) + 1 }))
+                        if (activeSessionId) setTermToSession(prev => ({ ...prev, [key]: activeSessionId }))
                         setSpawnTrigger(t => t + 1)
                       }
                       if (!activeSessionId) {
@@ -595,10 +664,10 @@ function AppInner() {
             )}
         </div>
 
-        {/* Console */}
-        {sidebarTab === 'console' && (
+        {/* Dev Panel */}
+        {section === 'dev' && (
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            <ConsoleView logs={consoleLogs} onClear={() => setConsoleLogs([])} />
+            <DevPanel />
           </div>
         )}
         {/* Registered panels (Pyre, Memory) */}
@@ -609,7 +678,7 @@ function AppInner() {
             style={{
               flex: 1,
               overflow: 'hidden',
-              display: sidebarTab === panel.id ? 'flex' : 'none',
+              display: section === panel.id ? 'flex' : 'none',
               flexDirection: 'column',
               minHeight: 0,
             }}
@@ -619,26 +688,28 @@ function AppInner() {
             </PanelErrorBoundary>
           </div>
         ))}
-      </div>
 
-      {/* Full-screen overlays */}
-      {page === 'accounts' && (
-        <div className="fixed inset-0 z-40 bg-bg-base">
-          <AccountsPage
-            accounts={accounts}
-            activeAccountId={activeAccountId || ''}
-            isRunning={isRunning}
-            onBack={() => setPage('chat')}
-            onAccountsChange={refreshAccounts}
-            onSwitchAccount={async id => { await switchAccount(id); setPage('chat') }}
-          />
-        </div>
-      )}
-      {page === 'settings' && (
-        <div className="fixed inset-0 z-40 bg-bg-base">
-          <SettingsPage onBack={() => setPage('chat')} />
-        </div>
-      )}
+        {/* Accounts — раздел, а не оверлей */}
+        {section === 'accounts' && (
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <AccountsPage
+              accounts={accounts}
+              activeAccountId={activeAccountId || ''}
+              isRunning={isRunning}
+              onBack={() => setSection('sessions')}
+              onAccountsChange={refreshAccounts}
+              onSwitchAccount={async id => { await switchAccount(id); setSection('sessions') }}
+            />
+          </div>
+        )}
+
+        {/* Settings — раздел, а не оверлей */}
+        {section === 'settings' && (
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <SettingsPage onBack={() => setSection('sessions')} />
+          </div>
+        )}
+      </div>
 
       {/* Account switch modal */}
       {switchTarget && (() => {
