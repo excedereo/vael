@@ -67,6 +67,25 @@ export function ptyWriteBySessionId(sessionId: string, data: string) {
   }
 }
 
+/**
+ * Запущен ли PTY для этой сессии прямо сейчас.
+ *
+ * Это НЕ то же самое, что статус idle/busy: статус читается из файлов на диске
+ * и остаётся доступен для давно закрытой сессии. Здесь же — живой процесс, в
+ * который физически можно писать. Без него ptyWrite уходит в никуда.
+ */
+export function isPtyAlive(sessionId: string): boolean {
+  for (const [, entry] of sessions) {
+    if (entry.sessionPath === sessionId) return true
+  }
+  return false
+}
+
+/** Список sessionId со живым PTY — для подсказок в UI. */
+export function listAlivePtySessions(): string[] {
+  return Array.from(sessions.values()).map(e => e.sessionPath)
+}
+
 export function subscribeSessionReply(sessionId: string, cb: (text: string) => void) {
   const queue = replyCallbacks.get(sessionId) ?? []
   queue.push(cb)
@@ -304,7 +323,7 @@ function statusFromEntry(entry: JsonlLike): SessionStatusValue | null {
  * jsonl не знает про ожидание, зато различает streaming/tool/thinking.
  * Берём waiting от CLI, детализацию — от jsonl.
  */
-function detectStatus(jsonlPath: string, sessionId?: string): SessionStatusValue {
+export function detectStatus(jsonlPath: string, sessionId?: string): SessionStatusValue {
   if (sessionId) {
     const cliStatus = detectCliStatus(jsonlPath, sessionId)
     if (cliStatus === 'waiting') return 'asking'
@@ -414,6 +433,7 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null) {
     let trustAnswered = false
     let bypassAnswered = false
     let themeAnswered = false
+    let authErrorSent = false
 
     // Для новой сессии — polling файловой системы чтобы найти появившийся jsonl
     if (!sessionId && configDir) {
@@ -472,6 +492,22 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null) {
       if (!themeAnswered && s.includes('Darkmode') && s.includes('Lightmode')) {
         themeAnswered = true
         setTimeout(() => proc.write('1'), 100)
+      }
+
+      // Протухшая авторизация видна только здесь: TUI поднимается нормально,
+      // а CLI сообщает об этом лишь при первом обращении к API. Заранее, до
+      // отправки сообщения, поймать её нельзя
+      if (!authErrorSent && sessionId) {
+        const authFailed =
+          s.includes('OAuthsessionexpired') ||
+          s.includes('Failedtoauthenticate') ||
+          s.includes('Notloggedin')
+        if (authFailed) {
+          authErrorSent = true
+          for (const listener of ptyErrorListeners) {
+            try { listener(sessionId, 'Сессия авторизации истекла — нужен повторный вход') } catch {}
+          }
+        }
       }
 
       const win = getWindow()

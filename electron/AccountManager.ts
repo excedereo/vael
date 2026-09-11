@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { Account, Session } from '../shared/types.js'
 import { readMeta } from './services/SessionMetaService.js'
+import { isLink, unlinkProjects } from './services/SessionStoreService.js'
 
 const ACCOUNTS_ROOT = path.join(process.env.USERPROFILE || '', '.claude-accounts')
 const REGISTRY_PATH = path.join(ACCOUNTS_ROOT, 'accounts.json')
@@ -78,12 +79,31 @@ export class AccountManager {
     }
   }
 
+  /**
+   * Удаляет аккаунт, НЕ трогая сессии.
+   *
+   * ⚠️ Сначала обязательно снять junction на projects: рекурсивный rmSync
+   * пройдёт по ссылке и снесёт общее хранилище ~/.vael/sessions — то есть
+   * сессии всех аккаунтов разом. Сессии переживают удаление аккаунта
+   * намеренно: потерять историю страшнее, чем оставить лишние файлы.
+   */
   deleteAccount(id: string): void {
     id = this.sanitizeId(id)
     const configDir = path.join(ACCOUNTS_ROOT, id)
+
     if (fs.existsSync(configDir)) {
-      fs.rmSync(configDir, { recursive: true, force: true })
+      unlinkProjects(configDir)
+
+      // Подстраховка: если ссылку снять не удалось, каталог не сносим —
+      // лучше оставить мусор, чем удалить чужие сессии
+      const stillLinked = isLink(path.join(configDir, 'projects'))
+      if (stillLinked) {
+        console.warn(`[deleteAccount] projects остался ссылкой — конфиг ${id} не удалён`)
+      } else {
+        fs.rmSync(configDir, { recursive: true, force: true })
+      }
     }
+
     this.accounts = this.accounts.filter(a => a.id !== id)
     const records = this.readRegistry().filter(r => r.id !== id)
     this.writeRegistry(records)
@@ -343,8 +363,16 @@ export class AccountManager {
     return null
   }
 
-  // Sync all sessions from sourceAccount to targetAccount
-  // Only copies if target doesn't have the file or source is newer
+  /**
+   * Копирует сессии из одного аккаунта в другой при переключении.
+   *
+   * Нужно только когда хранилище НЕ общее: если projects обоих аккаунтов —
+   * junction на ~/.vael/sessions, файлы и так одни и те же, копировать нечего.
+   *
+   * Раньше здесь был безусловный copyFileSync с комментарием, обещавшим
+   * проверку «только если новее» — проверки не было, и старая версия сессии
+   * затирала новую при переключении туда-обратно.
+   */
   syncSessionsTo(sourceAccountId: string, targetAccountId: string): void {
     const source = this.getAccount(sourceAccountId)
     const target = this.getAccount(targetAccountId)
@@ -352,6 +380,9 @@ export class AccountManager {
 
     const sourceProjects = path.join(source.configDir, 'projects')
     const targetProjects = path.join(target.configDir, 'projects')
+
+    // Общее хранилище — копирование не требуется
+    if (isLink(sourceProjects) && isLink(targetProjects)) return
 
     if (!fs.existsSync(sourceProjects)) return
     fs.mkdirSync(targetProjects, { recursive: true })
@@ -369,7 +400,16 @@ export class AccountManager {
         const srcFile = path.join(srcProjDir, file)
         const dstFile = path.join(dstProjDir, file)
 
-        fs.copyFileSync(srcFile, dstFile)
+        // Не затираем более свежую или более полную версию сессии
+        if (fs.existsSync(dstFile)) {
+          try {
+            const s = fs.statSync(srcFile)
+            const d = fs.statSync(dstFile)
+            if (s.size <= d.size && s.mtimeMs <= d.mtimeMs) continue
+          } catch { continue }
+        }
+
+        try { fs.copyFileSync(srcFile, dstFile) } catch {}
       }
     }
   }

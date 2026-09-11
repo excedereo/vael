@@ -6,8 +6,8 @@ import { api, type SessionInfo } from '../lib/api.js'
 
 // Красивые ярлыки для чипов Resume-экрана
 const MODEL_LABEL: Record<string, string> = {
-  'claude-sonnet-4-6': 'Sonnet 4.6',
-  'claude-opus-4-8': 'Opus 4.8',
+  'claude-sonnet-5': 'Sonnet 5',
+  'claude-opus-5': 'Opus 5',
   'claude-fable-5': 'Fable 5',
   'claude-haiku-4-5-20251001': 'Haiku 4.5',
 }
@@ -183,8 +183,8 @@ function relTime(ms?: number): string {
 }
 
 const MODELS: Option[] = [
-  { value: 'claude-sonnet-4-6',          label: 'Sonnet 4.6', sub: 'claude-sonnet-4-6' },
-  { value: 'claude-opus-4-8',            label: 'Opus 4.8',   sub: 'claude-opus-4-8' },
+  { value: 'claude-sonnet-5',          label: 'Sonnet 5', sub: 'claude-sonnet-5' },
+  { value: 'claude-opus-5',            label: 'Opus 5',   sub: 'claude-opus-5' },
   { value: 'claude-fable-5',             label: 'Fable 5',    sub: 'claude-fable-5' },
   { value: 'claude-haiku-4-5-20251001',  label: 'Haiku 4.5',  sub: 'claude-haiku-4-5' },
 ]
@@ -222,10 +222,26 @@ export function SessionWelcome({ sessionTitle, isNew = false, jsonlPath, message
   // Фактические параметры существующей сессии из jsonl (не из локального конфига —
   // модель могли поменять командой /model внутри сессии)
   const [info, setInfo] = useState<SessionInfo | null>(null)
+  // Свежий config для асинхронного колбэка — замыкание эффекта держит тот,
+  // что был на момент запроса, и затёрло бы более поздние правки
+  const configRef = useRef(config)
+  configRef.current = config
   useEffect(() => {
     if (isNew || !jsonlPath) { setInfo(null); return }
     let alive = true
-    api.getSessionInfo(jsonlPath).then(r => { if (alive) setInfo(r) })
+    api.getSessionInfo(jsonlPath).then(r => {
+      if (!alive) return
+      setInfo(r)
+      // Параметры сессии — это и есть то, с чем её надо возобновлять. Без этого
+      // в spawn уходили дефолты, и resume поднимался не на той модели/эффорте.
+      if (r) {
+        const patch: Partial<SessionConfig> = {}
+        if (r.model) patch.model = r.model
+        if (r.effort) patch.effort = r.effort
+        if (r.permissionMode) patch.permissionMode = r.permissionMode
+        if (Object.keys(patch).length > 0) onChange({ ...configRef.current, ...patch })
+      }
+    })
     return () => { alive = false }
   }, [isNew, jsonlPath])
 

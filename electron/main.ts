@@ -10,10 +10,11 @@ const __dirname = path.dirname(__filename)
 
 import { AccountManager } from './AccountManager.js'
 import { ModuleRegistry } from './ModuleRegistry.js'
-import { loadVaeliSettings, saveVaeliSettings, PATHS } from './services/SettingsService.js'
+import { loadVaeliSettings, saveVaeliSettings, migrateFromUserData, PATHS } from './services/SettingsService.js'
+import { linkAllAccounts, linkAccountSessions } from './services/SessionStoreService.js'
 import { rebuildAllIndexes, startMemoryWatcher } from './services/MemoryService.js'
 import { registerAllHandlers } from './ipc/index.js'
-import { watchSessionDirect, unsubscribeSessionReply, subscribeSessionReply, ptyWriteBySessionId, stopAllSessionWatches, killAllPtys } from './ipc/pty.js'
+import { watchSessionDirect, unsubscribeSessionReply, subscribeSessionReply, ptyWriteBySessionId, stopAllSessionWatches, killAllPtys, detectStatus, isPtyAlive, listAlivePtySessions } from './ipc/pty.js'
 import { runStartupTempCleanup } from './ipc/temp.js'
 import { registerNotificationIpc } from './ipc/notifications.js'
 import { destroyNotificationWindow } from './services/NotificationWindow.js'
@@ -161,7 +162,27 @@ if (!gotLock) {
 
 // ── App ready ─────────────────────────────────────────────────────────────────
 
+/**
+ * Путь к <sessionId>.jsonl. Ищем по всем аккаунтам, а не только по активному:
+ * heartbeat может будить сессию, которая живёт под другим аккаунтом, чем тот,
+ * что открыт в окне прямо сейчас.
+ */
+function findJsonlForSession(sessionId: string): string | null {
+  for (const acc of accountManager.getAccounts()) {
+    const found = accountManager.findSessionFile(sessionId, acc.configDir)
+    if (found) return found
+  }
+  return null
+}
+
 app.whenReady().then(() => {
+  // Разовый переезд данных из AppData в ~/.vael — до первого обращения к ним
+  migrateFromUserData()
+
+  // projects каждого аккаунта → junction на общее хранилище ~/.vael/sessions.
+  // Идемпотентно: у кого ссылка уже стоит, тот пропускается
+  linkAllAccounts(accountManager.getAccounts().map(a => a.configDir))
+
   registerAllHandlers({
     getWindow: () => mainWindow,
     accountManager,
@@ -185,6 +206,14 @@ app.whenReady().then(() => {
     unsubscribeReply: (sessionId) => unsubscribeSessionReply(sessionId),
     ptyWrite: (sessionId, data) => ptyWriteBySessionId(sessionId, data),
     userData: app.getPath('userData'),
+    getSessionStatus: (sessionId) => {
+      const jsonl = findJsonlForSession(sessionId)
+      return jsonl ? detectStatus(jsonl, sessionId) : null
+    },
+    findSessionJsonl: (sessionId) => findJsonlForSession(sessionId),
+    getModule: (id) => moduleRegistry.get(id),
+    isPtyAlive: (sessionId) => isPtyAlive(sessionId),
+    listAlivePtySessions: () => listAlivePtySessions(),
   })
 
   registerNotificationIpc(() => mainWindow)

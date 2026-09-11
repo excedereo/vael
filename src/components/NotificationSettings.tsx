@@ -1,13 +1,19 @@
 import { useEffect, useState } from 'react'
-import { Section, ToggleRow } from './SettingsComponents.js'
+import { Notification, Setting4, VolumeHigh, Timer1, Gallery, MusicPlay } from 'iconsax-reactjs'
+import { Section, ToggleRow, Row, SliderRow, CornerPicker, PageHeader } from './SettingsComponents.js'
 import { api } from '../lib/api.js'
 import type { NotificationSettings, NotificationCorner } from '../hooks/useSettings.js'
 
-const CORNERS: { id: NotificationCorner; label: string }[] = [
-  { id: 'bottom-left',  label: 'Снизу слева' },
-  { id: 'bottom-right', label: 'Снизу справа' },
-  { id: 'top-right',    label: 'Сверху справа' },
-]
+// Схема угла показывает выбор картинкой — название дублируем в описании строки
+const CORNER_LABEL: Record<NotificationCorner, string> = {
+  'top-left':     'Сверху слева',
+  'top-right':    'Сверху справа',
+  'bottom-left':  'Снизу слева',
+  'bottom-right': 'Снизу справа',
+}
+
+const CORNERS: { id: NotificationCorner; label: string }[] =
+  (Object.keys(CORNER_LABEL) as NotificationCorner[]).map(id => ({ id, label: CORNER_LABEL[id] }))
 
 interface Props {
   settings: NotificationSettings
@@ -18,6 +24,13 @@ export function NotificationSettingsSection({ settings, onChange }: Props) {
   // Сколько карточек влезает на экран при текущем масштабе — считает main,
   // потому что размеры рабочей области знает только он
   const [screenMax, setScreenMax] = useState(8)
+  // Список звуков читает main — чтобы добавленный в sounds файл появился здесь
+  // сам, без пересборки
+  const [sounds, setSounds] = useState<string[]>([])
+
+  useEffect(() => {
+    api.getNotificationSounds().then(setSounds).catch(() => {})
+  }, [])
 
   useEffect(() => {
     api.getNotificationMaxStack(settings.scale).then(max => {
@@ -30,137 +43,196 @@ export function NotificationSettingsSection({ settings, onChange }: Props) {
   const patch = (p: Partial<NotificationSettings>) => onChange({ ...settings, ...p })
 
   return (
-    <Section label="Уведомления">
-      <ToggleRow
-        label="Показывать уведомления"
-        desc="Поверх других окон, когда Vael свёрнут или сессия в фоне"
-        value={settings.enabled}
-        onChange={v => patch({ enabled: v })}
+    <div className="space-y-6">
+      <PageHeader
+        icon={Notification}
+        title="Уведомления"
+        desc="Карточки поверх других окон, когда Vael свёрнут или сессия работает в фоне"
       />
+
+      <Section label="Основное" icon={Setting4}>
+        <ToggleRow
+          icon={Notification}
+          label="Показывать уведомления"
+          desc="Без этого остальные настройки ни на что не влияют"
+          value={settings.enabled}
+          onChange={v => patch({ enabled: v })}
+        />
+      </Section>
 
       {settings.enabled && (
         <>
-          <div className="flex items-center justify-between px-4 py-2.5">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-sm text-text-primary">Позиция</span>
-              <span className="text-xs text-text-muted">Угол экрана, где появляются карточки</span>
-            </div>
-            <CornerPicker value={settings.corner} onChange={v => patch({ corner: v })} />
-          </div>
-
-          <NumberRow
-            label="Ширина"
-            desc="Ширина карточки"
-            value={settings.width}
-            min={260}
-            max={520}
-            step={10}
-            unit="px"
-            onChange={v => patch({ width: v })}
-          />
-
-          <NumberRow
-            label="Масштаб"
-            desc="Размер текста и иконок"
-            value={Math.round(settings.scale * 100)}
-            min={80}
-            max={150}
-            step={5}
-            unit="%"
-            onChange={v => patch({ scale: v / 100 })}
-          />
-
-          <NumberRow
-            label="Максимум в стопке"
-            desc={`Больше ${screenMax} не поместится на этом экране`}
-            value={settings.maxStack}
-            min={1}
-            max={screenMax}
-            step={1}
-            onChange={v => patch({ maxStack: v })}
-          />
-
-          <NumberRow
-            label="Время показа"
-            desc="Сколько висит без наведения"
-            value={settings.holdSeconds}
-            min={2}
-            max={30}
-            step={1}
-            unit="с"
-            onChange={v => patch({ holdSeconds: v })}
-          />
-
-          <div className="flex items-center justify-between px-4 py-2.5">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-sm text-text-primary">Предпросмотр</span>
-              <span className="text-xs text-text-muted">Показать пример каждого типа</span>
-            </div>
-            <button
-              onClick={() => api.previewNotifications()}
-              className="px-3 py-1.5 rounded-lg border border-border-default text-[13px] text-text-secondary hover:text-text-primary hover:border-border-strong transition-colors"
+          <Section label="Вид" icon={Gallery} desc="как выглядит и где появляется">
+            <Row
+              icon={Gallery}
+              label="Позиция"
+              desc={CORNER_LABEL[settings.corner]}
             >
-              Показать
-            </button>
+              <CornerPicker
+                value={settings.corner}
+                options={CORNERS}
+                onChange={v => patch({ corner: v })}
+              />
+            </Row>
+
+            <SliderRow
+              label="Ширина карточки"
+              value={settings.width}
+              min={260}
+              max={520}
+              step={10}
+              unit=" px"
+              onChange={v => patch({ width: v })}
+            />
+
+            <SliderRow
+              label="Масштаб"
+              desc="Размер текста и иконок"
+              value={Math.round(settings.scale * 100)}
+              min={80}
+              max={150}
+              step={5}
+              unit="%"
+              onChange={v => patch({ scale: v / 100 })}
+            />
+
+            <SliderRow
+              label="Максимум в стопке"
+              desc={`Больше ${screenMax} на этом экране не поместится`}
+              value={settings.maxStack}
+              min={1}
+              max={screenMax}
+              step={1}
+              onChange={v => patch({ maxStack: v })}
+            />
+          </Section>
+
+          <Section label="Время показа" icon={Timer1} desc="когда карточка исчезает">
+            <ToggleRow
+              icon={Timer1}
+              label="Держать до ответа"
+              desc="Карточка висит, пока её не закроешь или пока не откроешь Vael"
+              value={settings.holdForever}
+              onChange={v => patch({ holdForever: v })}
+            />
+
+            {!settings.holdForever && (
+              <SliderRow
+                label="Сколько висит"
+                desc="Наведение курсора ставит таймер на паузу"
+                value={settings.holdSeconds}
+                min={2}
+                max={30}
+                step={1}
+                unit=" с"
+                onChange={v => patch({ holdSeconds: v })}
+              />
+            )}
+          </Section>
+
+          <Section label="Звук" icon={VolumeHigh}>
+            <ToggleRow
+              icon={VolumeHigh}
+              label="Звук уведомления"
+              desc="Проигрывать при появлении карточки"
+              value={settings.soundEnabled}
+              onChange={v => patch({ soundEnabled: v })}
+            />
+
+            {settings.soundEnabled && (
+              <>
+                <Row
+                  icon={MusicPlay}
+                  label="Мелодия"
+                  desc="Файлы из папки sounds — добавь свой, появится здесь"
+                >
+                  <SoundPicker
+                    value={settings.soundFile}
+                    sounds={sounds}
+                    volume={settings.soundVolume}
+                    onChange={v => patch({ soundFile: v })}
+                  />
+                </Row>
+
+                <SliderRow
+                  label="Громкость"
+                  value={Math.round(settings.soundVolume * 100)}
+                  min={0}
+                  max={100}
+                  step={5}
+                  unit="%"
+                  onChange={v => patch({ soundVolume: v / 100 })}
+                />
+              </>
+            )}
+          </Section>
+
+          {/* На узком окне колонки превью нет — проверить уведомления можно
+              только отсюда. На широком блок скрыт: там для этого есть
+              «Типы уведомлений» с вызовом каждого по отдельности */}
+          <div className="xl:hidden">
+            <Section label="Проверка" icon={Notification}>
+              <Row
+                label="Предпросмотр"
+                desc="Покажет по карточке каждого типа — с текущими настройками"
+              >
+                <button
+                  onClick={() => api.previewNotifications()}
+                  className="px-3.5 py-2 rounded-xl bg-accent-wash border border-accent/25 text-[13px] font-medium text-accent hover:bg-accent/15 transition-colors"
+                >
+                  Показать
+                </button>
+              </Row>
+            </Section>
           </div>
         </>
       )}
-    </Section>
-  )
-}
-
-function CornerPicker({ value, onChange }: { value: NotificationCorner; onChange: (v: NotificationCorner) => void }) {
-  return (
-    <div className="flex gap-1">
-      {CORNERS.map(c => (
-        <button
-          key={c.id}
-          onClick={() => onChange(c.id)}
-          className={`px-2.5 py-1.5 rounded-lg border text-[12px] transition-colors ${
-            value === c.id
-              ? 'border-border-strong bg-bg-elevated text-text-primary'
-              : 'border-border-default text-text-muted hover:text-text-secondary'
-          }`}
-        >
-          {c.label}
-        </button>
-      ))}
     </div>
   )
 }
 
-function NumberRow({ label, desc, value, min, max, step, unit, onChange }: {
-  label: string
-  desc?: string
-  value: number
-  min: number
-  max: number
-  step: number
-  unit?: string
-  onChange: (v: number) => void
+/** Имя файла без расширения — в списке оно читается лучше, чем «norification.mp3» */
+function soundLabel(file: string): string {
+  return file.replace(/\.[^.]+$/, '')
+}
+
+function SoundPicker({ value, sounds, volume, onChange }: {
+  value: string
+  sounds: string[]
+  volume: number
+  onChange: (v: string) => void
 }) {
-  const clamp = (v: number) => Math.min(max, Math.max(min, v))
+  if (sounds.length === 0) {
+    return <span className="text-[12px] text-text-ghost">папка sounds пуста</span>
+  }
+
+  // Клик по уже выбранной мелодии — проигрываем её, чтобы можно было
+  // послушать не дожидаясь реального уведомления
+  const preview = (file: string) => {
+    try {
+      const audio = new Audio(`sounds/${file}`)
+      audio.volume = Math.max(0, Math.min(1, volume))
+      audio.play().catch(() => {})
+    } catch {}
+  }
 
   return (
-    <div className="flex items-center justify-between px-4 py-2.5">
-      <div className="flex flex-col gap-0.5">
-        <span className="text-sm text-text-primary">{label}</span>
-        {desc && <span className="text-xs text-text-muted">{desc}</span>}
-      </div>
-      <div className="flex items-center gap-2">
-        <input
-          type="range"
-          min={min}
-          max={max}
-          step={step}
-          value={Math.min(value, max)}
-          onChange={e => onChange(clamp(Number(e.target.value)))}
-          className="w-28 accent-[var(--accent,#a78bfa)]"
-        />
-        <span className="text-sm text-text-primary tabular-nums w-12 text-right">
-          {value}{unit ?? ''}
-        </span>
-      </div>
+    <div className="flex gap-1.5 flex-wrap justify-end max-w-[280px]">
+      {sounds.map(f => (
+        <button
+          key={f}
+          onClick={() => { onChange(f); preview(f) }}
+          title="Выбрать и прослушать"
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[12.5px] font-medium transition-colors ${
+            value === f
+              ? 'border-accent/40 bg-accent-wash text-accent'
+              : 'border-border-default text-text-muted hover:text-text-secondary hover:border-border-strong'
+          }`}
+        >
+          <MusicPlay size={13} variant={value === f ? 'Bold' : 'Linear'} color="currentColor" />
+          {soundLabel(f)}
+        </button>
+      ))}
     </div>
   )
 }

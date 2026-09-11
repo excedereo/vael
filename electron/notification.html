@@ -133,7 +133,7 @@
 
 <script>
   // Значения по умолчанию — main пришлёт актуальные через notification:config
-  const cfg = { holdMs: 5000, maxStack: 4, scale: 1, grow: 'up' }
+  const cfg = { holdMs: 5000, holdForever: false, maxStack: 4, scale: 1, grow: 'up', soundSrc: null, soundVolume: 0.6 }
   const R = 8
   const CIRC = 2 * Math.PI * R
 
@@ -149,12 +149,40 @@
   stack.classList.add('grow-up')
 
   window.notifyApi.onConfig((next) => {
+    const wasForever = cfg.holdForever
     Object.assign(cfg, next)
     stack.classList.toggle('grow-up', cfg.grow === 'up')
     stack.classList.toggle('grow-down', cfg.grow === 'down')
     document.documentElement.style.setProperty('--scale', String(cfg.scale))
     // Настройки могли ужать стопку — лишние карточки убираем сразу
     while (live.size > cfg.maxStack) dismiss(live.keys().next().value)
+    // Выключили «бессрочно» на лету — висящим карточкам нужно завести таймер,
+    // иначе они остались бы на экране навсегда
+    if (wasForever && !cfg.holdForever) {
+      for (const [id, item] of live) {
+        item.deadline = Date.now() + cfg.holdMs
+        cancelAnimationFrame(item.rafId)
+        tick(id)
+      }
+    }
+  })
+
+  // Один переиспользуемый элемент: карточки могут прилетать пачкой, а плодить
+  // по Audio на каждую незачем
+  let audio = null
+  function playSound() {
+    if (!cfg.soundSrc) return
+    try {
+      if (!audio || !audio.src.endsWith(cfg.soundSrc)) audio = new Audio(cfg.soundSrc)
+      audio.volume = Math.max(0, Math.min(1, cfg.soundVolume ?? 0.6))
+      audio.currentTime = 0
+      audio.play().catch(() => {})
+    } catch {}
+  }
+
+  // Пользователь вернулся в Vael — всё, что висело, считается прочитанным
+  window.notifyApi.onClear(() => {
+    for (const id of [...live.keys()]) dismiss(id)
   })
 
   function syncInteractive() {
@@ -176,6 +204,14 @@
   function tick(id) {
     const item = live.get(id)
     if (!item) return
+
+    // Бессрочный режим: кольцо остаётся полным и служит рамкой для крестика,
+    // карточка ждёт клика или возвращения в Vael. Превью из настроек — исключение:
+    // Vael уже в фокусе, снять его карточки было бы нечем.
+    if (cfg.holdForever && !item.isPreview) {
+      item.fill.style.strokeDashoffset = '0'
+      return
+    }
 
     if (!item.paused) {
       const left = item.deadline - Date.now()
@@ -219,6 +255,7 @@
       deadline: Date.now() + cfg.holdMs,
       paused: false,
       rafId: 0,
+      isPreview: String(payload.id).startsWith('preview:'),
     }
 
     // Наведение замораживает таймер — карточка не исчезнет, пока читаешь
@@ -242,6 +279,7 @@
     live.set(payload.id, item)
     requestAnimationFrame(() => el.classList.add('in'))
     tick(payload.id)
+    playSound()
 
     // Стопка ограничена — самые старые уходят
     while (live.size > cfg.maxStack) {

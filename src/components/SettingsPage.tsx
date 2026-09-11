@@ -5,16 +5,20 @@ import { cn } from '../lib/utils.js'
 import { loadActiveThemeFile, applyTheme } from '../lib/theme.js'
 import { BUILTIN_THEMES } from '../lib/builtinThemes.js'
 import {
-  Section, ToggleRow, SettingRow, ThemePicker, Dropdown,
-  PendingSection, PendingRow,
+  Section, ToggleRow, Toggle, ThemePicker, Dropdown,
+  PageHeader, Row,
 } from './SettingsComponents.js'
+import { Brush, Size, Message, Cpu, Flash, ShieldTick, Monitor, Folder2, Broom, InfoCircle, Refresh2, Global } from 'iconsax-reactjs'
 import { NotificationSettingsSection } from './NotificationSettings.js'
+import { NotificationPreview } from './NotificationPreview.js'
+import { InterfacePreview, SessionsPreview, SystemPreview } from './SettingsPreviews.js'
 import { useSettingsTab } from '../lib/sectionTabs.js'
 import {
   loadCustomOptions, saveCustomOptions,
   CustomOption, OptionCategory,
 } from '../lib/customOptions.js'
-import { useSettings, DEFAULT_CONTENT_PADDING as SETTINGS_DEFAULT_CONTENT_PADDING } from '../hooks/useSettings.js'
+import { useSettings, loadVpnCheck, saveVpnCheck, DEFAULT_CONTENT_PADDING as SETTINGS_DEFAULT_CONTENT_PADDING } from '../hooks/useSettings.js'
+import { NetworkStatusRow } from './NetworkBanner.js'
 import type { UISettings } from '../hooks/useSettings.js'
 
 interface Props {
@@ -58,16 +62,19 @@ export interface DefaultSessionConfig {
 }
 
 export const DEFAULT_SESSION_CONFIG: DefaultSessionConfig = {
-  model: 'claude-sonnet-4-6',
+  model: 'claude-sonnet-5',
   effort: 'high',
   permissionMode: 'bypassPermissions',
 }
 
 const MODEL_MIGRATION: Record<string, string> = {
-  'sonnet':  'claude-sonnet-4-6',
-  'opus':    'claude-opus-4-8',
+  'sonnet':  'claude-sonnet-5',
+  'opus':    'claude-opus-5',
   'haiku':   'claude-haiku-4-5-20251001',
   'fable':   'claude-fable-5',
+  // Поколение 4.x осталось в сохранённых настройках с прошлых версий Vael
+  'claude-sonnet-4-6': 'claude-sonnet-5',
+  'claude-opus-4-8':   'claude-opus-5',
 }
 
 export function loadDefaultSessionConfig(): DefaultSessionConfig {
@@ -90,8 +97,8 @@ function saveDefaultSessionConfig(c: DefaultSessionConfig) {
 }
 
 const MODEL_OPTIONS = [
-  { value: 'claude-sonnet-4-6',          label: 'Sonnet 4.6', sub: 'claude-sonnet-4-6' },
-  { value: 'claude-opus-4-8',            label: 'Opus 4.8',   sub: 'claude-opus-4-8' },
+  { value: 'claude-sonnet-5',          label: 'Sonnet 5', sub: 'claude-sonnet-5' },
+  { value: 'claude-opus-5',            label: 'Opus 5',   sub: 'claude-opus-5' },
   { value: 'claude-fable-5',             label: 'Fable 5',    sub: 'claude-fable-5' },
   { value: 'claude-haiku-4-5-20251001',  label: 'Haiku 4.5',  sub: 'claude-haiku-4-5' },
 ]
@@ -168,7 +175,7 @@ function CustomOptionsTable() {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between px-1">
-        <span className="text-[11px] font-medium text-text-faint uppercase tracking-wider">Кастомные опции</span>
+        <span className="text-[12px] font-semibold text-text-muted uppercase tracking-[0.08em]">Кастомные опции</span>
         {!adding && (
           <button
             onClick={() => setAdding(true)}
@@ -260,7 +267,7 @@ function CustomOptionsTable() {
                 value={form.value}
                 onChange={e => setForm(f => ({ ...f, value: e.target.value }))}
                 onKeyDown={e => e.key === 'Enter' && handleAdd()}
-                placeholder="claude-opus-4-8"
+                placeholder="claude-opus-5"
                 className={inputBase + ' font-mono'}
               />
             </div>
@@ -270,7 +277,7 @@ function CustomOptionsTable() {
                 value={form.label}
                 onChange={e => setForm(f => ({ ...f, label: e.target.value }))}
                 onKeyDown={e => e.key === 'Enter' && handleAdd()}
-                placeholder="Opus 4.8"
+                placeholder="Opus 5"
                 className={inputBase}
               />
             </div>
@@ -370,6 +377,7 @@ export function SettingsPage(_props: Props) {
     try { return JSON.parse(localStorage.getItem('vaeliAutoDownload') || 'false') } catch { return false }
   })
   const [vaelVersion, setVaelVersion] = useState<string>('')
+  const [vpnCheck, setVpnCheck] = useState(() => loadVpnCheck())
 
   useEffect(() => {
     api.getVaelVersion().then(v => setVaelVersion(v)).catch(() => {})
@@ -424,19 +432,31 @@ export function SettingsPage(_props: Props) {
     <div className="flex flex-col h-full bg-bg-base">
       <div className="flex flex-1 min-h-0 overflow-y-auto">
         <div className="flex w-full">
-          <div className="flex-1 py-6 px-8 space-y-5 overflow-y-auto max-w-[560px] mx-auto">
+          {/* Колонка прижата влево (не mx-auto): в широком окне центрирование
+              отрывало настройки от сайдбара и оставляло пустоту слева */}
+          {/* Без overflow-y-auto: скроллит внешний контейнер, а свой скроллер
+              здесь ломал бы sticky у колонки предпросмотра */}
+          <div className="flex-1 py-8 px-10 space-y-6 max-w-[680px] shrink-0">
 
             {tab === 'interface' && (<>
-              <SettingRow label="Тема">
-                <ThemePicker themes={themes} activeThemeFile={activeThemeFile} setActiveThemeFile={setActiveThemeFile} />
-              </SettingRow>
+              <PageHeader
+                icon={Brush}
+                title="Интерфейс"
+                desc="Тема оформления и то, как раскладывается контент"
+              />
 
-              <Section label="Отображение">
-                <div className="flex items-center justify-between px-4 py-2.5">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-sm text-text-primary">Отступ контента</span>
-                    <span className="text-xs text-text-muted">Боковые отступы чата и инпута</span>
-                  </div>
+              <Section label="Тема" icon={Brush}>
+                <Row icon={Brush} label="Оформление" desc="Свои темы кладутся в папку с темами">
+                  <ThemePicker themes={themes} activeThemeFile={activeThemeFile} setActiveThemeFile={setActiveThemeFile} />
+                </Row>
+              </Section>
+
+              <Section label="Отображение" icon={Size}>
+                <Row
+                  icon={Size}
+                  label="Отступ контента"
+                  desc="Боковые отступы чата и поля ввода"
+                >
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
@@ -447,11 +467,11 @@ export function SettingsPage(_props: Props) {
                         const v = raw === '' ? 0 : Number(raw)
                         if (v <= 600) updateUI({ contentPadding: v })
                       }}
-                      className="w-20 bg-bg-elevated border border-border-default rounded-lg px-2 py-1 text-sm text-text-primary text-right focus:outline-none focus:border-border-strong [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      className="w-20 bg-bg-elevated border border-border-default rounded-lg px-2.5 py-1.5 text-[13px] text-text-primary text-right focus:outline-none focus:border-border-strong [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
-                    <span className="text-xs text-text-muted">px</span>
+                    <span className="text-[12px] text-text-muted">px</span>
                   </div>
-                </div>
+                </Row>
               </Section>
             </>)}
 
@@ -460,16 +480,21 @@ export function SettingsPage(_props: Props) {
             )}
 
             {tab === 'sessions' && (<>
-              <Section label="По умолчанию">
+              <PageHeader
+                icon={Message}
+                title="Сессии"
+                desc="С какими параметрами стартует новая сессия"
+              />
+
+              <Section label="По умолчанию" icon={Message} desc="применяется к новым сессиям">
                 {([
-                  { label: 'Модель',    key: 'model' as const,          options: [...MODEL_OPTIONS,       ...customModels]  },
-                  { label: 'Мышление',  key: 'effort' as const,         options: [...EFFORT_OPTIONS_DEF,  ...customEfforts] },
-                  { label: 'Доступ',    key: 'permissionMode' as const,  options: [...PERMISSION_OPTIONS_DEF, ...customPerms] },
-                ] as const).map(({ label, key, options }) => (
-                  <div key={key} className="flex items-center justify-between px-4 py-2">
-                    <span className="text-[13px] text-text-secondary">{label}</span>
+                  { label: 'Модель',   key: 'model' as const,           icon: Cpu,      desc: 'Чем отвечает Claude',            options: [...MODEL_OPTIONS,          ...customModels]  },
+                  { label: 'Мышление', key: 'effort' as const,          icon: Flash,    desc: 'Глубина рассуждений',            options: [...EFFORT_OPTIONS_DEF,     ...customEfforts] },
+                  { label: 'Доступ',   key: 'permissionMode' as const,  icon: ShieldTick, desc: 'Что можно делать без спроса',  options: [...PERMISSION_OPTIONS_DEF, ...customPerms] },
+                ] as const).map(({ label, key, icon, desc, options }) => (
+                  <Row key={key} icon={icon} label={label} desc={desc}>
                     <Dropdown value={defaultConfig[key]} options={options} onChange={v => updateDefaultConfig({ [key]: v })} />
-                  </div>
+                  </Row>
                 ))}
               </Section>
 
@@ -477,19 +502,20 @@ export function SettingsPage(_props: Props) {
             </>)}
 
             {tab === 'system' && (<>
-              <Section label="Вложения">
-                <div className="flex items-center justify-between px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <HardDrive size={13} className="text-text-faint" />
-                    <div>
-                      <div className="text-[14px] text-text-secondary">Папка attachments</div>
-                      <div className="text-[12px] text-text-faint mt-0.5">
-                        {attachDirSize
-                          ? `${attachDirSize.count} файлов · ${(attachDirSize.bytes / 1024).toFixed(1)} KB`
-                          : 'Загрузка...'}
-                      </div>
-                    </div>
-                  </div>
+              <PageHeader
+                icon={Monitor}
+                title="Система"
+                desc="Файлы на диске, обновления и служебные параметры"
+              />
+
+              <Section label="Вложения" icon={Folder2}>
+                <Row
+                  icon={Folder2}
+                  label="Папка attachments"
+                  desc={attachDirSize
+                    ? `${attachDirSize.count} файлов · ${(attachDirSize.bytes / 1024).toFixed(1)} KB`
+                    : 'Загрузка…'}
+                >
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => api.attachmentsOpenFolder()}
@@ -518,12 +544,12 @@ export function SettingsPage(_props: Props) {
                       Очистить
                     </button>
                   </div>
-                </div>
-                <div className="flex items-center justify-between px-4 py-3 border-t border-border-subtle">
-                  <div>
-                    <div className="text-[14px] text-text-secondary">Авто-удаление</div>
-                    <div className="text-[12px] text-text-faint mt-0.5">Удалять вложения старше указанного времени</div>
-                  </div>
+                </Row>
+                <Row
+                  icon={Broom}
+                  label="Авто-удаление"
+                  desc="Удалять вложения старше указанного времени"
+                >
                   <Dropdown
                     value={attachAutoDelete}
                     options={[
@@ -538,10 +564,10 @@ export function SettingsPage(_props: Props) {
                       await api.tempSaveSettings({ attachAutoDelete: v })
                     }}
                   />
-                </div>
+                </Row>
               </Section>
 
-              <Section label="Обновления">
+              <Section label="Обновления" icon={Refresh2}>
                 <ToggleRow
                   label="Авто-обновление"
                   desc="Скачивать и устанавливать обновления автоматически"
@@ -553,11 +579,7 @@ export function SettingsPage(_props: Props) {
                   }}
                 />
                 {vaelVersion && (
-                  <div className="flex items-center justify-between px-4 py-3">
-                    <div>
-                      <div className="text-[14px] text-text-secondary">Vael</div>
-                      <div className="text-[12px] text-text-faint mt-0.5">Текущая версия приложения</div>
-                    </div>
+                  <Row icon={InfoCircle} label="Vael" desc="Текущая версия приложения">
                     <a
                       href="#"
                       className="flex items-center gap-1.5 text-[13px] transition-colors"
@@ -569,14 +591,10 @@ export function SettingsPage(_props: Props) {
                       v{vaelVersion}
                       <ExternalLink size={10} />
                     </a>
-                  </div>
+                  </Row>
                 )}
                 {version && (
-                  <div className="flex items-center justify-between px-4 py-3">
-                    <div>
-                      <div className="text-[14px] text-text-secondary">Claude Code CLI</div>
-                      <div className="text-[12px] text-text-faint mt-0.5">Текущая версия</div>
-                    </div>
+                  <Row icon={Cpu} label="Claude Code CLI" desc="Версия установленного CLI">
                     <a
                       href="#"
                       className="flex items-center gap-1.5 text-[13px] transition-colors"
@@ -588,11 +606,37 @@ export function SettingsPage(_props: Props) {
                       v{version}
                       <ExternalLink size={10} />
                     </a>
-                  </div>
+                  </Row>
                 )}
               </Section>
 
-              <Section label="Developer">
+              <Section label="Сеть" icon={Global} desc="как нас видит Anthropic">
+                <Row
+                  icon={ShieldTick}
+                  label="Предупреждать о выключенном VPN"
+                  desc={`Баннер, если выход из: ${vpnCheck.warnCountries.join(', ')}`}
+                >
+                  <Toggle
+                    value={vpnCheck.enabled}
+                    onChange={v => {
+                      const next = { ...vpnCheck, enabled: v }
+                      setVpnCheck(next)
+                      saveVpnCheck(next)
+                    }}
+                  />
+                </Row>
+                {vpnCheck.enabled && (
+                  <Row
+                    icon={Global}
+                    label="Текущий выход"
+                    desc="Страна и адрес, которые видит Anthropic"
+                  >
+                    <NetworkStatusRow />
+                  </Row>
+                )}
+              </Section>
+
+              <Section label="Developer" icon={Flash} desc="служебное">
                 <ToggleRow
                   label="Включить Dev-настройки"
                   desc="Показать расширенные настройки для разработчиков"
@@ -622,13 +666,27 @@ export function SettingsPage(_props: Props) {
                 )}
               </Section>
 
-              <PendingSection label="Уведомления" reason="Будет реализовано через Vael">
-                <PendingRow label="Local notifications"         desc="Системные уведомления Windows" />
-                <PendingRow label="Push: when actions required" desc="Когда клод ждёт подтверждения" />
-                <PendingRow label="Push: when Claude decides"   desc="Когда клод принял решение" />
-              </PendingSection>
             </>)}
 
+          </div>
+
+          {/* Правая колонка — живой предпросмотр. Занимает место, которое иначе
+              пустует в широком окне, и показывает эффект настроек сразу.
+              Показывается только когда окно достаточно широкое */}
+          <div className="hidden xl:block flex-1 min-w-0 py-8 pr-10 self-start">
+            <div className="sticky top-8 max-w-[420px]">
+              {tab === 'notifications' && <NotificationPreview settings={notifications} />}
+              {tab === 'interface'     && <InterfacePreview contentPadding={uiSettings.contentPadding} />}
+              {tab === 'sessions'      && <SessionsPreview config={defaultConfig} />}
+              {tab === 'system'        && (
+                <SystemPreview
+                  vaelVersion={vaelVersion}
+                  cliVersion={version}
+                  attachSize={attachDirSize}
+                  tempSize={tempDirSize}
+                />
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -4,11 +4,61 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import type { AccountManager } from '../AccountManager.js'
+import { linkAccountSessions } from '../services/SessionStoreService.js'
+import { fetchNetworkInfo } from '../services/NetworkCheckService.js'
 
 export function registerAccountHandlers(accountManager: AccountManager, getWindow: () => BrowserWindow | null) {
   ipcMain.handle('accounts:get', () => accountManager.getAccounts())
 
-  ipcMain.handle('accounts:create', (_, id: string) => accountManager.createAccount(id))
+  ipcMain.handle('accounts:create', (_, id: string) => {
+    const account = accountManager.createAccount(id)
+    // Сразу сажаем на общее хранилище — иначе CLI создаст свою projects,
+    // и сессии нового аккаунта окажутся в стороне от остальных
+    linkAccountSessions(account.configDir)
+    return account
+  })
+
+  /**
+   * Состояние авторизации аккаунта по .credentials.json.
+   *
+   * Читаем файл, а не спрашиваем CLI: `claude auth status` запускает процесс
+   * (≈секунда) и при этом врёт — на заведомо мёртвых токенах он отвечает
+   * loggedIn: true, потому что тоже смотрит только в файл.
+   *
+   * accessToken живёт часами и продлевается сам, поэтому его истечение ещё
+   * не значит «разлогинен». Настоящий признак смерти сессии — истёкший
+   * refreshToken: продлить уже нечем, нужен повторный вход.
+   */
+  ipcMain.handle('accounts:authInfo', (_, configDir: string) => {
+    const credPath = path.join(configDir, '.credentials.json')
+    if (!fs.existsSync(credPath)) {
+      return { loggedIn: false, expired: false, expiresAt: null, refreshExpiresAt: null }
+    }
+    try {
+      const raw = JSON.parse(fs.readFileSync(credPath, 'utf-8')) as {
+        claudeAiOauth?: { expiresAt?: number; refreshTokenExpiresAt?: number; subscriptionType?: string }
+      }
+      const o = raw.claudeAiOauth
+      if (!o) return { loggedIn: false, expired: false, expiresAt: null, refreshExpiresAt: null }
+
+      const now = Date.now()
+      const refreshExpiresAt = o.refreshTokenExpiresAt ?? null
+      const expired = refreshExpiresAt !== null && refreshExpiresAt < now
+
+      return {
+        loggedIn: !expired,
+        expired,
+        expiresAt: o.expiresAt ?? null,
+        refreshExpiresAt,
+        subscriptionType: o.subscriptionType ?? null,
+      }
+    } catch {
+      return { loggedIn: false, expired: false, expiresAt: null, refreshExpiresAt: null }
+    }
+  })
+
+  // Откуда Anthropic видит наши запросы — для предупреждения о VPN
+  ipcMain.handle('network:check', () => fetchNetworkInfo())
 
   ipcMain.handle('accounts:delete', (_, id: string) => {
     try {

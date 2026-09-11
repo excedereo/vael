@@ -13,6 +13,16 @@ export interface ModuleContext {
   unsubscribeReply: (sessionId: string) => void
   ptyWrite: (sessionId: string, data: string) => void
   userData: string
+  /** Текущий статус сессии: idle | thinking | streaming | tool | asking, либо null если сессия не найдена */
+  getSessionStatus: (sessionId: string) => string | null
+  /** Путь к <sessionId>.jsonl активного аккаунта, либо null */
+  findSessionJsonl: (sessionId: string) => string | null
+  /** Достучаться до другого модуля — например heartbeat → telegram */
+  getModule: (id: string) => PyreModule | null
+  /** Запущен ли PTY сессии: без него писать в неё бессмысленно */
+  isPtyAlive: (sessionId: string) => boolean
+  /** sessionId всех сессий с живым PTY */
+  listAlivePtySessions: () => string[]
 }
 
 export interface PyreModule {

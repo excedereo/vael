@@ -3,9 +3,12 @@ import { motion } from 'framer-motion'
 import { createPortal } from 'react-dom'
 import { Session, Account } from '../types/index'
 import { cn } from '../lib/utils.js'
-import { Plus, Zap, Trash2, Pencil, ArrowDownUp, Archive, ArchiveRestore, ChevronRight } from 'lucide-react'
+import { Plus, Zap, Trash2, Pencil, ArrowDownUp, Archive, ArchiveRestore, ChevronRight, ChevronLeft } from 'lucide-react'
 import type { Section } from './NavRail.js'
+import { Brush, Message, Notification, Monitor, Profile, Chart2 } from 'iconsax-reactjs'
+import type { Icon as IconType } from 'iconsax-reactjs'
 import { api } from '../lib/api.js'
+import { ModuleIcon } from './ModuleIcon.js'
 import { useSettingsTab, setSettingsTab, useAccountsTab, setAccountsTab } from '../lib/sectionTabs.js'
 import type { SettingsTab, AccountsTab } from '../lib/sectionTabs.js'
 
@@ -42,6 +45,8 @@ interface Props {
   onSwitchAccount?: (id: string) => void
   /** вызвать после записи .meta.json — App перечитает список сессий */
   onMetaChange?: () => void
+  /** свернуть сайдбар — стрелка живёт в его собственной шапке */
+  onCollapse?: () => void
 }
 
 // Человеко-читаемый заголовок раздела для шапки сайдбара
@@ -65,16 +70,41 @@ const ACCOUNTS_TAB_LABEL: Record<AccountsTab, string> = {
   stats: 'Statistics',
 }
 
-function TabRow({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+// Иконки под-вкладок — те же, что в шапках соответствующих страниц
+const SETTINGS_TAB_ICON: Record<SettingsTab, IconType> = {
+  interface: Brush,
+  sessions: Message,
+  notifications: Notification,
+  system: Monitor,
+}
+const ACCOUNTS_TAB_ICON: Record<AccountsTab, IconType> = {
+  accounts: Profile,
+  stats: Chart2,
+}
+
+function TabRow({ label, active, onClick, icon: Icon }: {
+  label: string
+  active: boolean
+  onClick: () => void
+  icon?: IconType
+}) {
   return (
     <button
       onClick={onClick}
       className={cn(
-        'relative flex items-center px-3 py-2 rounded-lg text-[13.5px] transition-colors text-left w-full',
+        'relative flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13.5px] transition-colors text-left w-full',
         active ? 'bg-accent-wash text-text-primary' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
       )}
     >
       {active && <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-accent" />}
+      {Icon && (
+        <Icon
+          size={16}
+          variant={active ? 'Bold' : 'Linear'}
+          color={active ? 'var(--accent)' : 'currentColor'}
+          className="shrink-0"
+        />
+      )}
       {label}
     </button>
   )
@@ -203,7 +233,7 @@ function SessionItem({ session, active, onClick, onContextMenu, isRenaming, rena
 }
 
 
-export function Sidebar({ section, sessions, activeSessionId, newSessionId, runningSessionIds = [], onSelect, onNew, onDelete, isLocked, memoryTokens, modules = [], activeModuleId, onSelectModule, onMetaChange }: Props) {
+export function Sidebar({ section, sessions, activeSessionId, newSessionId, runningSessionIds = [], onSelect, onNew, onDelete, isLocked, memoryTokens, modules = [], activeModuleId, onSelectModule, onMetaChange, onCollapse }: Props) {
   const [ctxMenu, setCtxMenu] = useState<ContextMenu | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const settingsTab = useSettingsTab()
@@ -371,9 +401,19 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
 
   return (
     <div className="flex flex-col h-full">
-      {/* Заголовок раздела */}
-      <div className="px-3.5 pt-3 pb-2.5">
+      {/* Заголовок раздела + сворачивание */}
+      <div className="flex items-center justify-between pl-3.5 pr-1.5 pt-3 pb-2.5">
         <span className="text-[13.5px] font-medium text-text-primary">{SECTION_LABEL[section]}</span>
+        {onCollapse && (
+          <button
+            onClick={onCollapse}
+            title="Свернуть панель"
+            aria-label="Свернуть панель"
+            className="w-6 h-6 rounded-md flex items-center justify-center text-text-ghost hover:text-text-secondary hover:bg-surface-hover transition-colors"
+          >
+            <ChevronLeft size={16} />
+          </button>
+        )}
       </div>
 
       {/* Memory token stats */}
@@ -488,24 +528,47 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
                 <span className="text-[13px]">No modules</span>
               </div>
             )}
-            {modules.map(m => (
-              <button
-                key={m.id}
-                onClick={() => onSelectModule?.(m.id)}
-                className={cn(
-                  'flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] transition-colors text-left w-full',
-                  activeModuleId === m.id
-                    ? 'bg-surface-active text-text-primary'
-                    : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
-                )}
-              >
-                <span className={cn(
-                  'w-1.5 h-1.5 rounded-full flex-shrink-0 transition-colors',
-                  m.running ? 'bg-[var(--color-success)]' : 'bg-text-ghost',
-                )} />
-                {m.name}
-              </button>
-            ))}
+            {modules.map(m => {
+              const active = activeModuleId === m.id
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => onSelectModule?.(m.id)}
+                  className={cn(
+                    'flex items-center gap-3 px-2.5 py-2.5 rounded-xl transition-all duration-150 text-left w-full',
+                    'border active:scale-[0.99]',
+                    active
+                      ? 'bg-surface-active border-border-default'
+                      : 'border-transparent hover:bg-surface-hover',
+                  )}
+                >
+                  <div className={cn(
+                    'w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-colors',
+                    active ? 'bg-surface-hover' : 'bg-surface-hover/60',
+                  )}>
+                    <ModuleIcon icon={m.icon} size={19} dimmed={!active && !m.running} />
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <div className={cn(
+                      'text-[13.5px] transition-colors',
+                      active ? 'text-text-primary' : 'text-text-secondary',
+                    )}>
+                      {m.name}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className={cn(
+                        'w-1.5 h-1.5 rounded-full transition-colors',
+                        m.running ? 'bg-[var(--color-success)] animate-pulse' : 'bg-text-ghost',
+                      )} />
+                      <span className="text-[11px] text-text-faint">
+                        {m.running ? 'работает' : 'остановлен'}
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
           </div>
         </div>
       )}
@@ -514,7 +577,7 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
       {section === 'settings' && (
         <div className="flex flex-col flex-1 min-h-0 overflow-y-auto px-2">
           {(['interface', 'sessions', 'notifications', 'system'] as SettingsTab[]).map(t => (
-            <TabRow key={t} label={SETTINGS_TAB_LABEL[t]} active={settingsTab === t} onClick={() => setSettingsTab(t)} />
+            <TabRow key={t} label={SETTINGS_TAB_LABEL[t]} icon={SETTINGS_TAB_ICON[t]} active={settingsTab === t} onClick={() => setSettingsTab(t)} />
           ))}
         </div>
       )}
@@ -523,7 +586,7 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
       {section === 'accounts' && (
         <div className="flex flex-col flex-1 min-h-0 overflow-y-auto px-2">
           {(['accounts', 'stats'] as AccountsTab[]).map(t => (
-            <TabRow key={t} label={ACCOUNTS_TAB_LABEL[t]} active={accountsTab === t} onClick={() => setAccountsTab(t)} />
+            <TabRow key={t} label={ACCOUNTS_TAB_LABEL[t]} icon={ACCOUNTS_TAB_ICON[t]} active={accountsTab === t} onClick={() => setAccountsTab(t)} />
           ))}
         </div>
       )}

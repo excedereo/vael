@@ -1,4 +1,5 @@
 import { BrowserWindow, screen, ipcMain } from 'electron'
+import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -14,7 +15,7 @@ export interface NotificationPayload {
   sessionId: string
 }
 
-export type NotificationCorner = 'bottom-left' | 'bottom-right' | 'top-right'
+export type NotificationCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
 
 export interface NotificationSettings {
   enabled: boolean
@@ -23,6 +24,10 @@ export interface NotificationSettings {
   scale: number
   maxStack: number
   holdSeconds: number
+  holdForever: boolean
+  soundEnabled: boolean
+  soundFile: string
+  soundVolume: number
 }
 
 const BASE_CARD_HEIGHT = 78
@@ -36,6 +41,10 @@ let settings: NotificationSettings = {
   scale: 1.15,
   maxStack: 5,
   holdSeconds: 5,
+  holdForever: false,
+  soundEnabled: true,
+  soundFile: 'norification.mp3',
+  soundVolume: 0.6,
 }
 
 let win: BrowserWindow | null = null
@@ -97,6 +106,9 @@ function ensureWindow(): BrowserWindow {
       preload: path.join(__dirname, 'preload-notification.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // Окно нефокусируемое и клика в нём может не быть никогда — без этого
+      // Chromium заблокирует звук уведомления политикой автоплея
+      autoplayPolicy: 'no-user-gesture-required',
     },
   })
 
@@ -157,6 +169,27 @@ export function registerNotificationHandlers(activate: (sessionId: string) => vo
 
   // Сколько карточек влезает на экран — чтобы UI настроек не давал выставить больше
   ipcMain.handle('notification:max-stack', (_, scale: number) => maxStackForScreen(scale))
+
+  // Рабочая область экрана в тех же единицах (DIP), в которых считается
+  // позиция окна уведомлений. Превью в настройках берёт её отсюда, а не
+  // угадывает 1920: при масштабировании Windows логический размер меньше
+  // физического, и карточка занимает заметно большую долю экрана
+  ipcMain.handle('notification:work-area', () => {
+    const { workArea, scaleFactor } = screen.getPrimaryDisplay()
+    return { width: workArea.width, height: workArea.height, scaleFactor }
+  })
+
+  // Список звуков — читаем папку, чтобы добавленный файл появился в настройках
+  // сам, без правки кода
+  ipcMain.handle('notification:sounds', () => {
+    try {
+      return fs.readdirSync(path.join(__dirname, 'sounds'))
+        .filter(f => /\.(mp3|wav|ogg|m4a)$/i.test(f))
+        .sort()
+    } catch {
+      return []
+    }
+  })
 }
 
 /**
@@ -175,10 +208,15 @@ function sendToNotify(channel: string, ...args: unknown[]): boolean {
 function pushConfig() {
   sendToNotify('notification:config', {
     holdMs: settings.holdSeconds * 1000,
+    /* Бессрочно — карточка живёт до клика по ней, крестика или открытия Vael */
+    holdForever: settings.holdForever,
     maxStack: effectiveStack(),
     scale: settings.scale,
     /* Снизу карточки растут вверх, сверху — вниз */
     grow: settings.corner.startsWith('top') ? 'down' : 'up',
+    /* sounds/ лежит рядом с notification.html — оба копируются в dist-electron */
+    soundSrc: settings.soundEnabled ? `sounds/${settings.soundFile}` : null,
+    soundVolume: settings.soundVolume,
   })
 }
 
@@ -210,6 +248,15 @@ export function showNotification(payload: NotificationPayload) {
   } else {
     send()
   }
+}
+
+/**
+ * Убирает все карточки со экрана. Нужно для режима holdForever: карточка висит
+ * бессрочно, и «прочитанной» её делает не таймер, а то, что пользователь
+ * вернулся в Vael.
+ */
+export function clearNotifications() {
+  sendToNotify('notification:clear')
 }
 
 export function destroyNotificationWindow() {

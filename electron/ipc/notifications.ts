@@ -1,9 +1,10 @@
-import { BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { onSessionStatusChange, onPtyError } from './pty.js'
 import {
   showNotification,
   registerNotificationHandlers,
   applyNotificationSettings,
+  clearNotifications,
   type NotificationKind,
   type NotificationSettings,
 } from '../services/NotificationWindow.js'
@@ -46,6 +47,15 @@ export function registerNotificationIpc(getWindow: () => BrowserWindow | null) {
     if (sessionId) win.webContents.send('notification:open-session', sessionId)
   })
 
+  // Вернулись в Vael — карточки прочитаны. Для holdForever это единственный
+  // способ их снять, кроме клика: таймера, который бы их погасил, там нет.
+  // Слушаем на уровне app, а не окна: окно могут пересоздать (app.activate),
+  // и подписка на конкретный экземпляр потерялась бы.
+  app.on('browser-window-focus', (_e, focused) => {
+    const main = getWindow()
+    if (main && !main.isDestroyed() && focused === main) clearNotifications()
+  })
+
   ipcMain.on('notification:set-active-session', (_, sessionId: string | null) => {
     activeSessionId = sessionId
   })
@@ -60,20 +70,35 @@ export function registerNotificationIpc(getWindow: () => BrowserWindow | null) {
 
   // Демонстрация всех трёх видов карточек — чтобы настройки можно было
   // подобрать, не дожидаясь реальных событий
+  const PREVIEW_SAMPLES: Record<NotificationKind, { title: string; body: string }> = {
+    asking: { title: 'Рефакторинг сессий', body: 'Ждёт ответа на вопрос' },
+    done:   { title: 'Сборка проекта',     body: 'Готово: собрала проект, ошибок нет' },
+    error:  { title: 'Тесты',              body: 'Процесс завершился с кодом 1' },
+  }
+
   ipcMain.on('notification:preview', () => {
-    const samples: Array<{ kind: NotificationKind; body: string }> = [
-      { kind: 'asking', body: 'Ждёт ответа на вопрос' },
-      { kind: 'done', body: 'Готово: собрала проект, ошибок нет' },
-      { kind: 'error', body: 'Процесс завершился с кодом 1' },
-    ]
-    samples.forEach((s, i) => {
+    const kinds: NotificationKind[] = ['asking', 'done', 'error']
+    kinds.forEach((kind, i) => {
+      const s = PREVIEW_SAMPLES[kind]
       setTimeout(() => showNotification({
         id: `preview:${Date.now()}:${i}`,
-        kind: s.kind,
-        title: 'Пример уведомления',
+        kind,
+        title: s.title,
         body: s.body,
         sessionId: '',
       }), i * 350)
+    })
+  })
+
+  // Одиночный показ — посмотреть конкретный тип, не вызывая всю тройку
+  ipcMain.on('notification:preview-one', (_, kind: NotificationKind) => {
+    const s = PREVIEW_SAMPLES[kind] ?? PREVIEW_SAMPLES.done
+    showNotification({
+      id: `preview:${Date.now()}`,
+      kind,
+      title: s.title,
+      body: s.body,
+      sessionId: '',
     })
   })
 

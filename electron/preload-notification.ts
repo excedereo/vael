@@ -10,9 +10,14 @@ export interface NotificationPayload {
 
 export interface NotificationConfig {
   holdMs: number
+  /** Не гасить по таймеру — до клика или возвращения в Vael */
+  holdForever: boolean
   maxStack: number
   scale: number
   grow: 'up' | 'down'
+  /** Путь к звуку относительно notification.html, null — звук выключен */
+  soundSrc: string | null
+  soundVolume: number
 }
 
 contextBridge.exposeInMainWorld('notifyApi', {
@@ -25,6 +30,12 @@ contextBridge.exposeInMainWorld('notifyApi', {
     const handler = (_: unknown, config: NotificationConfig) => cb(config)
     ipcRenderer.on('notification:config', handler)
     return () => ipcRenderer.removeListener('notification:config', handler)
+  },
+  /** Vael снова в фокусе — снять все карточки. */
+  onClear: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on('notification:clear', handler)
+    return () => ipcRenderer.removeListener('notification:clear', handler)
   },
   /** Клик по карточке — открыть Vael на этой сессии. */
   activate: (sessionId: string) => ipcRenderer.send('notification:activate', sessionId),

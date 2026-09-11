@@ -12,8 +12,8 @@ const PERMISSION_LABELS: Record<PermissionMode, string> = {
 const ALL_EFFORTS: EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max']
 
 export const MODELS: { id: ModelId; label: string; efforts: EffortLevel[] }[] = [
-  { id: 'claude-opus-4-8',   label: 'Opus 4.8',   efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', efforts: ['low', 'medium', 'high'] },
+  { id: 'claude-opus-5',   label: 'Opus 5',   efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { id: 'claude-sonnet-5', label: 'Sonnet 5', efforts: ['low', 'medium', 'high'] },
   { id: 'claude-haiku-4-5',  label: 'Haiku 4.5',  efforts: [] },
 ]
 

@@ -1,5 +1,6 @@
 import { api } from '../lib/api.js'
 import { TgPanel } from './TgPanel.js'
+import { HeartbeatPanel } from './HeartbeatPanel.js'
 import { Session } from '../types/index.js'
 
 interface ModuleInfo {
@@ -22,6 +23,10 @@ export function PyrePage({ sessions, activeModuleId, onModulesChange }: Props) {
 
   if (activeModuleId === 'telegram') {
     return <TgPanel sessions={sessions} onStatusChange={refresh} />
+  }
+
+  if (activeModuleId === 'heartbeat') {
+    return <HeartbeatPanel sessions={sessions} onStatusChange={refresh} />
   }
 
   return (

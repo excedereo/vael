@@ -1,11 +1,47 @@
 import { Account, Session, JsonlEntry, StreamEvent, UsageData, ContextData, SessionMeta } from '../types/index'
 
+/** Запись в очереди побудок Heartbeat. Держать в синхроне с electron/modules/heartbeat.ts */
+export interface WakeEntry {
+  id: string
+  kind: 'one' | 'every'
+  at?: number
+  intervalMs?: number
+  nextAt?: number
+  text?: string
+  source: 'vaeli' | 'user'
+  createdAt: number
+}
+
 export interface SessionInfo {
   model: string | null
   effort: string | null
   permissionMode: string | null
   lastText: string | null
   lastAt: string | null
+}
+
+export interface AuthInfo {
+  loggedIn: boolean
+  /** refreshToken истёк — продлить нечем, нужен повторный вход */
+  expired: boolean
+  /** когда истекает accessToken (продлевается сам) */
+  expiresAt: number | null
+  /** когда истекает refreshToken — вот это и есть смерть сессии */
+  refreshExpiresAt: number | null
+  subscriptionType?: string | null
+}
+
+export interface NetworkInfo {
+  ok: boolean
+  /** внешний IP, каким его видит Anthropic */
+  ip: string | null
+  /** ISO-код страны выхода */
+  country: string | null
+  /** дата-центр Cloudflare (WAW, FRA, …) */
+  colo: string | null
+  /** сеть недоступна — вердикт о стране выносить нельзя */
+  offline: boolean
+  error?: string
 }
 
 export interface FsEntry {
@@ -23,6 +59,8 @@ export interface StatsDailyActivity {
   messageCount: number
   sessionCount: number
   toolCallCount: number
+  /** id активных в этот день сессий — чтобы считать их за период без повторов */
+  sessionIds?: string[]
 }
 
 export interface StatsModelUsage {
@@ -39,6 +77,12 @@ export interface StatsCache {
   dailyActivity: StatsDailyActivity[]
   modelUsage: Record<string, StatsModelUsage>
   dailyModelTokens?: Record<string, Record<string, number>>
+  /** день → модель → разбивка токенов (для фильтра по периоду) */
+  dailyModelUsage?: Record<string, Record<string, StatsModelUsage>>
+  totalSessions?: number
+  firstSessionDate?: string
+  /** Сообщения по часам суток, 0..23 */
+  hourCounts?: number[]
 }
 
 // Type-safe wrapper around window.api exposed by preload
@@ -49,6 +93,8 @@ export interface ElectronAPI {
   logoutAccount: (id: string) => Promise<{ ok: boolean }>
   openAuth: (configDir: string) => Promise<{ ok: boolean }>
   checkCredentials: (configDir: string) => Promise<boolean>
+  getAuthInfo: (configDir: string) => Promise<AuthInfo>
+  checkNetwork: () => Promise<NetworkInfo>
 
   getSessions: (accountId: string) => Promise<Session[]>
   readSession: (sessionPath: string) => Promise<JsonlEntry[]>
@@ -140,6 +186,7 @@ export interface ElectronAPI {
   // Telegram integration
   tgGetSettings: () => Promise<{ botToken: string; chatId: string; enabled: boolean; sessionId?: string; model?: string; effort?: string }>
   tgSetSettings: (settings: { botToken: string; chatId: string; enabled: boolean; sessionId?: string; model?: string; effort?: string }) => Promise<{ ok: boolean }>
+  tgDetectChatId: (botToken: string) => Promise<{ ok: boolean; error?: string; chats?: { id: string; name: string }[] }>
   tgStart: () => Promise<{ ok: boolean }>
   tgStop: () => Promise<{ ok: boolean }>
   tgReply: (chatId: string, text: string) => Promise<{ ok: boolean }>
@@ -162,9 +209,16 @@ export interface ElectronAPI {
     scale: number
     maxStack: number
     holdSeconds: number
+    holdForever: boolean
+    soundEnabled: boolean
+    soundFile: string
+    soundVolume: number
   }) => void
   previewNotifications: () => void
+  previewNotification: (kind: 'asking' | 'done' | 'error') => void
   getNotificationMaxStack: (scale: number) => Promise<number>
+  getNotificationSounds: () => Promise<string[]>
+  getNotificationWorkArea: () => Promise<{ width: number; height: number; scaleFactor: number }>
   onSessionReply: (cb: (sessionId: string, text: string) => void) => () => void
 
   // Pyre modules
@@ -174,7 +228,17 @@ export interface ElectronAPI {
   modulesStart: (id: string) => Promise<{ ok: boolean }>
   modulesStop: (id: string) => Promise<{ ok: boolean }>
 
-  getStats: () => Promise<{ ok: boolean; data: StatsCache | null }>
+  // Heartbeat
+  heartbeatQueue: () => Promise<WakeEntry[]>
+  heartbeatCancel: (id: string) => Promise<{ ok: boolean }>
+  heartbeatAdd: (entry: WakeEntry) => Promise<{ ok: boolean }>
+  heartbeatClear: () => Promise<{ ok: boolean }>
+  heartbeatHealth: () => Promise<{ blocked: string | null; alive: string[] }>
+  onHeartbeatSettingsChanged: (cb: (s: Record<string, unknown>) => void) => () => void
+  onHeartbeatQueue: (cb: (queue: WakeEntry[]) => void) => () => void
+  onHeartbeatFired: (cb: (info: { message: string; at: number }) => void) => () => void
+
+  getStats: (configDir?: string) => Promise<{ ok: boolean; data: StatsCache | null }>
   getVaelVersion: () => Promise<string>
   setAutoDownload: (enabled: boolean) => Promise<void>
   onUpdateAvailable: (cb: (version: string) => void) => () => void
