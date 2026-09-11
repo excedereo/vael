@@ -14,7 +14,7 @@ export interface UISettings {
   contentPadding: number
 }
 
-export type NotificationCorner = 'bottom-left' | 'bottom-right' | 'top-right'
+export type NotificationCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
 
 export interface NotificationSettings {
   enabled: boolean
@@ -27,6 +27,44 @@ export interface NotificationSettings {
   maxStack: number
   /** Сколько секунд карточка висит без наведения */
   holdSeconds: number
+  /** Не гасить карточку по таймеру — висит, пока её не закроют или не откроют Vael */
+  holdForever: boolean
+  /** Звук при появлении карточки */
+  soundEnabled: boolean
+  /** Файл звука из public/sounds */
+  soundFile: string
+  /** Громкость звука, 0..1 */
+  soundVolume: number
+}
+
+/**
+ * Предупреждение о выходе в сеть без VPN.
+ *
+ * Страна берётся у самого api.anthropic.com (/cdn-cgi/trace) — то есть та,
+ * которую реально видит Anthropic. Список стран настраиваемый: какие считать
+ * нежелательными — решение пользователя, а не приложения.
+ */
+export interface VpnCheckSettings {
+  enabled: boolean
+  /** ISO-коды стран, при которых показываем предупреждение */
+  warnCountries: string[]
+}
+
+export const DEFAULT_VPN_CHECK: VpnCheckSettings = {
+  enabled: true,
+  warnCountries: ['RU', 'BY'],
+}
+
+export function loadVpnCheck(): VpnCheckSettings {
+  try {
+    const raw = localStorage.getItem('vaeli:vpn-check')
+    if (raw) return { ...DEFAULT_VPN_CHECK, ...JSON.parse(raw) as Partial<VpnCheckSettings> }
+  } catch {}
+  return { ...DEFAULT_VPN_CHECK }
+}
+
+export function saveVpnCheck(s: VpnCheckSettings) {
+  localStorage.setItem('vaeli:vpn-check', JSON.stringify(s))
 }
 
 export const DEFAULT_CONTENT_PADDING = 160
@@ -38,19 +76,25 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   scale: 1.15,
   maxStack: 5,
   holdSeconds: 5,
+  holdForever: false,
+  soundEnabled: true,
+  soundFile: 'norification.mp3',
+  soundVolume: 0.6,
 }
 
 export const DEFAULT_SESSION_CONFIG: DefaultSessionConfig = {
-  model: 'claude-sonnet-4-6',
+  model: 'claude-sonnet-5',
   effort: 'high',
   permissionMode: 'bypassPermissions',
 }
 
 const MODEL_MIGRATION: Record<string, string> = {
-  'sonnet': 'claude-sonnet-4-6',
-  'opus':   'claude-opus-4-8',
+  'sonnet': 'claude-sonnet-5',
+  'opus':   'claude-opus-5',
   'haiku':  'claude-haiku-4-5-20251001',
   'fable':  'claude-fable-5',
+  'claude-sonnet-4-6': 'claude-sonnet-5',
+  'claude-opus-4-8':   'claude-opus-5',
 }
 
 export function loadDefaultSessionConfig(): DefaultSessionConfig {

@@ -111,8 +111,8 @@ interface Props {
 }
 
 const MODELS: Option[] = [
-  { value: 'sonnet',  label: 'Sonnet',  sub: 'claude-sonnet-4-6' },
-  { value: 'opus',    label: 'Opus',    sub: 'claude-opus-4-8' },
+  { value: 'sonnet',  label: 'Sonnet',  sub: 'claude-sonnet-5' },
+  { value: 'opus',    label: 'Opus',    sub: 'claude-opus-5' },
   { value: 'fable',   label: 'Fable',   sub: 'claude-fable-5' },
   { value: 'haiku',   label: 'Haiku',   sub: 'claude-haiku-4-5' },
 ]

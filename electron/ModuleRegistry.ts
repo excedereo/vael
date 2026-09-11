@@ -1,5 +1,6 @@
 import type { PyreModule, ModuleContext } from './modules/types.js'
 import { TelegramModule } from './modules/telegram.js'
+import { HeartbeatModule } from './modules/heartbeat.js'
 
 interface ReplyableModule extends PyreModule {
   sendReply(chatId: string, text: string): Promise<void>
@@ -11,6 +12,7 @@ export class ModuleRegistry {
 
   constructor() {
     this.register(new TelegramModule())
+    this.register(new HeartbeatModule())
   }
 
   private register(mod: PyreModule) {

@@ -31,15 +31,15 @@ function getCommandSuggestions(text: string): typeof COMMANDS {
   return COMMANDS.filter(c => c.name.startsWith(query))
 }
 
-export type KnownModelId = 'claude-opus-4-8' | 'claude-sonnet-4-6' | 'claude-haiku-4-5'
+export type KnownModelId = 'claude-opus-5' | 'claude-sonnet-5' | 'claude-haiku-4-5'
 export type ModelId = KnownModelId | string
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 export type PermissionMode = 'bypassPermissions' | 'plan'
 
 export function getMaxEffort(model: ModelId): EffortLevel | null {
   const KNOWN: Record<string, EffortLevel[]> = {
-    'claude-opus-4-8':   ['low', 'medium', 'high', 'xhigh', 'max'],
-    'claude-sonnet-4-6': ['low', 'medium', 'high'],
+    'claude-opus-5':   ['low', 'medium', 'high', 'xhigh', 'max'],
+    'claude-sonnet-5': ['low', 'medium', 'high'],
     'claude-haiku-4-5':  [],
   }
   const efforts = KNOWN[model] ?? []

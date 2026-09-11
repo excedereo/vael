@@ -1,6 +1,6 @@
 import { useCallback, useState, useEffect, useRef } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { X, StopCircle } from 'lucide-react'
+import { X, StopCircle, PanelLeftOpen } from 'lucide-react'
 import { useAppState } from './hooks/useAppState.js'
 import { useNavHistory } from './hooks/useNavHistory.js'
 import { useUpdateManager } from './hooks/useUpdateManager.js'
@@ -9,6 +9,7 @@ import { useConsoleCapture } from './hooks/useConsoleCapture.js'
 import { useSettings } from './hooks/useSettings.js'
 import { SessionProvider, useSessionContext } from './context/SessionContext.js'
 import { panels } from './panels/index.js'
+import { setActiveModule } from './lib/activeModule.js'
 import { PanelErrorBoundary } from './components/PanelErrorBoundary.js'
 import { Sidebar } from './components/Sidebar.js'
 import { NavRail } from './components/NavRail.js'
@@ -29,6 +30,7 @@ import { SessionWelcome } from './components/SessionWelcome.js'
 import { ConfettiCanvas } from './components/ConfettiCanvas.js'
 import { WindowControls } from './components/WindowControls.js'
 import { UpdateBanner } from './components/UpdateBanner.js'
+import { NetworkBanner } from './components/NetworkBanner.js'
 import { api } from './lib/api.js'
 import { Session } from './types/index'
 import { restoreSavedTheme } from './lib/theme.js'
@@ -69,10 +71,12 @@ function AppInner() {
   const DEFAULT_CONFIG = { ...loadDefaultSessionConfig(), prompt: '' }
 
   const SESSION_MODEL_MIGRATION: Record<string, string> = {
-    'sonnet': 'claude-sonnet-4-6',
-    'opus':   'claude-opus-4-8',
+    'sonnet': 'claude-sonnet-5',
+    'opus':   'claude-opus-5',
     'haiku':  'claude-haiku-4-5-20251001',
     'fable':  'claude-fable-5',
+    'claude-sonnet-4-6': 'claude-sonnet-5',
+    'claude-opus-4-8':   'claude-opus-5',
   }
 
   function loadSessionConfig(sessionId: string | null) {
@@ -135,7 +139,10 @@ function AppInner() {
   useEffect(() => {
     api.modulesList().then(list => {
       setModules(list)
-      if (list.length > 0) setActiveModuleId(list[0].id)
+      if (list.length > 0) {
+        setActiveModuleId(list[0].id)
+        setActiveModule(list[0].id)
+      }
     })
   }, [])
 
@@ -390,6 +397,12 @@ function AppInner() {
   return (
     <div className="flex h-screen bg-bg-base text-white overflow-hidden">
       <ErrorToast message={null} onClose={() => {}} />
+
+      {/* Предупреждение о выходе без VPN — плавающее, чтобы не двигать терминал */}
+      <div className="fixed top-12 right-4 z-[250] w-[380px] max-w-[calc(100vw-2rem)] no-drag">
+        <NetworkBanner />
+      </div>
+
       {/* Temp cleanup banner */}
       {tempCleanupBanner && (
         <div className="fixed top-10 left-1/2 -translate-x-1/2 z-[300] animate-in fade-in slide-in-from-top-2 duration-200">
@@ -406,14 +419,20 @@ function AppInner() {
       <StatusBar syncStatus={syncStatus} syncMessage={syncMessage} />
 
       <div className="fixed top-0 left-0 z-50 h-10 flex items-center px-2 gap-0.5 no-drag">
-        <NavControls
-          canGoBack={canGoBack}
-          canGoForward={canGoForward}
-          onBack={handleGoBack}
-          onForward={handleGoForward}
-          collapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed(v => !v)}
-        />
+        {/* Стрелки назад/вперёд убраны из UI до решения, где им жить.
+            Сам хук навигации остался: боковые кнопки мыши работают. */}
+        <NavControls onBack={handleGoBack} onForward={handleGoForward} />
+        {/* Свёрнутый сайдбар: вернуть его можно только отсюда — своей шапки у него уже нет */}
+        {sidebarCollapsed && (
+          <button
+            onClick={() => setSidebarCollapsed(false)}
+            title="Развернуть панель"
+            aria-label="Развернуть панель"
+            className="w-7 h-7 rounded-md flex items-center justify-center text-text-faint hover:text-text-secondary hover:bg-surface-hover transition-colors"
+          >
+            <PanelLeftOpen size={16} />
+          </button>
+        )}
       </div>
 
       {/* Иконочный столбец разделов */}
@@ -446,12 +465,13 @@ function AppInner() {
             memoryTokens={memoryTokens}
             modules={modules}
             activeModuleId={activeModuleId}
-            onSelectModule={setActiveModuleId}
+            onSelectModule={id => { setActiveModuleId(id); setActiveModule(id) }}
             accounts={accounts}
             activeAccountId={activeAccountId || ''}
             isRunning={isRunning}
             onSwitchAccount={(id) => setSwitchTarget(id)}
             onMetaChange={refreshSessions}
+            onCollapse={() => setSidebarCollapsed(true)}
           />
         </div>
         {updateState && <UpdateBanner state={updateState} onClick={handleUpdateClick} onDismiss={() => {}} />}
@@ -561,7 +581,12 @@ function AppInner() {
                 const isActive = activeSessionId
                   ? resolvedId === activeSessionId
                   : termId === '__new__'
-                const cfg = loadSessionConfig(sid)
+                // Для терминала, который стартует прямо сейчас, источник правды —
+                // sessionConfig (то, что выбрано в селекторах на экране Start).
+                // localStorage отстаёт: saveSessionConfig и setSpawnedSessions
+                // происходят в одном тике, а у новой сессии (sid === null) записи
+                // там нет вовсе — раньше в спавн уходили голые дефолты.
+                const cfg = isActive ? sessionConfig : loadSessionConfig(sid)
                 return (
                   <PtyTerminalView
                     key={termId}

@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Trash2, LogOut, LogIn, RotateCcw } from 'lucide-react'
+import { Plus, Trash2, LogOut, LogIn, RotateCcw, ArrowUp, ArrowDown, ArrowRight } from 'lucide-react'
+import { Chart2, Profile, Message, Folder2, Calendar } from 'iconsax-reactjs'
 import { Account } from '../types/index'
-import { api, StatsCache } from '../lib/api.js'
+import { api, type StatsCache, type StatsModelUsage, type AuthInfo } from '../lib/api.js'
 import { cn } from '../lib/utils.js'
 import { useAccountsTab } from '../lib/sectionTabs.js'
+import { PageHeader } from './SettingsComponents.js'
 
 interface Props {
   accounts: Account[]
@@ -16,6 +18,25 @@ interface Props {
 
 type ConfirmAction = { type: 'delete' | 'logout'; id: string }
 
+/** «ещё 27 дней» / «меньше часа» — срок жизни авторизации */
+function relExpiry(ts: number): string {
+  const left = ts - Date.now()
+  if (left <= 0) return 'истёк'
+  const days = Math.floor(left / 86400000)
+  if (days >= 1) return `ещё ${days} ${plural(days, 'день', 'дня', 'дней')}`
+  const hours = Math.floor(left / 3600000)
+  if (hours >= 1) return `ещё ${hours} ${plural(hours, 'час', 'часа', 'часов')}`
+  return 'меньше часа'
+}
+
+function plural(n: number, one: string, few: string, many: string): string {
+  const m10 = n % 10
+  const m100 = n % 100
+  if (m10 === 1 && m100 !== 11) return one
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few
+  return many
+}
+
 // ── Stats helpers ──────────────────────────────────────────────
 function fmtNumber(n: number) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
@@ -23,10 +44,35 @@ function fmtNumber(n: number) {
   return String(n)
 }
 
+/**
+ * Версия модели из её id.
+ *
+ * Поколение 5 именуется одним числом (`claude-opus-5`), 4.x — двумя через
+ * дефис (`claude-opus-4-8`). Старая регулярка требовала обе группы, поэтому
+ * у пятёрок версия терялась и в списке оставалось голое «Opus».
+ * Суффикс даты (`claude-haiku-4-5-20251001`) в версию не входит.
+ */
+function modelVersionOf(key: string): string {
+  const m = key.match(/(?:opus|sonnet|haiku|fable)-(\d+)(?:-(\d+))?/)
+  if (!m) return ''
+  // Третья группа из 6+ цифр — это дата сборки, а не минорная версия
+  const minor = m[2] && m[2].length <= 2 ? m[2] : null
+  return minor ? `${m[1]}.${minor}` : m[1]
+}
+
+function modelBaseOf(key: string): string {
+  if (key.includes('opus')) return 'Opus'
+  if (key.includes('sonnet')) return 'Sonnet'
+  if (key.includes('haiku')) return 'Haiku'
+  if (key.includes('fable')) return 'Fable'
+  return key
+}
+
 function modelLabel(key: string) {
-  const base = key.includes('opus') ? 'Opus' : key.includes('sonnet') ? 'Sonnet' : key.includes('haiku') ? 'Haiku' : key
-  const m = key.match(/(\d+)[._-](\d+)/)
-  return m ? `${base} ${m[1]}.${m[2]}` : base
+  const base = modelBaseOf(key)
+  if (base === key) return key
+  const ver = modelVersionOf(key)
+  return ver ? `${base} ${ver}` : base
 }
 
 function modelColor(key: string) {
@@ -101,7 +147,7 @@ function ActivityGrid({ activity, filter }: { activity: { date: string; messageC
 }
 
 // ── Stats tab ─────────────────────────────────────────────────
-function StatsTab() {
+function StatsTab({ configDir }: { configDir?: string }) {
   const [stats, setStats] = useState<StatsCache | null>(null)
   const [filter, setFilter] = useState<'all' | '30d' | '7d'>('all')
   const [refreshing, setRefreshing] = useState(false)
@@ -110,7 +156,9 @@ function StatsTab() {
 
   const loadStats = async (isRefresh = false) => {
     setRefreshing(true)
-    const r = await api.getStats()
+    // Статистика считается по логам активного аккаунта — без configDir
+    // main возьмёт дефолтный ~/.claude, где давно ничего не пишется
+    const r = await api.getStats(configDir)
     if (r.ok && r.data) {
       const newTotal = Object.values(r.data.modelUsage).reduce(
         (s, m) => s + m.inputTokens + m.cacheReadInputTokens + m.cacheCreationInputTokens + m.outputTokens, 0
@@ -129,7 +177,7 @@ function StatsTab() {
     setRefreshing(false)
   }
 
-  useEffect(() => { loadStats(false) }, [])
+  useEffect(() => { loadStats(false) }, [configDir])
 
   if (!stats) return (
     <div className="flex items-center justify-center h-48 text-text-faint text-[13px]">
@@ -145,26 +193,54 @@ function StatsTab() {
   })
 
   const totalMessages = activity.reduce((s, d) => s + d.messageCount, 0)
-  const totalSessions = activity.reduce((s, d) => s + d.sessionCount, 0)
   const activeDays = activity.length
 
-  const totalInput = Object.values(stats.modelUsage).reduce((s, m) => s + m.inputTokens + m.cacheReadInputTokens + m.cacheCreationInputTokens, 0)
-  const totalOutput = Object.values(stats.modelUsage).reduce((s, m) => s + m.outputTokens, 0)
+  // Сессии считаем по уникальным id: суммирование sessionCount по дням
+  // завышало результат втрое — сессия, шедшая несколько дней, попадала
+  // в каждый из них (30 вместо 11 реальных)
+  const uniqueSessions = new Set<string>()
+  for (const d of activity) {
+    if (d.sessionIds) for (const id of d.sessionIds) uniqueSessions.add(id)
+  }
+  const totalSessions = uniqueSessions.size || activity.reduce((s, d) => s + d.sessionCount, 0)
+
+  // Расход по моделям за выбранный период. modelUsage — всегда суммарный,
+  // поэтому за период собираем из подневной разбивки: она содержит те же
+  // типы токенов, так что in/out показываются на любом фильтре
+  const inPeriod = new Set(activity.map(d => d.date))
+  const usageByModel: Record<string, StatsModelUsage> = {}
+
+  if (filter === 'all') {
+    Object.assign(usageByModel, stats.modelUsage)
+  } else {
+    for (const [date, byModel] of Object.entries(stats.dailyModelUsage ?? {})) {
+      if (!inPeriod.has(date)) continue
+      for (const [model, u] of Object.entries(byModel)) {
+        const acc = usageByModel[model] ?? (usageByModel[model] = {
+          inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 0,
+        })
+        acc.inputTokens += u.inputTokens
+        acc.outputTokens += u.outputTokens
+        acc.cacheReadInputTokens += u.cacheReadInputTokens
+        acc.cacheCreationInputTokens += u.cacheCreationInputTokens
+      }
+    }
+  }
+
+  const totalInput = Object.values(usageByModel).reduce((s, m) => s + m.inputTokens + m.cacheReadInputTokens + m.cacheCreationInputTokens, 0)
+  const totalOutput = Object.values(usageByModel).reduce((s, m) => s + m.outputTokens, 0)
   const totalTokens = totalInput + totalOutput
 
-  // Group models by base+version (e.g. "sonnet-4-6" → "Sonnet 4.6")
-  function modelVersion(key: string): string {
-    const m = key.match(/(\d+)[_-](\d+)/)
-    if (m) return `${m[1]}.${m[2]}`
-    return ''
-  }
+  // Схлопываем варианты одной модели (с датой сборки и без) в одну строку.
+  // Ключ группы должен оставаться распознаваемым для modelLabel — поэтому
+  // это по-прежнему id-подобная строка, а не готовая подпись
   function modelGroupKey(key: string): string {
-    const base = key.includes('opus') ? 'opus' : key.includes('sonnet') ? 'sonnet' : key.includes('haiku') ? 'haiku' : key
-    const ver = modelVersion(key)
-    return ver ? `${base}-${ver}` : base
+    const base = key.includes('opus') ? 'opus' : key.includes('sonnet') ? 'sonnet' : key.includes('haiku') ? 'haiku' : key.includes('fable') ? 'fable' : key
+    const ver = modelVersionOf(key)
+    return ver ? `${base}-${ver.replace('.', '-')}` : base
   }
-  const modelGroups = new Map<string, { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number }>()
-  for (const [key, u] of Object.entries(stats.modelUsage)) {
+  const modelGroups = new Map<string, StatsModelUsage>()
+  for (const [key, u] of Object.entries(usageByModel)) {
     const gk = modelGroupKey(key)
     const existing = modelGroups.get(gk) ?? { inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 }
     modelGroups.set(gk, {
@@ -179,91 +255,143 @@ function StatsTab() {
     .sort((a, b) => b.total - a.total)
   const totalModelTokens = models.reduce((s, m) => s + m.total, 0)
 
+  const lastDay = stats.dailyActivity[stats.dailyActivity.length - 1]?.date
+
   return (
     <div className="space-y-6">
-      {/* Filter + refresh */}
-      <div className="flex items-center gap-1">
-        {(['all', '30d', '7d'] as const).map(f => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={cn(
-              'px-2.5 py-1 rounded-md text-[13px] transition-colors',
-              filter === f
-                ? 'text-text-primary bg-surface-active'
-                : 'text-text-faint hover:text-text-secondary hover:bg-surface-hover'
-            )}
-          >
-            {f === 'all' ? 'All' : f}
-          </button>
-        ))}
+      <div className="flex items-start justify-between gap-4">
+        <PageHeader
+          icon={Chart2}
+          title="Статистика"
+          desc="Считается по логам сессий активного аккаунта"
+        />
         <button
           onClick={() => loadStats(true)}
           disabled={refreshing}
-          className="ml-auto p-1.5 rounded-md text-text-faint hover:text-text-secondary hover:bg-surface-hover transition-colors"
-          title="Обновить"
+          className="shrink-0 mt-1 w-9 h-9 rounded-xl grid place-items-center text-text-faint hover:text-text-primary hover:bg-surface-hover transition-colors"
+          title="Пересчитать"
         >
-          <RotateCcw size={13} className={refreshing ? 'animate-spin' : 'transition-transform hover:rotate-180 duration-300'} />
+          <RotateCcw size={16} className={refreshing ? 'animate-spin' : ''} />
         </button>
       </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-4 gap-3">
-        {/* Tokens card with diagonal split */}
-        <div className={cn("bg-bg-surface border border-border-default rounded-xl overflow-hidden relative col-span-1", flashClass)}>
-          {/* diagonal line */}
-          {/* diagonal line through center */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none" preserveAspectRatio="none">
-            <line x1="40%" y1="100%" x2="60%" y2="0" stroke="rgba(255,255,255,0.12)" strokeWidth="2" />
-          </svg>
-          <div className="flex h-full">
-            <div className="flex-1 px-3 py-3 flex flex-col gap-0.5">
-              <span className="text-[11px] text-text-muted">In</span>
-              <span className="text-[16px] font-semibold text-text-primary leading-tight">{fmtNumber(totalInput)}</span>
-            </div>
-            <div className="flex-1 px-3 py-3 flex flex-col gap-0.5 items-end">
-              <span className="text-[11px] text-text-muted">Out</span>
-              <span className="text-[16px] font-semibold text-text-primary leading-tight">{fmtNumber(totalOutput)}</span>
-            </div>
-          </div>
+      {/* Период */}
+      <div className="flex items-center gap-1 p-1 rounded-xl bg-bg-surface border border-border-default w-fit">
+        {([
+          { id: 'all', label: 'Всё время' },
+          { id: '30d', label: '30 дней' },
+          { id: '7d',  label: '7 дней' },
+        ] as const).map(f => (
+          <button
+            key={f.id}
+            onClick={() => setFilter(f.id)}
+            className={cn(
+              'px-3 py-1.5 rounded-lg text-[12.5px] font-medium transition-colors',
+              filter === f.id
+                ? 'bg-surface-selected text-text-primary'
+                : 'text-text-muted hover:text-text-secondary'
+            )}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Токены — главная цифра */}
+      <div className={cn('rounded-2xl border border-border-default bg-bg-surface p-5', flashClass)}>
+        {/* Период обязателен в подписи: без него «949.6M токенов» на фильтре
+            «7 дней» читается как суммарный расход и не сходится с ожиданиями */}
+        <div className="flex items-baseline gap-2 mb-4 flex-wrap">
+          <span
+            className="text-[38px] font-semibold text-text-primary tabular-nums leading-none"
+            title={`${totalTokens.toLocaleString('ru-RU')} токенов`}
+          >
+            {fmtNumber(totalTokens)}
+          </span>
+          <span className="text-[14px] text-text-muted">
+            {filter === 'all' ? 'токенов за всё время' : `токенов за ${filter === '30d' ? '30 дней' : '7 дней'}`}
+          </span>
         </div>
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { label: 'Входящие',  value: totalInput,  icon: ArrowDown },
+            { label: 'Исходящие', value: totalOutput, icon: ArrowUp },
+          ].map(({ label, value, icon: Icon }) => (
+            <div key={label} className="rounded-xl bg-bg-base border border-border-subtle px-3.5 py-3">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Icon size={13} className="text-text-faint shrink-0" />
+                <span className="text-[12px] text-text-muted">{label}</span>
+              </div>
+              <span
+                className="text-[18px] font-semibold text-text-primary tabular-nums"
+                title={`${value.toLocaleString('ru-RU')} токенов`}
+              >
+                {fmtNumber(value)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Остальные метрики */}
+      <div className="grid grid-cols-3 gap-3">
         {[
-          { label: 'Сообщения', value: fmtNumber(totalMessages) },
-          { label: 'Сессии', value: fmtNumber(totalSessions) },
-          { label: 'Активных дней', value: String(activeDays) },
-        ].map(c => (
-          <div key={c.label} className={cn("bg-bg-surface border border-border-default rounded-xl px-4 py-3 flex flex-col gap-1", flashClass)}>
-            <span className="text-[12px] text-text-muted">{c.label}</span>
-            <span className="text-[20px] font-semibold text-text-primary leading-tight">{c.value}</span>
+          { label: 'Сообщения',     value: fmtNumber(totalMessages), icon: Message },
+          { label: 'Сессии',        value: fmtNumber(totalSessions), icon: Folder2 },
+          { label: 'Активных дней', value: String(activeDays),       icon: Calendar },
+        ].map(({ label, value, icon: Icon }) => (
+          <div key={label} className={cn('rounded-2xl border border-border-default bg-bg-surface px-4 py-4', flashClass)}>
+            <div className="flex items-center gap-2 mb-2">
+              <Icon size={15} variant="Linear" color="var(--text-faint)" className="shrink-0" />
+              <span className="text-[12px] text-text-muted">{label}</span>
+            </div>
+            <span className="text-[24px] font-semibold text-text-primary tabular-nums leading-none">{value}</span>
           </div>
         ))}
       </div>
 
-      {/* Activity grid */}
+      {/* Активность */}
       <div>
-        <p className="text-[11px] text-text-muted uppercase tracking-widest mb-3">Активность</p>
-        <ActivityGrid activity={stats.dailyActivity} filter={filter} />
+        <div className="flex items-baseline justify-between mb-3 px-0.5">
+          <span className="text-[12px] font-semibold text-text-muted uppercase tracking-[0.08em]">Активность</span>
+          {lastDay && (
+            <span className="text-[11px] text-text-ghost">последняя — {lastDay}</span>
+          )}
+        </div>
+        <div className="rounded-2xl border border-border-default bg-bg-surface p-4 overflow-x-auto">
+          <ActivityGrid activity={stats.dailyActivity} filter={filter} />
+        </div>
       </div>
 
-      {/* Models */}
+      {/* Модели */}
       <div>
-        <p className="text-[11px] text-text-muted uppercase tracking-widest mb-3">Модели</p>
-        <div className="space-y-3">
+        <div className="text-[12px] font-semibold text-text-muted uppercase tracking-[0.08em] mb-3 px-0.5">
+          Модели
+        </div>
+        <div className="rounded-2xl border border-border-default bg-bg-surface overflow-hidden divide-y divide-white/[0.07]">
+          {models.length === 0 && (
+            <div className="px-4 py-6 text-center text-[13px] text-text-ghost">Нет данных за период</div>
+          )}
           {models.map(m => {
             const pct = totalModelTokens > 0 ? (m.total / totalModelTokens) * 100 : 0
+            const color = modelColor(m.key)
             return (
-              <div key={m.key} className="flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: modelColor(m.key) }} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between mb-1">
-                    <span className="text-[13px] text-text-secondary">{modelLabel(m.key)}</span>
-                    <span className="text-[12px] text-text-faint">{fmtNumber(m.inputTokens + m.cacheReadInputTokens + m.cacheCreationInputTokens)} in · {fmtNumber(m.outputTokens)} out</span>
+              <div key={m.key} className="px-4 py-3.5">
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                    <span className="text-[13.5px] font-medium text-text-primary truncate">{modelLabel(m.key)}</span>
                   </div>
-                  <div className="h-1 rounded-full bg-bg-elevated overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: modelColor(m.key) }} />
-                  </div>
+                  <span className="text-[13px] font-semibold text-text-primary tabular-nums shrink-0">
+                    {pct.toFixed(1)}%
+                  </span>
                 </div>
-                <span className="text-[12px] text-text-faint w-10 text-right shrink-0">{pct.toFixed(1)}%</span>
+                <div className="h-1.5 rounded-full bg-surface-active overflow-hidden mb-2">
+                  <div className="h-full rounded-full transition-[width] duration-300" style={{ width: `${pct}%`, backgroundColor: color }} />
+                </div>
+                <div className="text-[11.5px] text-text-muted tabular-nums">
+                  {fmtNumber(m.inputTokens + m.cacheReadInputTokens + m.cacheCreationInputTokens)} in · {fmtNumber(m.outputTokens)} out
+                </div>
               </div>
             )
           })}
@@ -272,6 +400,7 @@ function StatsTab() {
     </div>
   )
 }
+
 
 // ── Main component ────────────────────────────────────────────
 export function AccountsPage({ accounts, activeAccountId, isRunning, onAccountsChange, onSwitchAccount }: Props) {
@@ -289,6 +418,23 @@ export function AccountsPage({ accounts, activeAccountId, isRunning, onAccountsC
       const ok = await api.checkCredentials(acc.configDir)
       setCredStatus(prev => ({ ...prev, [acc.id]: ok }))
     })
+  }, [accounts])
+
+  // Срок авторизации — читается из .credentials.json, без запуска CLI.
+  // Перечитываем раз в минуту, чтобы «истекает через N» не устаревало
+  const [authInfo, setAuthInfo] = useState<Record<string, AuthInfo>>({})
+
+  useEffect(() => {
+    let alive = true
+    const load = () => {
+      accounts.forEach(async acc => {
+        const info = await api.getAuthInfo(acc.configDir)
+        if (alive) setAuthInfo(prev => ({ ...prev, [acc.id]: info }))
+      })
+    }
+    load()
+    const t = setInterval(load, 60_000)
+    return () => { alive = false; clearInterval(t) }
   }, [accounts])
 
   useEffect(() => {
@@ -361,7 +507,7 @@ export function AccountsPage({ accounts, activeAccountId, isRunning, onAccountsC
               </span>
               <span className="text-[14px] text-text-muted">
                 {confirm.type === 'delete'
-                  ? <><span className="text-text-secondary font-medium">{confirmAcc.name}</span> и все его сессии будут удалены безвозвратно.</>
+                  ? <>Аккаунт <span className="text-text-secondary font-medium">{confirmAcc.name}</span> и его авторизация будут удалены. <span className="text-text-secondary font-medium">Сессии останутся</span> — они хранятся отдельно.</>
                   : <>Авторизация <span className="text-text-secondary font-medium">{confirmAcc.name}</span> будет сброшена. Сессии сохранятся.</>
                 }
               </span>
@@ -393,9 +539,17 @@ export function AccountsPage({ accounts, activeAccountId, isRunning, onAccountsC
       <div className="flex flex-1 min-h-0 overflow-y-auto">
         <div className="flex w-full">
         {/* Content */}
-        <div className="flex-1 py-6 px-8 space-y-5 overflow-y-auto max-w-[620px] mx-auto">
+        {/* Колонка прижата влево — как в настройках, иначе в широком окне
+            контент уезжает в центр и слева остаётся пустота */}
+        <div className="flex-1 py-8 px-10 space-y-6 max-w-[680px]">
           {tab === 'accounts' && (
             <div className="space-y-6">
+              <PageHeader
+                icon={Profile}
+                title="Аккаунты"
+                desc="Несколько логинов Claude — переключение без потери сессий"
+              />
+
               {pendingAuth && (
                 <div className="rounded-xl border px-3 py-3 flex items-center gap-2.5" style={{ borderColor: 'color-mix(in srgb, var(--accent) 20%, transparent)', backgroundColor: 'color-mix(in srgb, var(--accent) 6%, transparent)' }}>
                   <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse shrink-0" style={{ backgroundColor: 'color-mix(in srgb, var(--accent) 60%, transparent)' }} />
@@ -406,76 +560,130 @@ export function AccountsPage({ accounts, activeAccountId, isRunning, onAccountsC
               )}
 
               <div className="space-y-1">
-                <p className="text-[11px] text-text-faint uppercase tracking-widest px-1 mb-2">Accounts</p>
+                <p className="text-[12px] font-semibold text-text-muted uppercase tracking-[0.08em] px-0.5 mb-2">Аккаунты</p>
                 {accounts.length === 0 && (
                   <p className="text-[13px] text-text-ghost px-1 py-4 text-center">No accounts yet</p>
                 )}
                 {accounts.map(acc => {
                   const isActive = acc.id === activeAccountId
-                  const isLoggedIn = credStatus[acc.id] ?? true
+                  const info = authInfo[acc.id]
+                  // Пока authInfo не загрузился — опираемся на старую проверку,
+                  // иначе карточка на миг показывала бы «не авторизован»
+                  const isLoggedIn = info ? info.loggedIn : (credStatus[acc.id] ?? true)
+                  const expired = info?.expired ?? false
+
                   return (
                     <div
                       key={acc.id}
                       className={cn(
-                        'flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors',
-                        !isActive && 'border-border-subtle bg-surface-hover',
-                        !isLoggedIn && 'opacity-60',
+                        'flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border transition-colors',
+                        !isActive && 'border-border-default bg-bg-surface hover:border-border-strong',
                       )}
                       style={isActive ? {
-                        borderColor: 'color-mix(in srgb, var(--accent) 30%, transparent)',
+                        borderColor: 'color-mix(in srgb, var(--accent) 32%, transparent)',
                         backgroundColor: 'color-mix(in srgb, var(--accent) 8%, transparent)',
                       } : undefined}
                     >
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: 'color-mix(in srgb, var(--accent) 50%, transparent)' }}>
-                        <span className="text-[13px] font-semibold text-text-primary">
+                      <div
+                        className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 relative"
+                        style={{ backgroundColor: 'color-mix(in srgb, var(--accent) 50%, transparent)' }}
+                      >
+                        <span className="text-[15px] font-semibold text-white">
                           {acc.name[0].toUpperCase()}
                         </span>
+                        {/* Точка состояния: зелёная — живой, красная — истёк */}
+                        <span
+                          className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2"
+                          style={{
+                            borderColor: 'var(--bg-surface)',
+                            backgroundColor: !isLoggedIn || expired
+                              ? 'var(--color-error)'
+                              : 'var(--color-success)',
+                          }}
+                        />
                       </div>
+
                       <div className="flex-1 min-w-0">
-                        <p className="text-[14px] text-text-secondary truncate">{acc.name}</p>
-                        <p className="text-[11px] text-text-faint truncate">
-                          {isLoggedIn ? acc.email || acc.configDir : 'Не авторизован'}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[14.5px] font-medium text-text-primary truncate">{acc.name}</span>
+                          {isActive && (
+                            <span
+                              className="text-[10.5px] px-1.5 py-0.5 rounded shrink-0"
+                              style={{
+                                backgroundColor: 'var(--accent-wash)',
+                                color: 'var(--accent)',
+                              }}
+                            >
+                              активный
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[12px] text-text-muted truncate mt-0.5">
+                          {!isLoggedIn || expired
+                            ? <span style={{ color: 'var(--color-error)' }}>
+                                {expired ? 'Сессия истекла — нужен повторный вход' : 'Не авторизован'}
+                              </span>
+                            : acc.email || 'Авторизован'}
+                        </div>
+                        {isLoggedIn && !expired && info?.refreshExpiresAt && (
+                          <div className="text-[11.5px] text-text-faint mt-1">
+                            Вход действует {relExpiry(info.refreshExpiresAt)}
+                            {info.subscriptionType && ` · ${info.subscriptionType}`}
+                          </div>
+                        )}
                       </div>
-                      {isActive && isLoggedIn && (
-                        <span className="text-[11px] shrink-0" style={{ color: 'color-mix(in srgb, var(--accent) 70%, transparent)' }}>active</span>
-                      )}
+
                       <div className="flex items-center gap-1 shrink-0">
-                        {!isLoggedIn ? (
+                        {!isActive && isLoggedIn && !expired && (
+                          <button
+                            onClick={() => !isRunning && onSwitchAccount(acc.id)}
+                            disabled={isRunning}
+                            title={isRunning ? 'Дождись завершения всех сессий' : 'Переключиться'}
+                            className={cn(
+                              'w-8 h-8 rounded-lg grid place-items-center transition-colors',
+                              isRunning
+                                ? 'text-text-ghost opacity-30 cursor-not-allowed'
+                                : 'text-text-faint hover:text-accent hover:bg-surface-hover',
+                            )}
+                          >
+                            <ArrowRight size={15} />
+                          </button>
+                        )}
+
+                        {!isLoggedIn || expired ? (
                           <button
                             onClick={() => handleLogin(acc)}
-                            className="flex items-center gap-1 px-2 py-1 rounded-lg text-[13px] text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-medium bg-accent-wash text-accent border border-accent/25 hover:bg-accent/15 transition-colors"
                           >
-                            <LogIn size={12} />
+                            <LogIn size={13} />
                             Войти
                           </button>
                         ) : (
                           <button
                             onClick={() => !isRunning && setConfirm({ type: 'logout', id: acc.id })}
                             disabled={isRunning}
-                            title={isRunning ? 'Дождись завершения всех сессий' : undefined}
+                            title={isRunning ? 'Дождись завершения всех сессий' : 'Выйти'}
                             className={cn(
-                              'flex items-center gap-1 px-2 py-1 rounded-lg text-[13px] transition-colors',
-                              isRunning ? 'text-text-ghost opacity-30 cursor-not-allowed' : 'text-text-ghost hover:text-amber-400 hover:bg-amber-400/10',
+                              'w-8 h-8 rounded-lg grid place-items-center transition-colors',
+                              isRunning ? 'text-text-ghost opacity-30 cursor-not-allowed' : 'text-text-faint hover:text-amber-400 hover:bg-amber-400/10',
                             )}
                           >
-                            <LogOut size={12} />
-                            Выйти
+                            <LogOut size={15} />
                           </button>
                         )}
+
                         <button
                           onClick={() => !isRunning && accounts.length > 1 ? setConfirm({ type: 'delete', id: acc.id }) : undefined}
                           disabled={accounts.length <= 1 || isRunning}
-                          title={accounts.length <= 1 ? 'Нельзя удалить единственный аккаунт' : isRunning ? 'Дождись завершения всех сессий' : undefined}
+                          title={accounts.length <= 1 ? 'Нельзя удалить единственный аккаунт' : isRunning ? 'Дождись завершения всех сессий' : 'Удалить аккаунт (сессии останутся)'}
                           className={cn(
-                            'flex items-center gap-1 px-2 py-1 rounded-lg text-[13px] transition-colors',
+                            'w-8 h-8 rounded-lg grid place-items-center transition-colors',
                             accounts.length <= 1 || isRunning
                               ? 'text-text-ghost opacity-30 cursor-not-allowed'
-                              : 'text-text-ghost hover:text-red-400 hover:bg-red-400/10',
+                              : 'text-text-faint hover:text-[var(--color-error)] hover:bg-[var(--color-error)]/10',
                           )}
                         >
-                          <Trash2 size={12} />
-                          Удалить
+                          <Trash2 size={15} />
                         </button>
                       </div>
                     </div>
@@ -484,7 +692,7 @@ export function AccountsPage({ accounts, activeAccountId, isRunning, onAccountsC
               </div>
 
               <div className="space-y-2">
-                <p className="text-[11px] text-text-faint uppercase tracking-widest px-1">Add account</p>
+                <p className="text-[12px] font-semibold text-text-muted uppercase tracking-[0.08em] px-0.5">Добавить аккаунт</p>
                 <div className="flex gap-2">
                   <input
                     value={newName}
@@ -518,7 +726,9 @@ export function AccountsPage({ accounts, activeAccountId, isRunning, onAccountsC
             </div>
           )}
 
-          {tab === 'stats' && <StatsTab />}
+          {tab === 'stats' && (
+            <StatsTab configDir={accounts.find(a => a.id === activeAccountId)?.configDir} />
+          )}
         </div>
         </div>
       </div>

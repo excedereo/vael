@@ -16,17 +16,19 @@ export interface SessionConfig {
 }
 
 const DEFAULT_SESSION_CONFIG: SessionConfig = {
-  model: 'claude-sonnet-4-6',
+  model: 'claude-sonnet-5',
   effort: 'high',
   permissionMode: 'bypassPermissions',
   prompt: '',
 }
 
 const SESSION_MODEL_MIGRATION: Record<string, string> = {
-  'sonnet': 'claude-sonnet-4-6',
-  'opus':   'claude-opus-4-8',
+  'sonnet': 'claude-sonnet-5',
+  'opus':   'claude-opus-5',
   'haiku':  'claude-haiku-4-5-20251001',
   'fable':  'claude-fable-5',
+  'claude-sonnet-4-6': 'claude-sonnet-5',
+  'claude-opus-4-8':   'claude-opus-5',
 }
 
 function loadConfig(sessionId: string | null): SessionConfig {

@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('api', {
   logoutAccount: (id: string) => ipcRenderer.invoke('accounts:logout', id),
   openAuth: (configDir: string) => ipcRenderer.invoke('accounts:openAuth', configDir),
   checkCredentials: (configDir: string) => ipcRenderer.invoke('accounts:checkCredentials', configDir),
+  getAuthInfo: (configDir: string) => ipcRenderer.invoke('accounts:authInfo', configDir),
+  checkNetwork: () => ipcRenderer.invoke('network:check'),
 
   // Sessions
   getSessions: (accountId: string) => ipcRenderer.invoke('sessions:get', accountId),
@@ -143,6 +145,7 @@ contextBridge.exposeInMainWorld('api', {
   // Telegram integration
   tgGetSettings: () => ipcRenderer.invoke('tg:getSettings'),
   tgSetSettings: (settings: { botToken: string; chatId: string; enabled: boolean }) => ipcRenderer.invoke('tg:setSettings', settings),
+  tgDetectChatId: (botToken: string) => ipcRenderer.invoke('tg:detectChatId', botToken),
   tgStart: () => ipcRenderer.invoke('tg:start'),
   tgStop: () => ipcRenderer.invoke('tg:stop'),
   tgReply: (chatId: string, text: string) => ipcRenderer.invoke('tg:reply', chatId, text),
@@ -192,7 +195,10 @@ contextBridge.exposeInMainWorld('api', {
   },
   applyNotificationSettings: (settings: unknown) => ipcRenderer.send('notification:apply-settings', settings),
   previewNotifications: () => ipcRenderer.send('notification:preview'),
+  previewNotification: (kind: string) => ipcRenderer.send('notification:preview-one', kind),
   getNotificationMaxStack: (scale: number) => ipcRenderer.invoke('notification:max-stack', scale) as Promise<number>,
+  getNotificationSounds: () => ipcRenderer.invoke('notification:sounds') as Promise<string[]>,
+  getNotificationWorkArea: () => ipcRenderer.invoke('notification:work-area') as Promise<{ width: number; height: number; scaleFactor: number }>,
 
   // Pyre modules
   modulesList: () => ipcRenderer.invoke('modules:list'),
@@ -201,8 +207,30 @@ contextBridge.exposeInMainWorld('api', {
   modulesStart: (id: string) => ipcRenderer.invoke('modules:start', id),
   modulesStop: (id: string) => ipcRenderer.invoke('modules:stop', id),
 
+  // Heartbeat — очередь побудок
+  heartbeatQueue: () => ipcRenderer.invoke('heartbeat:queue'),
+  heartbeatCancel: (id: string) => ipcRenderer.invoke('heartbeat:cancel', id),
+  heartbeatAdd: (entry: Record<string, unknown>) => ipcRenderer.invoke('heartbeat:add', entry),
+  heartbeatClear: () => ipcRenderer.invoke('heartbeat:clear'),
+  heartbeatHealth: () => ipcRenderer.invoke('heartbeat:health'),
+  onHeartbeatSettingsChanged: (cb: (s: Record<string, unknown>) => void) => {
+    const h = (_: unknown, s: Record<string, unknown>) => cb(s)
+    ipcRenderer.on('heartbeat:settings-changed', h)
+    return () => ipcRenderer.removeListener('heartbeat:settings-changed', h)
+  },
+  onHeartbeatQueue: (cb: (queue: unknown[]) => void) => {
+    const h = (_: unknown, queue: unknown[]) => cb(queue)
+    ipcRenderer.on('heartbeat:queue', h)
+    return () => ipcRenderer.removeListener('heartbeat:queue', h)
+  },
+  onHeartbeatFired: (cb: (info: { message: string; at: number }) => void) => {
+    const h = (_: unknown, info: { message: string; at: number }) => cb(info)
+    ipcRenderer.on('heartbeat:fired', h)
+    return () => ipcRenderer.removeListener('heartbeat:fired', h)
+  },
+
   // Stats
-  getStats: () => ipcRenderer.invoke('stats:get'),
+  getStats: (configDir?: string) => ipcRenderer.invoke('stats:get', configDir),
 
   // Auto-updater
   updateDownload: () => ipcRenderer.invoke('update:download'),

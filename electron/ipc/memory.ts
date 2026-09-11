@@ -9,6 +9,7 @@ import {
 } from '../services/MemoryService.js'
 import type { FsEntry } from '../services/MemoryService.js'
 import { PATHS } from '../services/SettingsService.js'
+import { computeStats } from '../services/StatsService.js'
 
 export function registerMemoryHandlers() {
   ipcMain.handle('memory:listDir', async (_, dirPath?: string) => {
@@ -157,11 +158,16 @@ export function registerMemoryHandlers() {
     return { ok: true }
   })
 
-  ipcMain.handle('stats:get', async () => {
+  // Считаем из jsonl активного аккаунта, а не из ~/.claude/stats-cache.json:
+  // тот файл CLI больше не обновляет (замирал на месяцы), и он всегда был
+  // от дефолтного конфига — статистика второго аккаунта в него не попадала
+  ipcMain.handle('stats:get', async (_, configDir?: string) => {
     try {
-      const statsPath = path.join(os.homedir(), '.claude', 'stats-cache.json')
-      return { ok: true, data: JSON.parse(fs.readFileSync(statsPath, 'utf-8')) }
-    } catch {
+      const dir = configDir || path.join(os.homedir(), '.claude')
+      const data = computeStats(dir)
+      return data ? { ok: true, data } : { ok: false, data: null }
+    } catch (e) {
+      console.warn('[stats:get] failed:', e)
       return { ok: false, data: null }
     }
   })

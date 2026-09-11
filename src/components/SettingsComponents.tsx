@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { Lock, ShieldCheck, ChevronDown, Check, FolderOpen } from 'lucide-react'
+import type { Icon as IconType } from 'iconsax-reactjs'
 import { cn } from '../lib/utils.js'
 import { api } from '../lib/api.js'
 import { applyTheme, saveActiveTheme } from '../lib/theme.js'
@@ -71,22 +72,36 @@ export function ThemePicker({ themes, activeThemeFile, setActiveThemeFile }: {
   setActiveThemeFile: (f: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState({ top: 0, right: 0 })
   const ref = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const active = themes.find(t => t.file === activeThemeFile)
 
   useEffect(() => {
     if (!open) return
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      const inBtn = ref.current?.contains(e.target as Node)
+      const inPanel = panelRef.current?.contains(e.target as Node)
+      if (!inBtn && !inPanel) setOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
+  // Меню рисуем порталом: Section имеет overflow-hidden и обрезала бы обычный
+  // absolute-попап прямо по краю карточки
+  const handleOpen = () => {
+    if (ref.current) {
+      const r = ref.current.getBoundingClientRect()
+      setPos({ top: r.bottom + 4, right: window.innerWidth - r.right })
+    }
+    setOpen(v => !v)
+  }
+
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => setOpen(v => !v)}
+        onClick={handleOpen}
         className={cn(
           'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[13px] transition-colors min-w-[140px] justify-between',
           'bg-surface-hover border border-border-default text-text-secondary hover:bg-surface-selected hover:border-border-strong',
@@ -96,8 +111,12 @@ export function ThemePicker({ themes, activeThemeFile, setActiveThemeFile }: {
         <span>{active?.name ?? 'Выбрать тему'}</span>
         <ChevronDown size={11} className={cn('text-text-faint transition-transform', open && 'rotate-180')} />
       </button>
-      {open && (
-        <div className="absolute left-0 top-full mt-1 bg-bg-elevated border border-border-default rounded-xl shadow-2xl shadow-black/60 z-50 overflow-hidden min-w-[180px] animate-in fade-in zoom-in-95 duration-100 origin-top-left">
+      {open && createPortal(
+        <div
+          ref={panelRef}
+          style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999 }}
+          className="bg-bg-elevated border border-border-default rounded-xl shadow-2xl shadow-black/60 overflow-hidden min-w-[180px] animate-in fade-in zoom-in-95 duration-100 origin-top-right"
+        >
           {themes.length === 0 && <div className="px-3 py-2 text-[13px] text-text-ghost">Темы не найдены</div>}
           {themes.map(t => {
             const isActive = activeThemeFile === t.file
@@ -120,42 +139,231 @@ export function ThemePicker({ themes, activeThemeFile, setActiveThemeFile }: {
               <FolderOpen size={10} />Открыть папку
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
 }
 
-export function Section({ label, children }: { label: string; children: React.ReactNode }) {
+/**
+ * Шапка вкладки настроек: крупное название + пояснение, что тут вообще
+ * настраивается. Без неё страница начиналась сразу с мелкого капса секции и
+ * не читалась как отдельный раздел.
+ */
+export function PageHeader({ icon: Icon, title, desc }: {
+  icon?: IconType
+  title: string
+  desc?: string
+}) {
+  return (
+    <div className="flex items-start gap-3 pb-1">
+      {Icon && (
+        <div className="w-9 h-9 rounded-xl bg-accent-wash flex items-center justify-center shrink-0 mt-0.5">
+          <Icon size={20} variant="Bold" color="var(--accent)" />
+        </div>
+      )}
+      <div className="min-w-0">
+        <h1 className="text-[19px] font-semibold text-text-primary leading-tight">{title}</h1>
+        {desc && <p className="text-[13px] text-text-muted mt-1 leading-snug">{desc}</p>}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Группа настроек. Иконка и заголовок вынесены НАД карточкой — так группы
+ * различимы при беглом взгляде, чего не давал прежний мелкий капс без якоря.
+ */
+export function Section({ label, icon: Icon, desc, children }: {
+  label: string
+  icon?: IconType
+  desc?: string
+  children: React.ReactNode
+}) {
   return (
     <div>
-      <div className="text-[11px] font-medium text-text-faint uppercase tracking-wider mb-2 px-1">{label}</div>
-      <div className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden divide-y divide-white/5">
+      <div className="flex items-center gap-2 mb-2.5 px-0.5">
+        {Icon && <Icon size={15} variant="Bold" color="var(--text-faint)" className="shrink-0" />}
+        <span className="text-[12px] font-semibold text-text-muted uppercase tracking-[0.08em]">{label}</span>
+        {desc && <span className="text-[12px] text-text-ghost normal-case tracking-normal">· {desc}</span>}
+      </div>
+      {/* Разделитель задан локально, а не токеном border-subtle (5% белого):
+          внутри карточки он не читался и строки сливались в сплошное полотно */}
+      <div className="bg-bg-surface border border-border-default rounded-2xl overflow-hidden divide-y divide-white/[0.07]">
         {children}
       </div>
     </div>
   )
 }
 
-export function ToggleRow({ label, desc, value, onChange, claude: isClaude }: {
-  label: string; desc?: string; value: boolean; onChange: (v: boolean) => void; claude?: boolean
+/**
+ * Общая обвязка строки настройки: иконка · название/описание · контрол.
+ * Все Row-компоненты идут через неё, чтобы отступы и типографика не разъезжались.
+ */
+export function Row({ icon: Icon, label, desc, children, dimmed }: {
+  icon?: IconType
+  label: React.ReactNode
+  desc?: string
+  children?: React.ReactNode
+  dimmed?: boolean
 }) {
   return (
-    <div className="flex items-center justify-between px-4 py-3 gap-4">
-      <div className="min-w-0">
-        <div className="flex items-center gap-1.5 text-[14px] text-text-secondary">
+    <div className={cn('flex items-center justify-between px-4 py-3 gap-4 transition-colors hover:bg-surface-hover/40', dimmed && 'opacity-50')}>
+      <div className="flex items-center gap-3 min-w-0">
+        {Icon && (
+          <div className="w-8 h-8 rounded-lg bg-surface-hover flex items-center justify-center shrink-0">
+            <Icon size={16} variant="Linear" color="var(--text-muted)" />
+          </div>
+        )}
+        <div className="min-w-0">
+          <div className="text-[13.5px] font-medium text-text-primary leading-snug">{label}</div>
+          {desc && <div className="text-[12px] text-text-muted mt-0.5 leading-snug">{desc}</div>}
+        </div>
+      </div>
+      {children && <div className="shrink-0 flex items-center">{children}</div>}
+    </div>
+  )
+}
+
+export function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      onClick={() => onChange(!value)}
+      role="switch"
+      aria-checked={value}
+      className={cn('relative w-[38px] h-[22px] rounded-full transition-colors shrink-0', !value && 'bg-surface-active')}
+      style={value ? { backgroundColor: 'var(--accent)' } : undefined}
+    >
+      <span className={cn('absolute top-[3px] w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-200', value ? 'left-[19px]' : 'left-[3px]')} />
+    </button>
+  )
+}
+
+export function ToggleRow({ label, desc, value, onChange, icon, claude: isClaude }: {
+  label: string; desc?: string; value: boolean; onChange: (v: boolean) => void; icon?: IconType; claude?: boolean
+}) {
+  return (
+    <Row
+      icon={icon}
+      label={
+        <span className="flex items-center gap-1.5">
           {isClaude && <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />}
           {label}
-        </div>
-        {desc && <div className="text-[12px] text-text-faint mt-0.5">{desc}</div>}
+        </span>
+      }
+      desc={desc}
+    >
+      <Toggle value={value} onChange={onChange} />
+    </Row>
+  )
+}
+
+/** Ползунок с числовым значением справа — единый вид для всех настроек-чисел. */
+export function SliderRow({ icon, label, desc, value, min, max, step, unit, onChange }: {
+  icon?: IconType
+  label: string
+  desc?: string
+  value: number
+  min: number
+  max: number
+  step: number
+  unit?: string
+  onChange: (v: number) => void
+}) {
+  const clamp = (v: number) => Math.min(max, Math.max(min, v))
+
+  return (
+    <Row icon={icon} label={label} desc={desc}>
+      <div className="flex items-center gap-3">
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={Math.min(value, max)}
+          onChange={e => onChange(clamp(Number(e.target.value)))}
+          className="w-32 h-1 accent-[var(--accent)] cursor-pointer"
+        />
+        <span className="text-[13px] font-medium text-text-primary tabular-nums w-14 text-right">
+          {value}{unit ?? ''}
+        </span>
       </div>
-      <button
-        onClick={() => onChange(!value)}
-        className={cn('relative w-9 h-5 rounded-full transition-colors shrink-0', !value && 'bg-surface-active')}
-        style={value ? { backgroundColor: 'var(--accent)' } : undefined}
-      >
-        <span className={cn('absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all', value ? 'left-[18px]' : 'left-0.5')} />
-      </button>
+    </Row>
+  )
+}
+
+/** Сегментированный переключатель — для 2–4 взаимоисключающих вариантов. */
+export function SegmentedControl<T extends string>({ value, options, onChange }: {
+  value: T
+  options: { id: T; label: string }[]
+  onChange: (v: T) => void
+}) {
+  return (
+    <div className="flex gap-1 p-1 rounded-xl bg-bg-base border border-border-subtle">
+      {options.map(o => (
+        <button
+          key={o.id}
+          onClick={() => onChange(o.id)}
+          className={cn(
+            'px-3 py-1.5 rounded-lg text-[12.5px] font-medium transition-colors whitespace-nowrap',
+            value === o.id
+              ? 'bg-surface-selected text-text-primary shadow-sm'
+              : 'text-text-muted hover:text-text-secondary',
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Выбор угла экрана схемой, а не списком названий: куда именно вылезет
+ * карточка, читается с картинки быстрее, чем со слов «снизу справа».
+ */
+export function CornerPicker<T extends string>({ value, options, onChange }: {
+  value: T
+  /** id вида 'top-left' | 'bottom-right' — из него берётся положение метки */
+  options: { id: T; label: string }[]
+  onChange: (v: T) => void
+}) {
+  return (
+    <div
+      className="relative rounded-lg border border-border-default overflow-hidden shrink-0"
+      style={{ width: 140, height: 90, background: 'var(--bg-base)' }}
+    >
+      {options.map(o => {
+        const active = value === o.id
+        const right = o.id.endsWith('right')
+        const top = o.id.startsWith('top')
+        return (
+          <button
+            key={o.id}
+            onClick={() => onChange(o.id)}
+            title={o.label}
+            aria-label={o.label}
+            aria-pressed={active}
+            className="absolute rounded-md transition-colors"
+            style={{
+              // Не макет карточки, а мишень для клика — потому крупнее и выше,
+              // чем настоящее уведомление в этом масштабе
+              width: 56,
+              height: 30,
+              [right ? 'right' : 'left']: 8,
+              [top ? 'top' : 'bottom']: 8,
+              background: active ? 'var(--accent)' : 'rgba(255,255,255,0.10)',
+            }}
+            onMouseEnter={e => {
+              if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.20)'
+            }}
+            onMouseLeave={e => {
+              if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.10)'
+            }}
+          />
+        )
+      })}
     </div>
   )
 }

@@ -45,19 +45,19 @@ function RailButton({ item, active, onSelect, busy }: {
       aria-label={item.label}
       aria-current={active}
       className={cn(
-        'relative w-9 h-9 rounded-[10px] flex items-center justify-center transition-colors',
+        'relative w-11 h-11 rounded-[12px] flex items-center justify-center transition-colors',
         active ? 'text-accent bg-accent-wash' : 'text-text-faint hover:text-text-secondary hover:bg-surface-hover',
       )}
     >
       {/* рельс активного раздела */}
       {active && (
-        <span className="absolute -left-[7px] top-2 bottom-2 w-0.5 rounded-full bg-accent" />
+        <span className="absolute -left-[9px] top-2.5 bottom-2.5 w-[3px] rounded-full bg-accent" />
       )}
       {/* бейдж живой работы в неоткрытом разделе */}
       {busy && !active && (
         <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-[var(--color-success)] shadow-[0_0_5px_rgba(74,222,128,0.8)]" />
       )}
-      <Icon size={22} variant={active ? 'Bold' : 'Linear'} color="currentColor" />
+      <Icon size={26} variant={active ? 'Bold' : 'Linear'} color="currentColor" />
     </button>
   )
 }
@@ -70,7 +70,7 @@ export function NavRail({ active, onSelect, showDev, showMemory, busySections = 
     ...(showDev ? [DEV] : []),
   ]
   return (
-    <div className="w-[46px] shrink-0 flex flex-col items-center pt-[38px] pb-2.5 gap-[3px] bg-bg-base border-r border-border-subtle">
+    <div className="w-[56px] shrink-0 flex flex-col items-center pt-[38px] pb-2.5 gap-1 bg-bg-base border-r border-border-subtle">
       {top.map(item => (
         <RailButton
           key={item.id}

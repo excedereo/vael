@@ -3,17 +3,57 @@ import path from 'path'
 import os from 'os'
 import { app } from 'electron'
 
-// Все пути в одном месте — не разбросаны по main.ts
+const VAEL_ROOT = path.join(os.homedir(), '.vael')
+
+// Все пути в одном месте — не разбросаны по main.ts.
+// Данные Vael живут в ~/.vael, а не в AppData: путь читаемый, папку видно
+// рядом с памятью и вложениями, переустановка приложения её не уносит.
 export const PATHS = {
   userData: app.getPath('userData'),
-  themes: path.join(app.getPath('userData'), 'themes'),
-  temp: path.join(app.getPath('userData'), 'temp'),
-  vaeliSettings: path.join(app.getPath('userData'), 'vaeli-settings.json'),
+  vael: VAEL_ROOT,
+  themes: path.join(VAEL_ROOT, 'themes'),
+  temp: path.join(VAEL_ROOT, 'temp'),
+  vaeliSettings: path.join(VAEL_ROOT, 'vaeli-settings.json'),
+  /** Хранилище сессий: конфиги аккаунтов смотрят сюда junction'ом */
+  sessions: path.join(VAEL_ROOT, 'sessions'),
   globalSettings: path.join(os.homedir(), '.claude', 'settings.json'),
   claudeMd: path.join(os.homedir(), '.claude', 'CLAUDE.md'),
-  vael: path.join(os.homedir(), '.vael'),
-  memory: path.join(os.homedir(), '.vael', 'memory'),
-  memoryMeta: path.join(os.homedir(), '.vael', 'memory-meta.json'),
+  memory: path.join(VAEL_ROOT, 'memory'),
+  memoryMeta: path.join(VAEL_ROOT, 'memory-meta.json'),
+}
+
+/**
+ * Разовый переезд из AppData в ~/.vael. Копируем, а не переносим: если
+ * что-то пойдёт не так, старые данные остаются на месте нетронутыми.
+ * Уже существующие в ~/.vael файлы не трогаем — они новее.
+ */
+export function migrateFromUserData(): void {
+  const legacy = app.getPath('userData')
+
+  const items: Array<{ from: string; to: string; dir: boolean }> = [
+    { from: path.join(legacy, 'themes'), to: PATHS.themes, dir: true },
+    { from: path.join(legacy, 'temp'), to: PATHS.temp, dir: true },
+    { from: path.join(legacy, 'vaeli-settings.json'), to: PATHS.vaeliSettings, dir: false },
+  ]
+
+  for (const { from, to, dir } of items) {
+    try {
+      if (!fs.existsSync(from) || fs.existsSync(to)) continue
+      if (dir) {
+        fs.mkdirSync(to, { recursive: true })
+        for (const name of fs.readdirSync(from)) {
+          const src = path.join(from, name)
+          if (!fs.statSync(src).isFile()) continue
+          fs.copyFileSync(src, path.join(to, name))
+        }
+      } else {
+        fs.copyFileSync(from, to)
+      }
+      console.log(`[migrate] ${from} → ${to}`)
+    } catch (e) {
+      console.warn(`[migrate] не удалось перенести ${from}:`, e)
+    }
+  }
 }
 
 export function loadVaeliSettings(): Record<string, unknown> {

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Zap } from 'lucide-react'
 import { PyrePage } from '../components/PyrePage.js'
 import { VaeliPanel } from '../types/panel.js'
+import { useActiveModule } from '../lib/activeModule.js'
 import { api } from '../lib/api.js'
 import { Session } from '../types/index.js'
 
@@ -14,14 +15,20 @@ interface ModuleInfo {
 
 function PyreWrapper() {
   const [sessions, setSessions] = useState<Session[]>([])
-  const [modules, setModules] = useState<ModuleInfo[]>([])
-  const [activeModuleId, setActiveModuleId] = useState<string | null>(null)
+  const [, setModules] = useState<ModuleInfo[]>([])
+  // Выбранный модуль общий с сайдбаром — см. lib/activeModule.ts
+  const activeModuleId = useActiveModule()
 
+  // Сессии нужны панелям только чтобы подписать выбранный uuid человеческим
+  // именем. Без них подпись просто короче, поэтому ошибки глотаем молча.
   useEffect(() => {
-    api.modulesList().then(list => {
-      setModules(list)
-      if (list.length > 0) setActiveModuleId(list[0].id)
-    })
+    api.getSettings()
+      .then(s => {
+        const id = s.activeAccountId
+        return typeof id === 'string' && id ? api.getSessions(id) : []
+      })
+      .then(setSessions)
+      .catch(() => {})
   }, [])
 
   return (
