@@ -5,6 +5,7 @@ import type { Session, Account } from '../types/index'
 import { cn } from '../lib/utils.js'
 import { Zap, Trash2, Pencil, ArrowDownUp, Archive, ArchiveRestore, ChevronRight, Search, SquarePen, X, ScrollText } from 'lucide-react'
 import type { Section } from './NavRail.js'
+import { SECTION_LABEL } from '../lib/sectionLabels.js'
 import { Brush, Message, Notification, Monitor, Profile, Chart2 } from 'iconsax-reactjs'
 import type { Icon as IconType } from 'iconsax-reactjs'
 import { api } from '../lib/api.js'
@@ -51,15 +52,6 @@ interface Props {
   onMetaChange?: () => void
 }
 
-// Человеко-читаемый заголовок раздела для шапки сайдбара
-const SECTION_LABEL: Record<Section, string> = {
-  sessions: 'Сессии',
-  memory:   'Память',
-  pyre:     'Pyre',
-  dev:      'Dev',
-  accounts: 'Аккаунты',
-  settings: 'Настройки',
-}
 
 const SETTINGS_TAB_LABEL: Record<SettingsTab, string> = {
   interface: 'Интерфейс',

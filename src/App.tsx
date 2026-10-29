@@ -15,6 +15,7 @@ import { PanelErrorBoundary } from './components/PanelErrorBoundary.js'
 import { Sidebar } from './components/Sidebar.js'
 import { NavRail } from './components/NavRail.js'
 import type { Section } from './components/NavRail.js'
+import { SECTION_LABEL } from './lib/sectionLabels.js'
 
 import { StatusBar } from './components/StatusBar.js'
 import { AccountBar } from './components/AccountBar.js'
@@ -551,8 +552,8 @@ function AppInner() {
                 </span>
               </>
             ) : (
-              <span className="text-[13.5px] font-medium text-text-primary truncate select-none pointer-events-none capitalize">
-                {section}
+              <span className="text-[13.5px] font-medium text-text-primary truncate select-none pointer-events-none">
+                {SECTION_LABEL[section]}
               </span>
             )}
           </div>
