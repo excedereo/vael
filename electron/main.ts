@@ -111,7 +111,16 @@ function createWindow() {
   mainWindow.webContents.on('will-navigate', (e, url) => {
     const devUrl = process.env.VITE_DEV_SERVER_URL
     const isDevUrl = devUrl && url.startsWith(devUrl)
-    const isAppFile = url.startsWith(`file://${path.resolve(__dirname, '..')}`)
+    // Свой файл приложения: сравниваем пути, а не строки — у file:// на Windows
+    // прямые слэши и лишний «/» (file:///C:/...), и строковое сравнение не совпадало никогда.
+    // Из-за этого location.reload() в собранном приложении тихо отменялся
+    let isAppFile = false
+    if (url.startsWith('file:')) {
+      try {
+        const p = path.resolve(fileURLToPath(url)).toLowerCase()
+        isAppFile = p.startsWith(path.resolve(__dirname, '..').toLowerCase())
+      } catch {}
+    }
     if (isDevUrl || isAppFile) return
     e.preventDefault()
     openInBrowser(url)
