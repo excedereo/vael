@@ -9,6 +9,7 @@ import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 import rehypeHighlight from 'rehype-highlight'
 import hljs from 'highlight.js'
+import { t } from '../lib/i18n.js'
 
 interface Props {
   entry: JsonlEntry
@@ -437,7 +438,7 @@ export function MessageBubble({ entry, showMeta }: Props) {
 
   if (entry.type === 'error_bubble') {
     const { message, known } = entry as unknown as { message: string; known: boolean }
-    const title = known ? message : 'Непредвиденная ошибка'
+    const title = known ? message : t("Непредвиденная ошибка", "Unexpected error")
     const detail = known ? null : message
     return (
       <div className="py-0.5 my-2 max-w-[520px]">

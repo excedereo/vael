@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react'
 import { useSessionContext, type SessionStatus } from '../context/SessionContext.js'
 import { statusLog } from '../lib/statusLog.js'
+import { LOCALE } from '../lib/i18n.js'
 
 interface TestResult {
   label: string
@@ -244,7 +245,7 @@ function StatusTransitionLog() {
       <div className="flex flex-col gap-0.5 max-h-32 overflow-y-auto">
         {log.map((e, i) => (
           <div key={i} className="flex items-center gap-2 text-[10px] font-mono">
-            <span className="text-text-ghost shrink-0">{new Date(e.ts).toLocaleTimeString('ru-RU', { hour12: false })}</span>
+            <span className="text-text-ghost shrink-0">{new Date(e.ts).toLocaleTimeString(LOCALE, { hour12: false })}</span>
             <span className="text-text-ghost shrink-0">{e.id.slice(0, 8)}</span>
             <span className={e.transition.includes('asking') ? 'text-accent' : 'text-text-secondary'}>{e.transition}</span>
           </div>

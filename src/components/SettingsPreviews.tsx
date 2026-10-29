@@ -1,5 +1,6 @@
 import { Cpu, Flash, ShieldTick, ShieldCross, Folder2, InfoCircle, Broom } from 'iconsax-reactjs'
 import type { DefaultSessionConfig } from './SettingsPage.js'
+import { t } from '../lib/i18n.js'
 
 /**
  * Правая колонка настроек: то, что нельзя выразить самой строкой настройки —
@@ -30,12 +31,12 @@ export function InterfacePreview({ contentPadding }: { contentPadding: number })
 
   return (
     <div className="space-y-4">
-      <PreviewBlock title="Как выглядит чат">
+      <PreviewBlock title={t("Как выглядит чат", "How the chat looks")}>
         <div className="rounded-2xl border border-border-default overflow-hidden bg-bg-base">
           {/* шапка окна */}
           <div className="h-9 border-b border-border-subtle flex items-center gap-2 px-4">
             <span className="w-2.5 h-2.5 rounded-full bg-surface-active" />
-            <span className="text-[11.5px] text-text-ghost ml-1">Сессия</span>
+            <span className="text-[11.5px] text-text-ghost ml-1">{t("Сессия", "Session")}</span>
           </div>
 
           <div className="py-5 space-y-4" style={{ paddingLeft: pad, paddingRight: pad }}>
@@ -71,17 +72,17 @@ export function InterfacePreview({ contentPadding }: { contentPadding: number })
       <div className="rounded-xl border border-border-subtle bg-bg-surface px-3.5 py-3">
         <div className="flex items-center gap-2 text-[12.5px] text-text-muted">
           <InfoCircle size={15} variant="Linear" color="var(--text-faint)" className="shrink-0" />
-          Отступ {contentPadding}px с каждой стороны
+          {t("Отступ", "Padding")}{' '}{contentPadding}{t("px с каждой стороны", "px on each side")}
         </div>
       </div>
 
-      <PreviewBlock title="Палитра темы">
+      <PreviewBlock title={t("Палитра темы", "Theme palette")}>
         <div className="flex gap-2">
           {[
-            { v: 'var(--accent)',         t: 'Акцент' },
-            { v: 'var(--bg-surface)',     t: 'Поверхность' },
-            { v: 'var(--bg-elevated)',    t: 'Приподнятая' },
-            { v: 'var(--surface-active)', t: 'Активная' },
+            { v: 'var(--accent)',         t: t("Акцент", "Accent") },
+            { v: 'var(--bg-surface)',     t: t("Поверхность", "Surface") },
+            { v: 'var(--bg-elevated)',    t: t("Приподнятая", "Elevated") },
+            { v: 'var(--surface-active)', t: t("Активная", "Active") },
           ].map(c => (
             <div key={c.t} className="flex-1 min-w-0" title={c.t}>
               <div
@@ -116,9 +117,9 @@ const PERM_LABEL: Record<string, string> = {
 
 export function SessionsPreview({ config }: { config: DefaultSessionConfig }) {
   const rows = [
-    { icon: Cpu,        label: 'Модель',   value: MODEL_LABEL[config.model] ?? config.model },
-    { icon: Flash,      label: 'Мышление', value: config.effort },
-    { icon: ShieldTick, label: 'Доступ',   value: PERM_LABEL[config.permissionMode] ?? config.permissionMode },
+    { icon: Cpu,        label: t("Модель", "Model"),   value: MODEL_LABEL[config.model] ?? config.model },
+    { icon: Flash,      label: t("Мышление", "Thinking"), value: config.effort },
+    { icon: ShieldTick, label: t("Доступ", "Access"),   value: PERM_LABEL[config.permissionMode] ?? config.permissionMode },
   ]
 
   // Bypass снимает все подтверждения — про это стоит сказать прямо, а не
@@ -127,7 +128,7 @@ export function SessionsPreview({ config }: { config: DefaultSessionConfig }) {
 
   return (
     <div className="space-y-4">
-      <PreviewBlock title="Новая сессия стартует так">
+      <PreviewBlock title={t("Новая сессия стартует так", "A new session starts like this")}>
         <div className="rounded-2xl border border-border-default bg-bg-surface overflow-hidden divide-y divide-white/[0.07]">
           {rows.map(({ icon: Icon, label, value }) => (
             <div key={label} className="flex items-center justify-between px-4 py-3.5 gap-3">
@@ -150,9 +151,9 @@ export function SessionsPreview({ config }: { config: DefaultSessionConfig }) {
           <div className="flex items-start gap-2">
             <ShieldCross size={15} variant="Bold" color="var(--color-error)" className="shrink-0 mt-px" />
             <div className="min-w-0">
-              <div className="text-[12.5px] font-medium text-text-primary">Без подтверждений</div>
+              <div className="text-[12.5px] font-medium text-text-primary">{t("Без подтверждений", "No confirmations")}</div>
               <div className="text-[12px] text-text-muted mt-0.5 leading-snug">
-                Claude правит файлы и запускает команды, ничего не спрашивая
+                {t("Claude правит файлы и запускает команды, ничего не спрашивая", "Claude edits files and runs commands without asking")}
               </div>
             </div>
           </div>
@@ -162,7 +163,7 @@ export function SessionsPreview({ config }: { config: DefaultSessionConfig }) {
       <div className="rounded-xl border border-border-subtle bg-bg-surface px-3.5 py-3">
         <div className="flex items-start gap-2 text-[12.5px] text-text-muted leading-snug">
           <InfoCircle size={14} variant="Linear" color="var(--text-faint)" className="shrink-0 mt-px" />
-          <span>Это только для новых сессий — открытые сохраняют свои параметры</span>
+          <span>{t("Это только для новых сессий — открытые сохраняют свои параметры", "Only for new sessions — open ones keep their settings")}</span>
         </div>
       </div>
     </div>
@@ -178,13 +179,13 @@ export function SystemPreview({ vaelVersion, cliVersion, attachSize, tempSize }:
   tempSize: { bytes: number; count: number } | null
 }) {
   const fmt = (s: { bytes: number; count: number } | null) =>
-    s ? `${s.count} файлов · ${(s.bytes / 1024 / 1024).toFixed(1)} MB` : '—'
+    s ? t(`${s.count} файлов · ${(s.bytes / 1024 / 1024).toFixed(1)} MB`, `${s.count} files · ${(s.bytes / 1024 / 1024).toFixed(1)} MB`) : '—'
 
   const totalMb = ((attachSize?.bytes ?? 0) + (tempSize?.bytes ?? 0)) / 1024 / 1024
 
   return (
     <div className="space-y-4">
-      <PreviewBlock title="Занятое место">
+      <PreviewBlock title={t("Занятое место", "Disk usage")}>
         <div className="rounded-2xl border border-border-default bg-bg-surface p-4">
           <div className="flex items-baseline gap-2 mb-4">
             <span className="text-[38px] font-semibold text-text-primary tabular-nums leading-none">
@@ -195,7 +196,7 @@ export function SystemPreview({ vaelVersion, cliVersion, attachSize, tempSize }:
 
           <div className="space-y-3">
             {[
-              { icon: Folder2, label: 'Вложения', value: fmt(attachSize), bytes: attachSize?.bytes ?? 0 },
+              { icon: Folder2, label: t("Вложения", "Attachments"), value: fmt(attachSize), bytes: attachSize?.bytes ?? 0 },
               { icon: Broom,   label: 'Temp',     value: fmt(tempSize),   bytes: tempSize?.bytes ?? 0 },
             ].map(({ icon: Icon, label, value, bytes }) => {
               const total = (attachSize?.bytes ?? 0) + (tempSize?.bytes ?? 0)
@@ -223,7 +224,7 @@ export function SystemPreview({ vaelVersion, cliVersion, attachSize, tempSize }:
         </div>
       </PreviewBlock>
 
-      <PreviewBlock title="Версии">
+      <PreviewBlock title={t("Версии", "Versions")}>
         <div className="rounded-2xl border border-border-default bg-bg-surface overflow-hidden divide-y divide-white/[0.07]">
           {[
             { label: 'Vael',            value: vaelVersion ? `v${vaelVersion}` : '—' },

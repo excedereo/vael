@@ -6,7 +6,7 @@ const path = require('path')
 
 app.commandLine.appendSwitch('force-device-scale-factor', '2')
 const OUT = path.join(__dirname, '..', 'docs', 'images')
-const URL = 'http://127.0.0.1:5199/shots/index.html'
+const BASE = 'http://127.0.0.1:5199/shots/index.html?lang=' + (process.env.SHOT_LANG || 'en')
 const LOG = path.join(__dirname, 'capture.log')
 fs.writeFileSync(LOG, '')
 const _log = console.log
@@ -27,6 +27,7 @@ const clickText = (text) => `(() => {
 })()`
 
 const SHOTS = {
+  language: async () => {},
   hero: async w => {
     await js(w, clickText('Settings page freezes on open'))
     await wait(1500)
@@ -34,7 +35,7 @@ const SHOTS = {
   chat: async w => {
     await js(w, clickText('Settings page freezes on open'))
     await wait(800)
-    await js(w, `(() => { const b = [...document.querySelectorAll('button')].find(b => /шаг/.test(b.textContent)); b && b.click(); return !!b })()`)
+    await js(w, `(() => { const b = [...document.querySelectorAll('button')].find(b => /шаг|step/.test(b.textContent)); b && b.click(); return !!b })()`)
     await wait(400)
     await js(w, `(() => { const b = [...document.querySelectorAll('button')].filter(b => /ThemePicker/.test(b.textContent)).pop(); b && b.click(); return !!b })()`)
     await wait(800)
@@ -66,7 +67,7 @@ app.whenReady().then(async () => {
     if (only && only !== name) continue
     const w = new BrowserWindow({ width: 1440, height: 900, show: false, frame: false, backgroundColor: '#121212', webPreferences: { offscreen: true } })
     w.webContents.on('console-message', (_e, level, msg) => { if (level >= 2) errors.push(msg.slice(0, 300)) })
-    await w.loadURL(URL)
+    await w.loadURL(name === 'language' ? BASE.replace(/lang=\w+/, 'lang=none') : BASE)
     await wait(2500)
     console.log(name); await js(w, 'document.body.innerText.slice(0, 400).replace(/\s+/g, " ")')
     await run(w)

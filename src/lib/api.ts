@@ -73,6 +73,8 @@ export interface AuthInfo {
   /** когда истекает refreshToken — вот это и есть смерть сессии */
   refreshExpiresAt: number | null
   subscriptionType?: string | null
+  /** имя из профиля claude.ai — как Claude обращается к человеку */
+  displayName?: string | null
 }
 
 export interface NetworkInfo {

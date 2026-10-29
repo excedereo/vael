@@ -5,6 +5,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { api } from '../lib/api.js'
 import '@xterm/xterm/css/xterm.css'
+import { t } from '../lib/i18n.js'
 
 interface Props {
   termId: string
@@ -179,7 +180,7 @@ export function PtyTerminalView({ termId, sessionId, projectPath, configDir, vis
 
     const unsubExit = api.onPtyExit((tid) => {
       if (tid === termId) {
-        term.writeln('\r\n\x1b[90m[процесс завершён]\x1b[0m')
+        term.writeln(t("\r\n\u001b[90m[процесс завершён]\u001b[0m", "\n\u001b[90m[process exited]\u001b[0m"))
         spawnedRef.current = null
       }
     })

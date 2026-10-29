@@ -46,12 +46,20 @@ export function registerAccountHandlers(accountManager: AccountManager, getWindo
       const refreshExpiresAt = o.refreshTokenExpiresAt ?? null
       const expired = refreshExpiresAt !== null && refreshExpiresAt < now
 
+      // Как Claude обращается к человеку (настройка профиля claude.ai) — только читаем
+      let displayName: string | null = null
+      try {
+        const cj = JSON.parse(fs.readFileSync(path.join(configDir, '.claude.json'), 'utf-8')) as { oauthAccount?: { displayName?: string } }
+        displayName = cj.oauthAccount?.displayName?.trim() || null
+      } catch {}
+
       return {
         loggedIn: !expired,
         expired,
         expiresAt: o.expiresAt ?? null,
         refreshExpiresAt,
         subscriptionType: o.subscriptionType ?? null,
+        displayName,
       }
     } catch {
       return { loggedIn: false, expired: false, expiresAt: null, refreshExpiresAt: null }

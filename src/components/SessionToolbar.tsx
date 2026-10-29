@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Play, ChevronDown, Check } from 'lucide-react'
 import { cn } from '../lib/utils.js'
+import { t } from '../lib/i18n.js'
 
 interface Option {
   value: string
@@ -118,19 +119,19 @@ const MODELS: Option[] = [
 ]
 
 const EFFORTS: Option[] = [
-  { value: 'low',    label: 'Low',    sub: 'быстро' },
-  { value: 'medium', label: 'Medium', sub: 'баланс' },
-  { value: 'high',   label: 'High',   sub: 'глубже' },
-  { value: 'xhigh',  label: 'X-High', sub: 'очень глубоко' },
-  { value: 'max',    label: 'Max',    sub: 'максимум' },
+  { value: 'low',    label: 'Low',    sub: t("быстро", "fast") },
+  { value: 'medium', label: 'Medium', sub: t("баланс", "balanced") },
+  { value: 'high',   label: 'High',   sub: t("глубже", "deeper") },
+  { value: 'xhigh',  label: 'X-High', sub: t("очень глубоко", "very deep") },
+  { value: 'max',    label: 'Max',    sub: t("максимум", "maximum") },
 ]
 
 const PERMISSIONS: Option[] = [
-  { value: 'bypassPermissions', label: 'Bypass',        sub: 'пропустить всё' },
-  { value: 'auto',              label: 'Auto',          sub: 'автоматически' },
-  { value: 'acceptEdits',       label: 'Accept Edits',  sub: 'принимать правки' },
-  { value: 'default',           label: 'Default',       sub: 'стандартный' },
-  { value: 'plan',              label: 'Plan',          sub: 'только план' },
+  { value: 'bypassPermissions', label: 'Bypass',        sub: t("пропустить всё", "skip everything") },
+  { value: 'auto',              label: 'Auto',          sub: t("автоматически", "automatic") },
+  { value: 'acceptEdits',       label: 'Accept Edits',  sub: t("принимать правки", "accept edits") },
+  { value: 'default',           label: 'Default',       sub: t("стандартный", "default") },
+  { value: 'plan',              label: 'Plan',          sub: t("только план", "plan only") },
 ]
 
 export function SessionToolbar({ config, onChange, onResume, isActive }: Props) {
@@ -192,7 +193,7 @@ export function SessionToolbar({ config, onChange, onResume, isActive }: Props) 
             }}
           >
             <Play size={9} fill="currentColor" />
-            Продолжить
+            {t("Продолжить", "Continue")}
           </motion.button>
         )}
       </AnimatePresence>

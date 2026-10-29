@@ -64,7 +64,7 @@ Nothing is proxied and nothing is re-implemented. If it works in Claude Code, it
 
 **Setup that takes care of itself**
 - No Claude Code yet? Vael finds that out first and installs it for you
-- First launch walks you through naming an account and logging in
+- First launch asks for your language, then walks you through naming an account and logging in
 
 ## Screenshots
 
@@ -101,7 +101,7 @@ npm run build    # production build
 
 Stack: Electron, React, TypeScript, Vite, node-pty, xterm.js. See **[Architecture](https://github.com/excedereo/vael/wiki/Architecture)**.
 
-> The interface is in Russian for now. Language selection is planned.
+> The interface is available in English and Russian. You pick the language on first launch and can switch it in *Settings → Interface*.
 
 ## License
 

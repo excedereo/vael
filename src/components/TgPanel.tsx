@@ -7,6 +7,7 @@ import { PageHeader, Section, ToggleRow } from './SettingsComponents.js'
 import { ModuleIcon } from './ModuleIcon.js'
 import { cn } from '../lib/utils.js'
 import type { Session } from '../types/index.js'
+import { t } from '../lib/i18n.js'
 
 interface Props {
   sessions: Session[]
@@ -71,15 +72,15 @@ export function TgPanel({ sessions, onStatusChange }: Props) {
     setDetecting(false)
 
     if (!r.ok || !r.chats?.length) {
-      setDetectResult(`!${r.error ?? 'не нашлось'}`)
+      setDetectResult(t(`!${r.error ?? 'не нашлось'}`, `!${r.error ?? 'not found'}`))
       return
     }
     // Чаще всего чат один — подставляем сразу; если несколько, показываем все
     setChatId(r.chats[0].id)
     setDetectResult(
       r.chats.length === 1
-        ? `нашла: ${r.chats[0].name}`
-        : `нашла ${r.chats.length}, взяла первый: ${r.chats.map(c => c.name).join(', ')}`,
+        ? t(`нашла: ${r.chats[0].name}`, `found: ${r.chats[0].name}`)
+        : t(`нашла ${r.chats.length}, взяла первый: ${r.chats.map(c => c.name).join(', ')}`, `found ${r.chats.length}, took the first: ${r.chats.map(c => c.name).join(', ')}`),
     )
   }, [botToken])
 
@@ -95,7 +96,7 @@ export function TgPanel({ sessions, onStatusChange }: Props) {
 
   if (loading) return (
     <div className="flex-1 flex items-center justify-center text-text-ghost text-sm">
-      Загрузка...
+      {t("Загрузка...", "Loading...")}
     </div>
   )
 
@@ -103,7 +104,7 @@ export function TgPanel({ sessions, onStatusChange }: Props) {
   const sessionAlive = sessionId ? alive.includes(sessionId) : alive.length > 0
   const sessionLabel = sessionId
     ? sessions.find(s => s.id === sessionId)?.title || sessionId.slice(0, 8)
-    : 'последняя активная'
+    : t("последняя активная", "last active")
 
   // Токен без chatId — бот отвечает, но написать первым не может
   const noChatId = !!botToken && !chatId
@@ -115,7 +116,7 @@ export function TgPanel({ sessions, onStatusChange }: Props) {
         <PageHeader
           icon={Profile}
           title="Telegram"
-          desc="Мост между чатом в телеграме и живой сессией — сообщения идут прямо в неё"
+          desc={t("Мост между чатом в телеграме и живой сессией — сообщения идут прямо в неё", "A bridge between a Telegram chat and a live session — messages go straight into it")}
         />
 
         {/* Сохранение закреплено сверху: настройки длинные, кнопка внизу терялась */}
@@ -133,7 +134,7 @@ export function TgPanel({ sessions, onStatusChange }: Props) {
                   : 'bg-surface-hover border-border-subtle text-text-ghost cursor-default active:scale-100',
             )}
           >
-            {saved ? 'Сохранено' : dirty ? 'Сохранить изменения' : 'Всё сохранено'}
+            {saved ? t("Сохранено", "Saved") : dirty ? t("Сохранить изменения", "Save changes") : t("Всё сохранено", "All saved")}
           </button>
         </div>
 
@@ -151,19 +152,19 @@ export function TgPanel({ sessions, onStatusChange }: Props) {
 
           <div className="min-w-0 flex-1">
             <div className="text-[14px] font-medium text-text-primary">
-              {running ? 'Бот на связи' : 'Остановлен'}
+              {running ? t("Бот на связи", "Bot is online") : t("Остановлен", "Stopped")}
             </div>
             <div className="text-[12px] text-text-faint mt-0.5 truncate">
               {running
-                ? 'слушает сообщения и передаёт их в сессию'
-                : botToken ? 'сообщения не принимаются' : 'нужен токен бота'}
+                ? t("слушает сообщения и передаёт их в сессию", "listens to messages and passes them to the session")
+                : botToken ? t("сообщения не принимаются", "messages are not accepted") : t("нужен токен бота", "bot token required")}
             </div>
           </div>
 
           <button
             onClick={handleStartStop}
             disabled={!running && !botToken}
-            title={!running && !botToken ? 'Сначала укажи токен бота' : undefined}
+            title={!running && !botToken ? t("Сначала укажи токен бота", "Enter the bot token first") : undefined}
             className={cn(
               'flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-medium shrink-0',
               'transition-all duration-200 border active:scale-[0.97]',
@@ -175,8 +176,8 @@ export function TgPanel({ sessions, onStatusChange }: Props) {
             )}
           >
             {running
-              ? <><Pause size={15} variant="Bold" color="currentColor" /> Стоп</>
-              : <><Play size={15} variant="Bold" color="currentColor" /> Запустить</>}
+              ? <><Pause size={15} variant="Bold" color="currentColor" /> {t("Стоп", "Stop")}</>
+              : <><Play size={15} variant="Bold" color="currentColor" /> {t("Запустить", "Start")}</>}
           </button>
         </div>
 
@@ -184,24 +185,23 @@ export function TgPanel({ sessions, onStatusChange }: Props) {
           <div className="rounded-xl bg-amber-500/8 border border-amber-500/25 px-4 py-3 flex items-start gap-3">
             <Warning2 size={17} variant="Bold" color="rgb(245 158 11)" className="shrink-0 mt-0.5" />
             <div className="min-w-0">
-              <div className="text-[13px] text-amber-200/90">Chat ID не указан</div>
+              <div className="text-[13px] text-amber-200/90">{t("Chat ID не указан", "Chat ID is not set")}</div>
               <div className="text-[11.5px] text-amber-200/50 mt-1 leading-relaxed">
-                Бот отвечает на входящие, но написать первым не может — фришки и
-                уведомления не дойдут. Напиши боту что-нибудь и нажми «Определить».
+                {t("Бот отвечает на входящие, но написать первым не может — фришки и уведомления не дойдут. Напиши боту что-нибудь и нажми «Определить».", "The bot answers incoming messages but can't write first — wake-ups and notifications won't arrive. Write something to the bot and press “Detect”.")}
               </div>
             </div>
           </div>
         )}
 
         {/* Сессия */}
-        <Section label="Сессия" icon={Code1} desc="куда идут сообщения из чата">
+        <Section label={t("Сессия", "Session")} icon={Code1} desc={t("куда идут сообщения из чата", "where chat messages go")}>
           <div className="px-4 py-3.5 space-y-2.5">
             <div className="relative">
               <input
                 type="text"
                 value={sessionId}
                 onChange={e => setSessionId(e.target.value)}
-                placeholder="uuid сессии — пусто: последняя активная"
+                placeholder={t("uuid сессии — пусто: последняя активная", "session uuid — empty: last active")}
                 spellCheck={false}
                 className={cn(
                   'w-full bg-surface-selected border rounded-xl px-3.5 py-2.5 pr-24',
@@ -222,18 +222,18 @@ export function TgPanel({ sessions, onStatusChange }: Props) {
                     'w-1.5 h-1.5 rounded-full',
                     sessionAlive ? 'bg-accent animate-pulse' : 'bg-amber-400/70',
                   )} />
-                  {sessionAlive ? 'живая' : 'не запущена'}
+                  {sessionAlive ? t("живая", "live") : t("не запущена", "not running")}
                 </span>
               )}
             </div>
 
             <div className="text-[11.5px] text-text-ghost">
-              {sessionId ? sessionLabel : 'Будет использована последняя активная сессия'}
+              {sessionId ? sessionLabel : t("Будет использована последняя активная сессия", "The last active session will be used")}
             </div>
 
             {alive.length > 0 && (
               <div className="flex flex-wrap gap-1.5 pt-0.5">
-                <span className="text-[11px] text-text-ghost self-center mr-0.5">Запущены:</span>
+                <span className="text-[11px] text-text-ghost self-center mr-0.5">{t("Запущены:", "Running:")}</span>
                 {alive.map(id => (
                   <button
                     key={id}
@@ -256,7 +256,7 @@ export function TgPanel({ sessions, onStatusChange }: Props) {
         </Section>
 
         {/* Подключение */}
-        <Section label="Подключение" icon={Link21} desc="бот и адресат">
+        <Section label={t("Подключение", "Connection")} icon={Link21} desc={t("бот и адресат", "bot and recipient")}>
           <div className="px-4 py-3.5 space-y-3.5">
             <div className="space-y-1.5">
               <label className="text-[11px] text-text-faint uppercase tracking-wider flex items-center gap-1.5">
@@ -278,7 +278,7 @@ export function TgPanel({ sessions, onStatusChange }: Props) {
                 />
                 <button
                   onClick={() => setShowToken(v => !v)}
-                  title={showToken ? 'Скрыть' : 'Показать'}
+                  title={showToken ? t("Скрыть", "Hide") : t("Показать", "Show")}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-text-ghost hover:text-text-secondary transition-colors"
                 >
                   {showToken
@@ -286,7 +286,7 @@ export function TgPanel({ sessions, onStatusChange }: Props) {
                     : <Eye size={15} variant="Linear" color="currentColor" />}
                 </button>
               </div>
-              <div className="text-[11px] text-text-ghost">Выдаёт @BotFather при создании бота</div>
+              <div className="text-[11px] text-text-ghost">{t("Выдаёт @BotFather при создании бота", "Given by @BotFather when you create a bot")}</div>
             </div>
 
             <div className="space-y-1.5">
@@ -321,7 +321,7 @@ export function TgPanel({ sessions, onStatusChange }: Props) {
                       : 'bg-surface-hover border-border-subtle text-text-ghost cursor-not-allowed active:scale-100',
                   )}
                 >
-                  {detecting ? 'Ищу...' : 'Определить'}
+                  {detecting ? t("Ищу...", "Searching...") : t("Определить", "Detect")}
                 </button>
               </div>
 
@@ -335,18 +335,17 @@ export function TgPanel({ sessions, onStatusChange }: Props) {
               )}
 
               <div className="text-[11px] text-text-ghost">
-                Пусто — бот принимает от кого угодно, но сам написать не может.
-                «Определить» возьмёт ID из последних сообщений боту.
+                {t("Пусто — бот принимает от кого угодно, но сам написать не может. «Определить» возьмёт ID из последних сообщений боту.", "Empty — the bot accepts anyone but can't write first. “Detect” takes the ID from the latest messages to the bot.")}
               </div>
             </div>
           </div>
         </Section>
 
-        <Section label="Настройки" icon={Setting4}>
+        <Section label={t("Настройки", "Settings")} icon={Setting4}>
           <ToggleRow
             icon={Play}
-            label="Автостарт"
-            desc="Запускаться вместе с Vael"
+            label={t("Автостарт", "Autostart")}
+            desc={t("Запускаться вместе с Vael", "Start together with Vael")}
             value={autostart}
             onChange={setAutostart}
           />

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ShieldCross, Global, Refresh2 } from 'iconsax-reactjs'
 import { api, type NetworkInfo } from '../lib/api.js'
 import { loadVpnCheck } from '../hooks/useSettings.js'
+import { t } from '../lib/i18n.js'
 
 /**
  * Предупреждение, что запросы уходят без VPN.
@@ -12,7 +13,7 @@ import { loadVpnCheck } from '../hooks/useSettings.js'
  */
 
 const COUNTRY_NAME: Record<string, string> = {
-  RU: 'России', BY: 'Беларуси', UA: 'Украины', KZ: 'Казахстана',
+  RU: t("России", "Russia"), BY: t("Беларуси", "Belarus"), UA: t("Украины", "Ukraine"), KZ: t("Казахстана", "Kazakhstan"),
 }
 
 function countryLabel(code: string): string {
@@ -57,10 +58,10 @@ export function NetworkBanner() {
 
       <div className="min-w-0 flex-1">
         <div className="text-[13.5px] font-medium text-text-primary">
-          VPN выключен
+          {t("VPN выключен", "VPN is off")}
         </div>
         <div className="text-[12.5px] text-text-muted mt-0.5 leading-snug">
-          Anthropic видит запросы из {countryLabel(info.country)}
+          {t("Anthropic видит запросы из", "Anthropic sees requests from")}{' '}{countryLabel(info.country)}
           {info.ip && <span className="text-text-faint"> · {info.ip}</span>}
         </div>
       </div>
@@ -69,7 +70,7 @@ export function NetworkBanner() {
         <button
           onClick={check}
           disabled={checking}
-          title="Проверить снова"
+          title={t("Проверить снова", "Check again")}
           className="w-8 h-8 rounded-lg grid place-items-center text-text-faint hover:text-text-primary hover:bg-surface-hover transition-colors"
         >
           <Refresh2 size={15} variant="Linear" color="currentColor" className={checking ? 'animate-spin' : ''} />
@@ -78,7 +79,7 @@ export function NetworkBanner() {
           onClick={() => setDismissed(true)}
           className="px-2.5 h-8 rounded-lg text-[12.5px] text-text-faint hover:text-text-secondary hover:bg-surface-hover transition-colors"
         >
-          Скрыть
+          {t("Скрыть", "Hide")}
         </button>
       </div>
     </div>
@@ -102,14 +103,14 @@ export function NetworkStatusRow() {
     <div className="flex items-center gap-2.5">
       <Global size={15} variant="Linear" color="var(--text-faint)" className="shrink-0" />
       <span className="text-[12.5px] text-text-muted tabular-nums">
-        {checking && !info ? 'проверка…'
-          : !info || info.offline ? 'сеть недоступна'
+        {checking && !info ? t("проверка…", "checking…")
+          : !info || info.offline ? t("сеть недоступна", "network unavailable")
           : `${info.country ?? '—'}${info.ip ? ' · ' + info.ip : ''}`}
       </span>
       <button
         onClick={check}
         disabled={checking}
-        title="Проверить снова"
+        title={t("Проверить снова", "Check again")}
         className="w-7 h-7 rounded-lg grid place-items-center text-text-faint hover:text-text-primary hover:bg-surface-hover transition-colors"
       >
         <Refresh2 size={14} variant="Linear" color="currentColor" className={checking ? 'animate-spin' : ''} />

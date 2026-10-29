@@ -5,6 +5,7 @@ import rehypeHighlight from 'rehype-highlight'
 import { ArrowUp, Square, ChevronDown, ChevronRight, ChevronLeft, Check, Plus, Paperclip, Copy, ArrowDown } from 'lucide-react'
 import type { ComposedPart } from '../../shared/chatContent.js'
 import { useChatSession, fmtTokens, type ChatCommand, type ChatProgress } from '../hooks/useChatSession.js'
+import { useDisplayName } from '../hooks/useDisplayName.js'
 import { toolHeading } from '../lib/toolLabel.js'
 import { loadCustomOptions } from '../lib/customOptions.js'
 import { api, type ChatModelInfo } from '../lib/api.js'
@@ -12,6 +13,7 @@ import type { ChatItem, ChatAttachment, TurnStats } from '../types/index'
 import { cn } from '../lib/utils.js'
 import logo from '../assets/logo.svg'
 import logoSmall from '../assets/logo-small.svg'
+import { t, LOCALE } from '../lib/i18n.js'
 
 interface Props {
   sessionId: string | null
@@ -26,40 +28,42 @@ interface Option { value: string; label: string; sub?: string }
 
 // Пока CLI не прислал список моделей (процесс ещё стартует) — показываем алиасы
 const FALLBACK_MODELS: ChatModelInfo[] = [
-  { value: 'fable', displayName: 'Fable', description: 'последняя Fable' },
-  { value: 'opus', displayName: 'Opus', description: 'последняя Opus' },
-  { value: 'sonnet', displayName: 'Sonnet', description: 'последняя Sonnet' },
-  { value: 'haiku', displayName: 'Haiku', description: 'последняя Haiku' },
+  { value: 'fable', displayName: 'Fable', description: t("последняя Fable", "latest Fable") },
+  { value: 'opus', displayName: 'Opus', description: t("последняя Opus", "latest Opus") },
+  { value: 'sonnet', displayName: 'Sonnet', description: t("последняя Sonnet", "latest Sonnet") },
+  { value: 'haiku', displayName: 'Haiku', description: t("последняя Haiku", "latest Haiku") },
 ]
 // Порядок основных — как на claude.ai: от самой сильной к самой быстрой
 const MAIN_ALIASES = ['fable', 'opus', 'sonnet', 'haiku']
 const EFFORT_LABEL: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-High', max: 'Max' }
 const ALL_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const MODES: Option[] = [
-  { value: 'bypassPermissions', label: 'Bypass', sub: 'без проверок' },
-  { value: 'auto', label: 'Auto', sub: 'решает классификатор' },
-  { value: 'acceptEdits', label: 'Accept Edits', sub: 'правки без вопросов' },
-  { value: 'default', label: 'Manual', sub: 'спрашивать — в чате вопросов нет, отклонит' },
-  { value: 'plan', label: 'Plan', sub: 'только планировать' },
+  { value: 'bypassPermissions', label: 'Bypass', sub: t("без проверок", "no checks") },
+  { value: 'auto', label: 'Auto', sub: t("решает классификатор", "a classifier decides") },
+  { value: 'acceptEdits', label: 'Accept Edits', sub: t("правки без вопросов", "edits without asking") },
+  { value: 'default', label: 'Manual', sub: t("спрашивать — в чате вопросов нет, отклонит", "ask — chat has no prompts, will refuse") },
+  { value: 'plan', label: 'Plan', sub: t("только планировать", "plan only") },
 ]
 
 // claude-opus-5-5 → Opus 5.5
 function prettyModel(id: string | null): string {
-  if (!id) return 'Модель'
+  if (!id) return t("Модель", "Model")
   const m = id.replace(/\[.*\]$/, '').match(/^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/)
   if (!m) return id
   return m[1][0].toUpperCase() + m[1].slice(1) + ' ' + m[2] + (m[3] ? '.' + m[3] : '')
 }
 
-function greeting(): string {
+/** Приветствие по времени суток; имя — из профиля claude.ai, без него просто приветствие */
+function greeting(name: string | null): string {
   const h = new Date().getHours()
-  if (h < 5) return 'Не спится, Стралитз?'
-  if (h < 12) return 'Доброе утро, Стралитз'
-  if (h < 18) return 'Добрый день, Стралитз'
-  return 'Добрый вечер, Стралитз'
+  const to = name ? `, ${name}` : ''
+  if (h < 5) return t(`Не спится${to}?`, `Can't sleep${to}?`)
+  if (h < 12) return t(`Доброе утро${to}`, `Good morning${to}`)
+  if (h < 18) return t(`Добрый день${to}`, `Good afternoon${to}`)
+  return t(`Добрый вечер${to}`, `Good evening${to}`)
 }
 
-const fmt = (n: number) => n.toLocaleString('ru-RU')
+const fmt = (n: number) => n.toLocaleString(LOCALE)
 
 /** Искра Claude — в строке «модель работает»: там речь о модели, а не о приложении */
 function ClaudeSpark({ size = 18 }: { size?: number }) {
@@ -186,8 +190,8 @@ function CodeBlock({ children, ...rest }: React.HTMLAttributes<HTMLPreElement>) 
   return (
     <div className="chat-codeblock">
       <div className="chat-codeblock-head">
-        <span>{lang ?? 'код'}</span>
-        <button onClick={copy} title="Копировать">{done ? <Check size={13} /> : <Copy size={13} />}{done ? 'Скопировано' : 'Копировать'}</button>
+        <span>{lang ?? t("код", "code")}</span>
+        <button onClick={copy} title={t("Копировать", "Copy")}>{done ? <Check size={13} /> : <Copy size={13} />}{done ? t("Скопировано", "Copied") : t("Копировать", "Copy")}</button>
       </div>
       <pre ref={ref} {...rest}>{children}</pre>
     </div>
@@ -342,7 +346,7 @@ function ToolBody({ item }: { item: ToolItem }) {
     return (
       <div className="chat-tool-body">
         <pre className="chat-tool-cmd">{String(inp.command ?? '')}</pre>
-        {item.result != null && <pre className={cn(item.isError && 'is-error')}>{clip(item.result) || 'нет вывода'}</pre>}
+        {item.result != null && <pre className={cn(item.isError && 'is-error')}>{clip(item.result) || t("нет вывода", "no output")}</pre>}
       </div>
     )
   }
@@ -360,7 +364,7 @@ function ToolBody({ item }: { item: ToolItem }) {
 function Delta({ d }: { d: { add: number; del: number } | null }) {
   if (!d) return null
   return (
-    <span className="chat-tool-delta" title="Строк добавлено / удалено">
+    <span className="chat-tool-delta" title={t("Строк добавлено / удалено", "Lines added / removed")}>
       {d.add > 0 && <span className="is-add">+{d.add}</span>}
       {d.del > 0 && <span className="is-del">−{d.del}</span>}
     </span>
@@ -379,7 +383,7 @@ const ToolRow = memo(function ToolRow({ item }: { item: ToolItem }) {
         <span className="chat-tool-subject">{shortSubject(subject)}</span>
         <Delta d={delta} />
         <span className={cn('chat-tool-state', item.isError && 'is-error')}>
-          {!item.done ? 'работает…' : item.isError ? 'ошибка' : ''}
+          {!item.done ? t("работает…", "running…") : item.isError ? t("ошибка", "error") : ''}
         </span>
       </button>
       {open && <ToolBody item={item} />}
@@ -409,7 +413,7 @@ const ToolGroup = memo(function ToolGroup({ items }: { items: ToolItem[] }) {
         {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         {title}
         <span className={cn('chat-tool-state', errors > 0 && 'is-error')}>
-          {running ? 'работает…' : errors > 0 ? `ошибок: ${errors}` : ''}
+          {running ? t("работает…", "running…") : errors > 0 ? t(`ошибок: ${errors}`, `errors: ${errors}`) : ''}
           <span className="chat-tool-count">×{items.length}</span>
         </span>
       </button>
@@ -492,14 +496,14 @@ const StepsGroup = memo(function StepsGroup({ row }: { row: Extract<Row, { kind:
   const errors = row.tools.filter(t => t.isError).length
   const n = row.tools.length
   // 1 шаг, 2 шага, 5 шагов
-  const word = n % 10 === 1 && n % 100 !== 11 ? 'шаг' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'шага' : 'шагов'
+  const word = n % 10 === 1 && n % 100 !== 11 ? t("шаг", "step") : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? t("шага", "steps") : t("шагов", "steps")
   return (
     <div className={cn('chat-steps', open && 'is-open')}>
       <button className="chat-steps-head" onClick={() => setOpen(o => !o)}>
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         <span>{n} {word}</span>
         <span className="chat-steps-summary">· {summary}</span>
-        {errors > 0 && <span className="chat-steps-err">· ошибок: {errors}</span>}
+        {errors > 0 && <span className="chat-steps-err">{t("· ошибок:", "· errors:")}{' '}{errors}</span>}
       </button>
       {open && <div className="chat-steps-body">{row.rows.map(r => <RowView key={r.kind === 'item' ? r.item.key : r.key} row={r} />)}</div>}
     </div>
@@ -525,8 +529,8 @@ function UserText({ text, attachments }: { text: string; attachments?: string[] 
 // 14:05, а если не сегодня — 25.10 14:05
 function fmtTime(at: number): string {
   const d = new Date(at)
-  const hm = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
-  return d.toDateString() === new Date().toDateString() ? hm : `${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} ${hm}`
+  const hm = d.toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit' })
+  return d.toDateString() === new Date().toDateString() ? hm : `${d.toLocaleDateString(LOCALE, { day: '2-digit', month: '2-digit' })} ${hm}`
 }
 
 /** Время и «копировать» — проявляются при наведении на сообщение */
@@ -537,8 +541,8 @@ function MsgActions({ text, at }: { text: string; at?: number }) {
   }
   return (
     <div className="chat-msg-actions">
-      <button onClick={copy} title="Копировать">{done ? <Check size={13} /> : <Copy size={13} />}</button>
-      {at && <span title={new Date(at).toLocaleString('ru-RU')}>{fmtTime(at)}</span>}
+      <button onClick={copy} title={t("Копировать", "Copy")}>{done ? <Check size={13} /> : <Copy size={13} />}</button>
+      {at && <span title={new Date(at).toLocaleString(LOCALE)}>{fmtTime(at)}</span>}
     </div>
   )
 }
@@ -555,9 +559,9 @@ function AnswerView({ item }: { item: Extract<ChatItem, { kind: 'text' }> }) {
 
 // Причины отказа CLI — по-человечески
 function compactError(e?: string): string {
-  if (!e) return 'Причина неизвестна'
-  if (/not enough messages/i.test(e)) return 'Мало сообщений для сжатия — сжимается только разговор длиннее нескольких ходов'
-  if (/not logged in|login/i.test(e)) return 'Процесс не авторизован — нужен повторный вход'
+  if (!e) return t("Причина неизвестна", "Unknown reason")
+  if (/not enough messages/i.test(e)) return t("Мало сообщений для сжатия — сжимается только разговор длиннее нескольких ходов", "Not enough messages to compact — only conversations longer than a few turns can be compacted")
+  if (/not logged in|login/i.test(e)) return t("Процесс не авторизован — нужен повторный вход", "The process is not logged in — log in again")
   return e.replace(/^Error during compaction:\s*/i, '')
 }
 
@@ -598,13 +602,13 @@ function CompactCard({ item }: { item: Extract<ChatItem, { kind: 'compact' }> })
         <div className="chat-compact-head">
           <div>
             <div className="chat-compact-title">
-              {item.state === 'running' ? 'Сжимаю контекст' : item.state === 'done' ? 'Контекст сжат' : 'Не получилось сжать'}
+              {item.state === 'running' ? t("Сжимаю контекст", "Compacting context") : item.state === 'done' ? t("Контекст сжат", "Context compacted") : t("Не получилось сжать", "Compaction failed")}
             </div>
             <div className="chat-compact-sub">
-              {item.state === 'running' ? 'модель пересказывает разговор' : item.state === 'done' ? 'дальше модель помнит прошлое только пересказом' : 'контекст остался как был'}
+              {item.state === 'running' ? t("модель пересказывает разговор", "the model is summarizing the conversation") : item.state === 'done' ? t("дальше модель помнит прошлое только пересказом", "from now on the model remembers the past only through the summary") : t("контекст остался как был", "context stayed as it was")}
             </div>
           </div>
-          {item.state === 'running' && item.startedAt && <span className="chat-compact-time">{Math.floor((now - item.startedAt) / 1000)} с</span>}
+          {item.state === 'running' && item.startedAt && <span className="chat-compact-time">{Math.floor((now - item.startedAt) / 1000)} {t("с", "s")}</span>}
           {item.state === 'done' && ratio != null && <span className="chat-compact-save">−{Math.round((1 - ratio) * 100)}%</span>}
         </div>
         {item.state !== 'failed' && (
@@ -617,20 +621,20 @@ function CompactCard({ item }: { item: Extract<ChatItem, { kind: 'compact' }> })
             <div className="chat-compact-scale">
               {item.state === 'done' && before && after != null
                 ? <><span className="from">{fmtTokens(before)}</span><span className="arrow">→</span><span className="to">{fmtTokens(after)}</span></>
-                : <span>{before ? `контекст · ${fmtTokens(before)}` : 'контекст'}</span>}
+                : <span>{before ? t(`контекст · ${fmtTokens(before)}`, `context · ${fmtTokens(before)}`) : t("контекст", "context")}</span>}
             </div>
           </>
         )}
         {item.state === 'done' && item.files && item.files.length > 0 && (
           <div className="chat-compact-files">
-            <div className="chat-compact-files-title">Вернулось в контекст</div>
+            <div className="chat-compact-files-title">{t("Вернулось в контекст", "Came back into context")}</div>
             {item.files.map(f => {
               const cut = f.path.replace(/[\\/]+$/, '').search(/[^\\/]+$/)
               return (
                 <div key={f.path} className={cn('chat-compact-file', f.ref && 'is-ref')} title={f.path}>
                   <span className="name">{f.path.slice(cut)}</span>
                   <span className="dir">{shortDir(f.path.slice(0, cut))}</span>
-                  <span className="meta">{f.ref ? 'только имя' : f.lines != null ? `${f.lines} строк` : 'целиком'}</span>
+                  <span className="meta">{f.ref ? t("только имя", "name only") : f.lines != null ? t(`${f.lines} строк`, `${f.lines} lines`) : t("целиком", "in full")}</span>
                 </div>
               )
             })}
@@ -640,15 +644,15 @@ function CompactCard({ item }: { item: Extract<ChatItem, { kind: 'compact' }> })
           <div className="chat-compact-summary">
             <button className="chat-compact-summary-toggle" onClick={() => setOpenSummary(o => !o)}>
               {openSummary ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-              Пересказ
-              <span className="meta">{fmtTokens(Math.round(item.summary.length / 3.5))} токенов · примерно</span>
+              {t("Пересказ", "Summary")}
+              <span className="meta">{fmtTokens(Math.round(item.summary.length / 3.5))} {t("токенов · примерно", "tokens · approx.")}</span>
             </button>
             {openSummary && <div className="chat-compact-summary-body thin-scroll"><MdBlock text={item.summary} /></div>}
           </div>
         )}
         {item.state === 'failed' && <div className="chat-compact-err">{compactError(item.error)}</div>}
       </div>
-      {item.state === 'done' && <div className="chat-divider">выше — до сжатия</div>}
+      {item.state === 'done' && <div className="chat-divider">{t("выше — до сжатия", "above — before compaction")}</div>}
     </div>
   )
 }
@@ -674,31 +678,31 @@ const ItemView = memo(function ItemView({ item }: { item: ChatItem }) {
 })
 
 const PHASE_LABEL: Record<ChatProgress['phase'], string> = {
-  waiting: 'Жду модель',
-  thinking: 'Думаю',
-  writing: 'Пишу',
-  tool: 'Работаю',
+  waiting: t("Жду модель", "Waiting for the model"),
+  thinking: t("Думаю", "Thinking"),
+  writing: t("Пишу", "Writing"),
+  tool: t("Работаю", "Working"),
 }
 
 // После такой паузы без единого события стоит насторожиться
 const STALL_MS = 30_000
 
 const TIP = {
-  sec: 'Сколько идёт ход',
-  input: 'Новый вход: твоё сообщение, результаты инструментов и запись в кэш. Запись стоит дороже обычного входа',
-  cache: 'Чтение из кэша: каждый запрос хода заново читает весь контекст. Стоит 10% от обычного входа, но на длинной сессии это главная часть расхода лимитов',
-  output: 'Выход: что сгенерировала модель, включая размышления и вызовы инструментов',
+  sec: t("Сколько идёт ход", "How long the turn has been running"),
+  input: t("Новый вход: твоё сообщение, результаты инструментов и запись в кэш. Запись стоит дороже обычного входа", "New input: your message, tool results and cache writes. Writing to cache costs more than normal input"),
+  cache: t("Чтение из кэша: каждый запрос хода заново читает весь контекст. Стоит 10% от обычного входа, но на длинной сессии это главная часть расхода лимитов", "Cache reads: every request in the turn reads the whole context again. It costs 10% of normal input, but on a long session it is the main part of your usage"),
+  output: t("Выход: что сгенерировала модель, включая размышления и вызовы инструментов", "Output: what the model generated, including thinking and tool calls"),
 }
 
 /** ↑ новое (+кэш) · ↓ выход — у каждой части своя подсказка */
 function TokenParts({ input, cache, output, requests }: { input: number; cache: number; output: number; requests: number }) {
-  const per = requests > 1 ? `
+  const per = requests > 1 ? t(`
 
-Запросов за ход: ${requests}, в среднем ${fmtTokens(Math.round(cache / requests))} на запрос` : ''
+Запросов за ход: ${requests}, в среднем ${fmtTokens(Math.round(cache / requests))} на запрос`, `\n\nRequests in this turn: ${requests}, on average ${fmtTokens(Math.round(cache / requests))} per request`) : ''
   return (
     <>
       {input > 0 && <> · <span title={TIP.input}>↑ {fmtTokens(input)}</span></>}
-      {cache > 0 && <> <span className="chat-stat-cache" title={TIP.cache + per}>(+{fmtTokens(cache)} кэш)</span></>}
+      {cache > 0 && <> <span className="chat-stat-cache" title={TIP.cache + per}>(+{fmtTokens(cache)} {t("кэш)", "cache)")}</span></>}
       {' · '}<span title={TIP.output}>↓ {fmtTokens(output)}</span>
     </>
   )
@@ -707,7 +711,7 @@ function TokenParts({ input, cache, output, requests }: { input: number; cache: 
 function TurnStatsLine({ s }: { s: TurnStats }) {
   return (
     <>
-      <span title="Длительность хода">{s.sec.toFixed(1)} с</span>
+      <span title={t("Длительность хода", "Turn duration")}>{s.sec.toFixed(1)} {t("с", "s")}</span>
       <TokenParts input={s.input} cache={s.cache} output={s.output} requests={s.requests} />
     </>
   )
@@ -724,16 +728,16 @@ function ProgressLine({ getProgress }: { getProgress: () => ChatProgress | null 
   const now = Date.now()
   const sec = p ? Math.floor((now - p.startedAt) / 1000) : 0
   const silent = p ? now - p.lastEventAt : 0
-  const label = !p ? 'Жду модель' : p.phase === 'tool' && p.toolName ? `${PHASE_LABEL.tool}: ${p.toolName}` : PHASE_LABEL[p.phase]
+  const label = !p ? t("Жду модель", "Waiting for the model") : p.phase === 'tool' && p.toolName ? `${PHASE_LABEL.tool}: ${p.toolName}` : PHASE_LABEL[p.phase]
   return (
     <div className="chat-progress">
       <ClaudeSpark size={18} />
       <span className="chat-progress-label">{label}</span>
       {p && (
         <span className="chat-progress-stats">
-          <span title={TIP.sec}>{sec} с</span>
+          <span title={TIP.sec}>{sec} {t("с", "s")}</span>
           <TokenParts input={p.inputTokens} cache={p.cacheTokens} output={p.outputTokens} requests={p.requests} />
-          {silent > STALL_MS && <span className="chat-progress-stall"> · тишина {Math.floor(silent / 1000)} с</span>}
+          {silent > STALL_MS && <span className="chat-progress-stall"> {t("· тишина", "· silence")}{' '}{Math.floor(silent / 1000)} {t("с", "s")}</span>}
         </span>
       )}
     </div>
@@ -831,19 +835,19 @@ function ModelMenu({ models, model, effort, onModel, onEffort }: {
             {main.map(row)}
             <div className="chat-menu-sep" />
             <button className="chat-menu-item" onClick={() => setView('effort')}>
-              <span>Мышление</span>
-              <span className="chat-menu-side">{effort ? EFFORT_LABEL[effort] ?? effort : 'по умолчанию'}<ChevronRight size={14} /></span>
+              <span>{t("Мышление", "Thinking")}</span>
+              <span className="chat-menu-side">{effort ? EFFORT_LABEL[effort] ?? effort : t("по умолчанию", "default")}<ChevronRight size={14} /></span>
             </button>
             {more.length > 0 && (
               <button className="chat-menu-item" onClick={() => setView('more')}>
-                <span>Ещё модели</span>
+                <span>{t("Ещё модели", "More models")}</span>
                 <span className="chat-menu-side"><ChevronRight size={14} /></span>
               </button>
             )}
           </>}
           {view !== 'main' && (
             <button className="chat-menu-item chat-menu-back" onClick={() => setView('main')}>
-              <span className="flex items-center gap-1"><ChevronLeft size={14} />{view === 'effort' ? 'Effort' : 'Ещё модели'}</span>
+              <span className="flex items-center gap-1"><ChevronLeft size={14} />{view === 'effort' ? 'Effort' : t("Ещё модели", "More models")}</span>
             </button>
           )}
           {view === 'effort' && efforts.map(e => (
@@ -878,7 +882,7 @@ function readAsBase64(file: Blob): Promise<string> {
  * правилам, что main для перетащенных файлов (electron/services/ChatAttachments.ts)
  */
 async function fileToAttachment(file: File): Promise<ChatAttachment | null> {
-  const name = file.name || 'вставка.png'
+  const name = file.name || t("вставка.png", "paste.png")
   if (IMAGE_TYPES.includes(file.type)) {
     if (file.size > IMAGE_MAX) return null
     return { kind: 'image', name, size: file.size, mediaType: file.type, data: await readAsBase64(file) }
@@ -902,10 +906,10 @@ const ICON_FILE = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" s
 const ICON_LINK = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>'
 
 function attachHint(a: ChatAttachment): string {
-  if (a.kind === 'path') return `${a.path}\nОтправится путём: ${a.reason}`
-  if (a.kind === 'image') return `${a.name}\nКартинка уйдёт в сообщении`
-  if (a.kind === 'pdf') return `${a.name}\nPDF уйдёт в сообщении`
-  return `${a.name}\nТекст файла уйдёт в сообщении`
+  if (a.kind === 'path') return t(`${a.path}\nОтправится путём: ${a.reason}`, `${a.path}\nWill be sent as a path: ${a.reason}`)
+  if (a.kind === 'image') return t(`${a.name}\nКартинка уйдёт в сообщении`, `${a.name}\nThe image goes into the message`)
+  if (a.kind === 'pdf') return t(`${a.name}\nPDF уйдёт в сообщении`, `${a.name}\nThe PDF goes into the message`)
+  return t(`${a.name}\nТекст файла уйдёт в сообщении`, `${a.name}\nThe file text goes into the message`)
 }
 
 function makeChip(id: number, a: ChatAttachment): HTMLSpanElement {
@@ -1138,7 +1142,7 @@ function Composer({ disabled, busy, onSend, onStop, commands, visible, footer }:
           suppressContentEditableWarning
           role="textbox"
           aria-multiline="true"
-          data-placeholder={disabled ? 'Процесс чата не запущен' : 'Чем помочь?'}
+          data-placeholder={disabled ? t("Процесс чата не запущен", "Chat process is not running") : t("Чем помочь?", "How can I help?")}
           onInput={bump}
           onKeyDown={onKey}
           onPaste={onPaste}
@@ -1146,12 +1150,12 @@ function Composer({ disabled, busy, onSend, onStop, commands, visible, footer }:
         />
         <div className="chat-composer-row">
           <div className="flex items-center gap-2 min-w-0">
-            <button className="chat-plus" onMouseDown={e => e.preventDefault()} onClick={pickFiles} disabled={disabled} title="Прикрепить файлы"><Plus size={17} /></button>
+            <button className="chat-plus" onMouseDown={e => e.preventDefault()} onClick={pickFiles} disabled={disabled} title={t("Прикрепить файлы", "Attach files")}><Plus size={17} /></button>
           </div>
           {busy ? (
-            <button className="chat-send" onClick={onStop} title="Остановить"><Square size={13} fill="currentColor" /></button>
+            <button className="chat-send" onClick={onStop} title={t("Остановить", "Stop")}><Square size={13} fill="currentColor" /></button>
           ) : (
-            <button className="chat-send" onClick={submit} disabled={!canSend} title="Отправить"><ArrowUp size={17} /></button>
+            <button className="chat-send" onClick={submit} disabled={!canSend} title={t("Отправить", "Send")}><ArrowUp size={17} /></button>
           )}
         </div>
       </div>
@@ -1162,6 +1166,7 @@ function Composer({ disabled, busy, onSend, onStop, commands, visible, footer }:
 
 export function ChatView({ sessionId, jsonlPath, alive, visible, effort: initialEffort }: Props) {
   const chat = useChatSession(sessionId, jsonlPath, alive)
+  const displayName = useDisplayName()
   const [effort, setEffort] = useState(initialEffort ?? null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
@@ -1225,9 +1230,9 @@ export function ChatView({ sessionId, jsonlPath, alive, visible, effort: initial
       <button
         className="chat-ctx"
         onClick={toggleCtx}
-        title={(chat.contextTokens != null ? `Контекст: ${fmt(chat.contextTokens)}${chat.contextWindow ? ` из ${fmt(chat.contextWindow)}` : ''} токенов\n` : '') + 'input + чтение и запись кэша последнего запроса\nКлик — переключить вид'}
+        title={(chat.contextTokens != null ? t(`Контекст: ${fmt(chat.contextTokens)}${chat.contextWindow ? ` из ${fmt(chat.contextWindow)}` : ''} токенов\n`, `Context: ${fmt(chat.contextTokens)}${chat.contextWindow ? ` of ${fmt(chat.contextWindow)}` : ''} tokens\n`) : '') + t("input + чтение и запись кэша последнего запроса\nКлик — переключить вид", "input + cache reads and writes of the last request\nClick to switch the view")}
       >
-        {chat.contextTokens == null ? 'контекст —' : !ctxFull ? (
+        {chat.contextTokens == null ? t("контекст —", "context —") : !ctxFull ? (
           <>
             <span className="chat-ctx-num">{fmtTokens(chat.contextTokens)}</span>
             {chat.contextWindow ? <span> / {fmtTokens(chat.contextWindow)}</span> : null}
@@ -1236,7 +1241,7 @@ export function ChatView({ sessionId, jsonlPath, alive, visible, effort: initial
         ) : (
           <>
             <span className="chat-ctx-num">{fmt(chat.contextTokens)}</span>
-            {chat.contextWindow ? <span> / {fmt(chat.contextWindow)} · {pct!.toFixed(1)}%</span> : <span> токенов</span>}
+            {chat.contextWindow ? <span> / {fmt(chat.contextWindow)} · {pct!.toFixed(1)}%</span> : <span> {t("токенов", "tokens")}</span>}
             {pct != null && <span className="chat-ctx-bar"><i style={{ width: Math.min(100, pct) + '%' }} /></span>}
           </>
         )}
@@ -1251,7 +1256,7 @@ export function ChatView({ sessionId, jsonlPath, alive, visible, effort: initial
         />
         <Menu
           value={chat.permissionMode}
-          label={MODES.find(m => m.value === chat.permissionMode)?.label ?? 'Режим'}
+          label={MODES.find(m => m.value === chat.permissionMode)?.label ?? t("Режим", "Mode")}
           options={MODES}
           onPick={v => chat.changeMode(v)}
           accent
@@ -1276,7 +1281,7 @@ export function ChatView({ sessionId, jsonlPath, alive, visible, effort: initial
     <div className="chat-root" style={{ display: visible ? 'flex' : 'none' }}>
       {empty ? (
         <div className="chat-empty">
-          <h1 className="chat-greeting"><Spark size={34} />{greeting()}</h1>
+          <h1 className="chat-greeting"><Spark size={34} />{greeting(displayName)}</h1>
           {composer}
         </div>
       ) : (
@@ -1290,7 +1295,7 @@ export function ChatView({ sessionId, jsonlPath, alive, visible, effort: initial
             </div>
           </div>
           <div className="chat-bottom">
-            {away && <button className="chat-to-bottom" onClick={toBottom} title="Вниз"><ArrowDown size={16} /></button>}
+            {away && <button className="chat-to-bottom" onClick={toBottom} title={t("Вниз", "Down")}><ArrowDown size={16} /></button>}
             {chat.status && <div className="chat-status">{chat.status}</div>}
             {composer}
           </div>

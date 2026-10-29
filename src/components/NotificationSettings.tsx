@@ -3,13 +3,14 @@ import { Notification, Setting4, VolumeHigh, Timer1, Gallery, MusicPlay } from '
 import { Section, ToggleRow, Row, SliderRow, CornerPicker, PageHeader } from './SettingsComponents.js'
 import { api } from '../lib/api.js'
 import type { NotificationSettings, NotificationCorner } from '../hooks/useSettings.js'
+import { t } from '../lib/i18n.js'
 
 // Схема угла показывает выбор картинкой — название дублируем в описании строки
 const CORNER_LABEL: Record<NotificationCorner, string> = {
-  'top-left':     'Сверху слева',
-  'top-right':    'Сверху справа',
-  'bottom-left':  'Снизу слева',
-  'bottom-right': 'Снизу справа',
+  'top-left':     t("Сверху слева", "Top left"),
+  'top-right':    t("Сверху справа", "Top right"),
+  'bottom-left':  t("Снизу слева", "Bottom left"),
+  'bottom-right': t("Снизу справа", "Bottom right"),
 }
 
 const CORNERS: { id: NotificationCorner; label: string }[] =
@@ -46,15 +47,15 @@ export function NotificationSettingsSection({ settings, onChange }: Props) {
     <div className="space-y-6">
       <PageHeader
         icon={Notification}
-        title="Уведомления"
-        desc="Карточки поверх других окон, когда Vael свёрнут или сессия работает в фоне"
+        title={t("Уведомления", "Notifications")}
+        desc={t("Карточки поверх других окон, когда Vael свёрнут или сессия работает в фоне", "Cards on top of other windows when Vael is minimized or a session runs in the background")}
       />
 
-      <Section label="Основное" icon={Setting4}>
+      <Section label={t("Основное", "General")} icon={Setting4}>
         <ToggleRow
           icon={Notification}
-          label="Показывать уведомления"
-          desc="Без этого остальные настройки ни на что не влияют"
+          label={t("Показывать уведомления", "Show notifications")}
+          desc={t("Без этого остальные настройки ни на что не влияют", "Without this the other settings have no effect")}
           value={settings.enabled}
           onChange={v => patch({ enabled: v })}
         />
@@ -62,10 +63,10 @@ export function NotificationSettingsSection({ settings, onChange }: Props) {
 
       {settings.enabled && (
         <>
-          <Section label="Вид" icon={Gallery} desc="как выглядит и где появляется">
+          <Section label={t("Вид", "Look")} icon={Gallery} desc={t("как выглядит и где появляется", "how it looks and where it appears")}>
             <Row
               icon={Gallery}
-              label="Позиция"
+              label={t("Позиция", "Position")}
               desc={CORNER_LABEL[settings.corner]}
             >
               <CornerPicker
@@ -76,7 +77,7 @@ export function NotificationSettingsSection({ settings, onChange }: Props) {
             </Row>
 
             <SliderRow
-              label="Ширина карточки"
+              label={t("Ширина карточки", "Card width")}
               value={settings.width}
               min={260}
               max={520}
@@ -86,8 +87,8 @@ export function NotificationSettingsSection({ settings, onChange }: Props) {
             />
 
             <SliderRow
-              label="Масштаб"
-              desc="Размер текста и иконок"
+              label={t("Масштаб", "Scale")}
+              desc={t("Размер текста и иконок", "Text and icon size")}
               value={Math.round(settings.scale * 100)}
               min={80}
               max={150}
@@ -97,8 +98,8 @@ export function NotificationSettingsSection({ settings, onChange }: Props) {
             />
 
             <SliderRow
-              label="Максимум в стопке"
-              desc={`Больше ${screenMax} на этом экране не поместится`}
+              label={t("Максимум в стопке", "Max in a stack")}
+              desc={t(`Больше ${screenMax} на этом экране не поместится`, `No more than ${screenMax} fit on this screen`)}
               value={settings.maxStack}
               min={1}
               max={screenMax}
@@ -107,34 +108,34 @@ export function NotificationSettingsSection({ settings, onChange }: Props) {
             />
           </Section>
 
-          <Section label="Время показа" icon={Timer1} desc="когда карточка исчезает">
+          <Section label={t("Время показа", "Display time")} icon={Timer1} desc={t("когда карточка исчезает", "when the card disappears")}>
             <ToggleRow
               icon={Timer1}
-              label="Держать до ответа"
-              desc="Карточка висит, пока её не закроешь или пока не откроешь Vael"
+              label={t("Держать до ответа", "Keep until answered")}
+              desc={t("Карточка висит, пока её не закроешь или пока не откроешь Vael", "The card stays until you close it or open Vael")}
               value={settings.holdForever}
               onChange={v => patch({ holdForever: v })}
             />
 
             {!settings.holdForever && (
               <SliderRow
-                label="Сколько висит"
-                desc="Наведение курсора ставит таймер на паузу"
+                label={t("Сколько висит", "How long it stays")}
+                desc={t("Наведение курсора ставит таймер на паузу", "Hovering pauses the timer")}
                 value={settings.holdSeconds}
                 min={2}
                 max={30}
                 step={1}
-                unit=" с"
+                unit={t(" с", " s")}
                 onChange={v => patch({ holdSeconds: v })}
               />
             )}
           </Section>
 
-          <Section label="Звук" icon={VolumeHigh}>
+          <Section label={t("Звук", "Sound")} icon={VolumeHigh}>
             <ToggleRow
               icon={VolumeHigh}
-              label="Звук уведомления"
-              desc="Проигрывать при появлении карточки"
+              label={t("Звук уведомления", "Notification sound")}
+              desc={t("Проигрывать при появлении карточки", "Play when a card appears")}
               value={settings.soundEnabled}
               onChange={v => patch({ soundEnabled: v })}
             />
@@ -143,8 +144,8 @@ export function NotificationSettingsSection({ settings, onChange }: Props) {
               <>
                 <Row
                   icon={MusicPlay}
-                  label="Мелодия"
-                  desc="Файлы из папки sounds — добавь свой, появится здесь"
+                  label={t("Мелодия", "Tune")}
+                  desc={t("Файлы из папки sounds — добавь свой, появится здесь", "Files from the sounds folder — add your own and it shows up here")}
                 >
                   <SoundPicker
                     value={settings.soundFile}
@@ -155,7 +156,7 @@ export function NotificationSettingsSection({ settings, onChange }: Props) {
                 </Row>
 
                 <SliderRow
-                  label="Громкость"
+                  label={t("Громкость", "Volume")}
                   value={Math.round(settings.soundVolume * 100)}
                   min={0}
                   max={100}
@@ -171,16 +172,16 @@ export function NotificationSettingsSection({ settings, onChange }: Props) {
               только отсюда. На широком блок скрыт: там для этого есть
               «Типы уведомлений» с вызовом каждого по отдельности */}
           <div className="xl:hidden">
-            <Section label="Проверка" icon={Notification}>
+            <Section label={t("Проверка", "Test")} icon={Notification}>
               <Row
-                label="Предпросмотр"
-                desc="Покажет по карточке каждого типа — с текущими настройками"
+                label={t("Предпросмотр", "Preview")}
+                desc={t("Покажет по карточке каждого типа — с текущими настройками", "Shows a card of each type — with the current settings")}
               >
                 <button
                   onClick={() => api.previewNotifications()}
                   className="px-3.5 py-2 rounded-xl bg-accent-wash border border-accent/25 text-[13px] font-medium text-accent hover:bg-accent/15 transition-colors"
                 >
-                  Показать
+                  {t("Показать", "Show")}
                 </button>
               </Row>
             </Section>
@@ -203,7 +204,7 @@ function SoundPicker({ value, sounds, volume, onChange }: {
   onChange: (v: string) => void
 }) {
   if (sounds.length === 0) {
-    return <span className="text-[12px] text-text-ghost">папка sounds пуста</span>
+    return <span className="text-[12px] text-text-ghost">{t("папка sounds пуста", "sounds folder is empty")}</span>
   }
 
   // Клик по уже выбранной мелодии — проигрываем её, чтобы можно было
@@ -222,7 +223,7 @@ function SoundPicker({ value, sounds, volume, onChange }: {
         <button
           key={f}
           onClick={() => { onChange(f); preview(f) }}
-          title="Выбрать и прослушать"
+          title={t("Выбрать и прослушать", "Pick and listen")}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[12.5px] font-medium transition-colors ${
             value === f
               ? 'border-accent/40 bg-accent-wash text-accent'

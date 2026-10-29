@@ -7,6 +7,7 @@ import { api, type SessionInfo } from '../lib/api.js'
 import { loadCliModels, modelDisplayName } from '../lib/cliModels.js'
 import { MdBlock } from './ChatView.js'
 import { cn } from '../lib/utils.js'
+import { t, LOCALE } from '../lib/i18n.js'
 
 const PERM_LABEL: Record<string, string> = {
   bypassPermissions: 'Bypass',
@@ -119,41 +120,41 @@ function relTime(ms?: number): string {
   if (!ms) return ''
   const diff = Date.now() - ms
   const m = Math.floor(diff / 60000)
-  if (m < 1) return 'только что'
-  if (m < 60) return `${m} мин назад`
+  if (m < 1) return t("только что", "just now")
+  if (m < 60) return t(`${m} мин назад`, `${m} min ago`)
   const h = Math.floor(m / 60)
-  if (h < 24) return `${h} ч назад`
+  if (h < 24) return t(`${h} ч назад`, `${h} h ago`)
   const d = Math.floor(h / 24)
-  if (d === 1) return 'вчера'
-  if (d < 7) return `${d} дн назад`
-  return new Date(ms).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
+  if (d === 1) return t("вчера", "yesterday")
+  if (d < 7) return t(`${d} дн назад`, `${d} d ago`)
+  return new Date(ms).toLocaleDateString(LOCALE, { day: 'numeric', month: 'short' })
 }
 
 // Пока CLI ни разу не прислал список — только алиасы, они всегда указывают на свежие версии
 const FALLBACK_MODELS: Option[] = [
-  { value: 'opus',   label: 'Opus',   sub: 'последняя Opus' },
-  { value: 'sonnet', label: 'Sonnet', sub: 'последняя Sonnet' },
-  { value: 'haiku',  label: 'Haiku',  sub: 'последняя Haiku' },
+  { value: 'opus',   label: 'Opus',   sub: t("последняя Opus", "latest Opus") },
+  { value: 'sonnet', label: 'Sonnet', sub: t("последняя Sonnet", "latest Sonnet") },
+  { value: 'haiku',  label: 'Haiku',  sub: t("последняя Haiku", "latest Haiku") },
 ]
 
 const EFFORTS: Option[] = [
-  { value: 'low',    label: 'Low',    sub: 'быстро, экономно' },
-  { value: 'medium', label: 'Medium', sub: 'баланс' },
-  { value: 'high',   label: 'High',   sub: 'глубже' },
-  { value: 'xhigh',  label: 'X-High', sub: 'очень глубоко' },
-  { value: 'max',    label: 'Max',    sub: 'максимум' },
+  { value: 'low',    label: 'Low',    sub: t("быстро, экономно", "fast, economical") },
+  { value: 'medium', label: 'Medium', sub: t("баланс", "balanced") },
+  { value: 'high',   label: 'High',   sub: t("глубже", "deeper") },
+  { value: 'xhigh',  label: 'X-High', sub: t("очень глубоко", "very deep") },
+  { value: 'max',    label: 'Max',    sub: t("максимум", "maximum") },
 ]
 
 const PERMISSIONS: Option[] = [
-  { value: 'bypassPermissions', label: 'Bypass',       sub: 'пропустить все проверки' },
-  { value: 'auto',              label: 'Auto',         sub: 'автоматически' },
-  { value: 'acceptEdits',       label: 'Accept Edits', sub: 'принимать правки' },
-  { value: 'default',           label: 'Default',      sub: 'стандартный' },
-  { value: 'plan',              label: 'Plan',         sub: 'только планировать' },
+  { value: 'bypassPermissions', label: 'Bypass',       sub: t("пропустить все проверки", "skip all checks") },
+  { value: 'auto',              label: 'Auto',         sub: t("автоматически", "automatic") },
+  { value: 'acceptEdits',       label: 'Accept Edits', sub: t("принимать правки", "accept edits") },
+  { value: 'default',           label: 'Default',      sub: t("стандартный", "default") },
+  { value: 'plan',              label: 'Plan',         sub: t("только планировать", "plan only") },
 ]
 
 const PROMPTS: Option[] = [
-  { value: '', label: 'Нет', sub: 'без промпта' },
+  { value: '', label: t("Нет", "None"), sub: t("без промпта", "no prompt") },
 ]
 
 function cliModelOptions(): Option[] {
@@ -257,45 +258,45 @@ export function SessionWelcome({ sessionTitle, isNew = false, jsonlPath, message
         {isNew ? (
           <div className="flex flex-col items-center text-center gap-2">
             <img src={logo} alt="" className="w-14 h-14 select-none" draggable={false} />
-            <div className="text-[22px] font-medium tracking-tight text-text-primary mt-2">Что делаем?</div>
-            <div className="text-[13.5px] text-text-muted">Настрой сессию и запусти — или просто начни пустую</div>
+            <div className="text-[22px] font-medium tracking-tight text-text-primary mt-2">{t("Что делаем?", "What are we doing?")}</div>
+            <div className="text-[13.5px] text-text-muted">{t("Настрой сессию и запусти — или просто начни пустую", "Set up the session and start — or just start an empty one")}</div>
           </div>
         ) : (
           <div className="flex flex-col gap-1.5">
             <div className="text-[22px] font-medium tracking-tight leading-snug text-text-primary line-clamp-2">
-              {sessionTitle || 'Без названия'}
+              {sessionTitle || t("Без названия", "Untitled")}
             </div>
             <div className="text-[13px] text-text-muted">
-              {[relTime(lastModified), messageCount ? `${messageCount} сообщений` : null, ...params].filter(Boolean).join(' · ')}
+              {[relTime(lastModified), messageCount ? t(`${messageCount} сообщений`, `${messageCount} messages`) : null, ...params].filter(Boolean).join(' · ')}
             </div>
           </div>
         )}
 
         {isNew ? (
           <div className="grid grid-cols-2 gap-3">
-            <Dropdown label="Модель"     value={config.model}          options={allModels}      onChange={v => onChange({ ...config, model: v })} display={modelDisplayName(config.model) ?? undefined} />
-            <Dropdown label="Мышление"   value={config.effort}         options={allEfforts}     onChange={v => onChange({ ...config, effort: v })} />
-            <Dropdown label="Разрешения" value={config.permissionMode} options={allPermissions} onChange={v => onChange({ ...config, permissionMode: v })} />
-            <Dropdown label="Промпт"     value={config.prompt}         options={PROMPTS}        onChange={v => onChange({ ...config, prompt: v })} />
+            <Dropdown label={t("Модель", "Model")}     value={config.model}          options={allModels}      onChange={v => onChange({ ...config, model: v })} display={modelDisplayName(config.model) ?? undefined} />
+            <Dropdown label={t("Мышление", "Thinking")}   value={config.effort}         options={allEfforts}     onChange={v => onChange({ ...config, effort: v })} />
+            <Dropdown label={t("Разрешения", "Permissions")} value={config.permissionMode} options={allPermissions} onChange={v => onChange({ ...config, permissionMode: v })} />
+            <Dropdown label={t("Промпт", "Prompt")}     value={config.prompt}         options={PROMPTS}        onChange={v => onChange({ ...config, prompt: v })} />
           </div>
         ) : info?.lastText ? (
           // Последний ответ — как в самой ленте, только приглушённо и с фейдом
           <div className="welcome-last">
-            <div className="text-[12px] text-text-muted mb-2">Последний ответ</div>
+            <div className="text-[12px] text-text-muted mb-2">{t("Последний ответ", "Last answer")}</div>
             <div className="chat-md welcome-last-text"><MdBlock text={info.lastText.slice(0, 1500)} /></div>
           </div>
         ) : null}
 
         <button ref={btnRef} onClick={start} className="welcome-start">
           <Play size={12} fill="currentColor" />
-          {isNew ? (clicked ? 'Запуск…' : 'Начать') : 'Продолжить'}
+          {isNew ? (clicked ? t("Запуск…", "Starting…") : t("Начать", "Start")) : t("Продолжить", "Continue")}
           <kbd>Enter</kbd>
         </button>
 
         {isNew && (onImport || onSettings) && (
           <div className="flex justify-center gap-4 -mt-1 text-[12.5px]">
-            {onImport && <button onClick={onImport} className="text-text-muted hover:text-text-secondary transition-colors">Импортировать сессию</button>}
-            {onSettings && <button onClick={onSettings} className="flex items-center gap-1 text-text-muted hover:text-text-secondary transition-colors"><Plus size={12} />Свои варианты</button>}
+            {onImport && <button onClick={onImport} className="text-text-muted hover:text-text-secondary transition-colors">{t("Импортировать сессию", "Import session")}</button>}
+            {onSettings && <button onClick={onSettings} className="flex items-center gap-1 text-text-muted hover:text-text-secondary transition-colors"><Plus size={12} />{t("Свои варианты", "Custom options")}</button>}
           </div>
         )}
       </motion.div>

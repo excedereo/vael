@@ -6,6 +6,7 @@ import { cleanAccountName } from '../lib/accountName.js'
 import { cn } from '../lib/utils.js'
 import { useAccountsTab } from '../lib/sectionTabs.js'
 import { useAccountLimits, type LimitWindowView } from '../hooks/useAccountLimits.js'
+import { t, LOCALE } from '../lib/i18n.js'
 
 interface Props {
   accounts: Account[]
@@ -21,12 +22,12 @@ type ConfirmAction = { type: 'delete' | 'logout'; id: string }
 /** «ещё 27 дней» / «меньше часа» — срок жизни авторизации */
 function relExpiry(ts: number): string {
   const left = ts - Date.now()
-  if (left <= 0) return 'истёк'
+  if (left <= 0) return t("истёк", "expired")
   const days = Math.floor(left / 86400000)
-  if (days >= 1) return `ещё ${days} ${plural(days, 'день', 'дня', 'дней')}`
+  if (days >= 1) return t(`ещё ${days} ${plural(days, t("день", "day"), t("дня", "days"), t("дней", "days"))}`, `${days} more ${days === 1 ? 'day' : 'days'}`)
   const hours = Math.floor(left / 3600000)
-  if (hours >= 1) return `ещё ${hours} ${plural(hours, 'час', 'часа', 'часов')}`
-  return 'меньше часа'
+  if (hours >= 1) return t(`ещё ${hours} ${plural(hours, 'час', 'часа', 'часов')}`, `${hours} more ${hours === 1 ? 'hour' : 'hours'}`)
+  return t("меньше часа", "less than an hour")
 }
 
 function plural(n: number, one: string, few: string, many: string): string {
@@ -84,7 +85,7 @@ const C_OUTPUT = 'var(--accent-hi)'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const dayKey = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-const MONTHS = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
+const MONTHS = [t("янв", "Jan"), t("фев", "Feb"), t("мар", "Mar"), t("апр", "Apr"), t("май", "May"), t("июн", "Jun"), t("июл", "Jul"), t("авг", "Aug"), t("сен", "Sep"), t("окт", "Oct"), t("ноя", "Nov"), t("дек", "Dec")]
 const fmtDay = (key: string) => { const [, m, d] = key.split('-').map(Number); return `${d} ${MONTHS[m - 1]}` }
 
 /** Последние n дней, от старого к сегодняшнему */
@@ -155,9 +156,9 @@ function DailyChart({ stats, days }: { stats: StatsCache; days: string[] }) {
           <div className="st-tip" style={{ left: `${((hover + 0.5) / days.length) * 100}%` }}>
             <b>{fmtDay(days[hover])}</b>
             {h.cache + h.input + h.output > 0
-              ? <div>кэш {fmtNumber(h.cache)} · вход {fmtNumber(h.input)} · выход {fmtNumber(h.output)}</div>
-              : <div>без активности</div>}
-            {ha && <div>{ha.messageCount} {plural(ha.messageCount, 'сообщение', 'сообщения', 'сообщений')} · {ha.sessionCount} {plural(ha.sessionCount, 'сессия', 'сессии', 'сессий')}</div>}
+              ? <div>{t("кэш", "cache")}{' '}{fmtNumber(h.cache)} {t("· вход", "· input")}{' '}{fmtNumber(h.input)} {t("· выход", "· output")}{' '}{fmtNumber(h.output)}</div>
+              : <div>{t("без активности", "no activity")}</div>}
+            {ha && <div>{ha.messageCount} {plural(ha.messageCount, t("сообщение", "message"), t("сообщения", "messages"), t("сообщений", "messages"))} · {ha.sessionCount} {plural(ha.sessionCount, t("сессия", "session"), t("сессии", "sessions"), t("сессий", "sessions"))}</div>}
           </div>
         )}
       </div>
@@ -179,7 +180,7 @@ function HoursChart({ hours, max }: { hours: number[]; max: number }) {
       {hover != null && (
         <div className="st-tip" style={{ left: `${((hover + 0.5) / 24) * 100}%` }}>
           <b>{pad(hover)}:00 — {pad((hover + 1) % 24)}:00</b>
-          <div>{hours[hover]} {plural(hours[hover], 'сообщение', 'сообщения', 'сообщений')}</div>
+          <div>{hours[hover]} {plural(hours[hover], t("сообщение", "message"), t("сообщения", "messages"), t("сообщений", "messages"))}</div>
         </div>
       )}
     </div>
@@ -215,7 +216,7 @@ function Heatmap({ activity }: { activity: { date: string; messageCount: number 
         {cells.map(c => (
           <i
             key={c.key}
-            title={c.future ? undefined : `${fmtDay(c.key)}: ${c.count} ${plural(c.count, 'сообщение', 'сообщения', 'сообщений')}`}
+            title={c.future ? undefined : t(`${fmtDay(c.key)}: ${c.count} ${plural(c.count, t("сообщение", "message"), t("сообщения", "messages"), t("сообщений", "messages"))}`, `${fmtDay(c.key)}: ${c.count} ${c.count === 1 ? 'message' : 'messages'}`)}
             style={c.future ? { background: 'transparent' } : c.count ? { background: `color-mix(in srgb, var(--accent) ${Math.round((0.18 + (c.count / max) * 0.82) * 100)}%, transparent)` } : undefined}
           />
         ))}
@@ -310,28 +311,28 @@ function StatsTab({ configDir }: { configDir?: string }) {
 
   if (!stats || !view) return (
     <div className="flex items-center justify-center h-48 text-text-faint text-[13px]">
-      Загрузка...
+      {t("Загрузка...", "Loading...")}
     </div>
   )
 
   const total = view.cache + view.input + view.output
   const maxHour = Math.max(1, ...view.hours)
-  const periodLabel = filter === 'all' ? 'за всё время' : filter === '30d' ? 'за 30 дней' : 'за 7 дней'
+  const periodLabel = filter === 'all' ? t("за всё время", "all time") : filter === '30d' ? t("за 30 дней", "last 30 days") : t("за 7 дней", "last 7 days")
 
   return (
     <div className="st-page">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="st-h2">Статистика</h2>
-          <p className="st-desc">По логам сессий активного аккаунта</p>
+          <h2 className="st-h2">{t("Статистика", "Statistics")}</h2>
+          <p className="st-desc">{t("По логам сессий активного аккаунта", "From the active account's session logs")}</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="st-seg">
-            {([['all', 'Всё время'], ['30d', '30 дней'], ['7d', '7 дней']] as const).map(([id, label]) => (
+            {([['all', t("Всё время", "All time")], ['30d', t("30 дней", "30 days")], ['7d', t("7 дней", "7 days")]] as const).map(([id, label]) => (
               <button key={id} onClick={() => setFilter(id)} className={cn(filter === id && 'is-on')}>{label}</button>
             ))}
           </div>
-          <button onClick={loadStats} disabled={refreshing} className="st-icon-btn" title="Пересчитать">
+          <button onClick={loadStats} disabled={refreshing} className="st-icon-btn" title={t("Пересчитать", "Recount")}>
             <RotateCcw size={15} className={refreshing ? 'animate-spin' : ''} />
           </button>
         </div>
@@ -340,8 +341,8 @@ function StatsTab({ configDir }: { configDir?: string }) {
       {/* Главная цифра и из чего она сложилась */}
       <div className="st-card st-hero">
         <div>
-          <div className="st-lbl mb-2">Токенов {periodLabel}</div>
-          <div className="st-big" title={`${total.toLocaleString('ru-RU')} токенов`}>{fmtNumber(total)}</div>
+          <div className="st-lbl mb-2">{t("Токенов", "Tokens")}{' '}{periodLabel}</div>
+          <div className="st-big" title={t(`${total.toLocaleString(LOCALE)} токенов`, `${total.toLocaleString('en-US')} tokens`)}>{fmtNumber(total)}</div>
         </div>
         <div className="flex-1 min-w-0">
           <div className="st-split">
@@ -350,54 +351,54 @@ function StatsTab({ configDir }: { configDir?: string }) {
             <i style={{ flex: view.output, background: C_OUTPUT }} />
           </div>
           <div className="st-legend">
-            <span title="Каждый запрос заново читает весь контекст из кэша. Стоит 10% обычного входа, но на длинных сессиях это основная часть расхода"><i style={{ background: C_CACHE }} />Чтение кэша <b>{fmtNumber(view.cache)}</b></span>
-            <span title="Сообщения, результаты инструментов и запись в кэш"><i style={{ background: C_INPUT }} />Новый вход <b>{fmtNumber(view.input)}</b></span>
-            <span title="Что сгенерировала модель, включая размышления"><i style={{ background: C_OUTPUT }} />Выход <b>{fmtNumber(view.output)}</b></span>
+            <span title={t("Каждый запрос заново читает весь контекст из кэша. Стоит 10% обычного входа, но на длинных сессиях это основная часть расхода", "Every request reads the whole context from cache again. It costs 10% of normal input, but on long sessions it is most of the usage")}><i style={{ background: C_CACHE }} />{t("Чтение кэша", "Cache reads")}{' '}<b>{fmtNumber(view.cache)}</b></span>
+            <span title={t("Сообщения, результаты инструментов и запись в кэш", "Messages, tool results and cache writes")}><i style={{ background: C_INPUT }} />{t("Новый вход", "New input")}{' '}<b>{fmtNumber(view.input)}</b></span>
+            <span title={t("Что сгенерировала модель, включая размышления", "What the model generated, including thinking")}><i style={{ background: C_OUTPUT }} />{t("Выход", "Output")}{' '}<b>{fmtNumber(view.output)}</b></span>
           </div>
         </div>
       </div>
 
       <div className="st-kpis">
         <div className="st-kpi">
-          <div className="k"><MessageSquare size={13} />Сообщения</div>
+          <div className="k"><MessageSquare size={13} />{t("Сообщения", "Messages")}</div>
           <div className="v">{fmtNumber(view.totalMessages)}</div>
-          <div className="s">≈ {fmtNumber(Math.round(view.totalMessages / view.daysCount))} в день</div>
+          <div className="s">≈ {fmtNumber(Math.round(view.totalMessages / view.daysCount))} {t("в день", "per day")}</div>
         </div>
         <div className="st-kpi">
-          <div className="k"><MessagesSquare size={13} />Сессии</div>
+          <div className="k"><MessagesSquare size={13} />{t("Сессии", "Sessions")}</div>
           <div className="v">{view.totalSessions}</div>
           <div className="s">{periodLabel}</div>
         </div>
         <div className="st-kpi">
-          <div className="k"><Flame size={13} />Серия</div>
-          <div className="v">{view.streak.current} {plural(view.streak.current, 'день', 'дня', 'дней')}</div>
-          <div className="s">рекорд — {view.streak.best}</div>
+          <div className="k"><Flame size={13} />{t("Серия", "Streak")}</div>
+          <div className="v">{view.streak.current} {plural(view.streak.current, t("день", "day"), t("дня", "days"), t("дней", "days"))}</div>
+          <div className="s">{t("рекорд —", "record —")}{' '}{view.streak.best}</div>
         </div>
         <div className="st-kpi">
-          <div className="k"><Wrench size={13} />Вызовы инструментов</div>
+          <div className="k"><Wrench size={13} />{t("Вызовы инструментов", "Tool calls")}</div>
           <div className="v">{fmtNumber(view.toolCalls)}</div>
-          <div className="s">{view.totalMessages ? `${(view.toolCalls / view.totalMessages * 100).toFixed(0)}% от сообщений` : '—'}</div>
+          <div className="s">{view.totalMessages ? t(`${(view.toolCalls / view.totalMessages * 100).toFixed(0)}% от сообщений`, `${(view.toolCalls / view.totalMessages * 100).toFixed(0)}% of messages`) : '—'}</div>
         </div>
       </div>
 
       <div className="st-card">
         <div className="flex items-baseline justify-between mb-1">
-          <span className="st-title">По дням</span>
-          <span className="st-lbl">{filter === 'all' ? 'последние 90 дней · ' : ''}наведи на столбик</span>
+          <span className="st-title">{t("По дням", "By day")}</span>
+          <span className="st-lbl">{filter === 'all' ? t("последние 90 дней · ", "last 90 days · ") : ''}{t("наведи на столбик", "hover a bar")}</span>
         </div>
         <DailyChart stats={stats} days={view.chartDays} />
       </div>
 
       <div className="st-two">
         <div className="st-card flex flex-col">
-          <div className="st-title mb-3">Когда ты работаешь</div>
+          <div className="st-title mb-3">{t("Когда ты работаешь", "When you work")}</div>
           <HoursChart hours={view.hours} max={maxHour} />
           <div className="st-axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
-          <div className="st-lbl mt-2.5">Пик — с {pad(view.peakStart)} до {pad((view.peakStart + 4) % 24)}, за всё время</div>
+          <div className="st-lbl mt-2.5">{t("Пик — с", "Peak — from")}{' '}{pad(view.peakStart)} {t("до", "to")}{' '}{pad((view.peakStart + 4) % 24)}{t(", за всё время", ", all time")}</div>
         </div>
         <div className="st-card">
-          <div className="st-title mb-1">Модели</div>
-          {view.models.length === 0 && <div className="st-lbl py-4 text-center">Нет данных за период</div>}
+          <div className="st-title mb-1">{t("Модели", "Models")}</div>
+          {view.models.length === 0 && <div className="st-lbl py-4 text-center">{t("Нет данных за период", "No data for this period")}</div>}
           {view.models.map((m, i) => {
             const pct = view.modelsTotal ? (m.total / view.modelsTotal) * 100 : 0
             return (
@@ -412,8 +413,8 @@ function StatsTab({ configDir }: { configDir?: string }) {
 
       <div className="st-two">
         <div className="st-card">
-          <div className="st-title mb-1">Самые затратные сессии</div>
-          {view.topSessions.length === 0 && <div className="st-lbl py-4 text-center">Нет данных за период</div>}
+          <div className="st-title mb-1">{t("Самые затратные сессии", "Most expensive sessions")}</div>
+          {view.topSessions.length === 0 && <div className="st-lbl py-4 text-center">{t("Нет данных за период", "No data for this period")}</div>}
           {view.topSessions.map(([id, t], i) => (
             <div key={id} className="st-top">
               <span className="rk">{i + 1}</span>
@@ -423,12 +424,12 @@ function StatsTab({ configDir }: { configDir?: string }) {
           ))}
         </div>
         <div className="st-card">
-          <div className="st-title mb-2.5">Активность за полгода</div>
+          <div className="st-title mb-2.5">{t("Активность за полгода", "Activity over half a year")}</div>
           <Heatmap activity={stats.dailyActivity} />
           <div className="st-streak">
-            <span>Активных дней <b>{view.activeDays}</b></span>
-            <span>Серия <b>{view.streak.current}</b></span>
-            <span>Рекорд <b>{view.streak.best}</b></span>
+            <span>{t("Активных дней", "Active days")}{' '}<b>{view.activeDays}</b></span>
+            <span>{t("Серия", "Streak")}{' '}<b>{view.streak.current}</b></span>
+            <span>{t("Рекорд", "Record")}{' '}<b>{view.streak.best}</b></span>
           </div>
         </div>
       </div>
@@ -439,8 +440,8 @@ function StatsTab({ configDir }: { configDir?: string }) {
 // ── Карточка аккаунта ─────────────────────────────────────────
 function LimitTile({ label, w }: { label: string; w: LimitWindowView | null | undefined }) {
   const resetText = w && !w.passed
-    ? 'сброс ' + new Date(w.resetsAt).toLocaleString('ru-RU', new Date(w.resetsAt).toDateString() === new Date().toDateString() ? { hour: '2-digit', minute: '2-digit' } : { weekday: 'short', hour: '2-digit', minute: '2-digit' })
-    : w ? 'окно сброшено' : 'нет данных'
+    ? t("сброс ", "resets ") + new Date(w.resetsAt).toLocaleString(LOCALE, new Date(w.resetsAt).toDateString() === new Date().toDateString() ? { hour: '2-digit', minute: '2-digit' } : { weekday: 'short', hour: '2-digit', minute: '2-digit' })
+    : w ? t("окно сброшено", "window reset") : t("нет данных", "no data")
   const pct = w ? (w.passed ? 0 : w.pct) : 0
   const color = pct >= 90 ? 'var(--color-error, #e0705c)' : pct >= 75 ? 'var(--color-warning, #d9a441)' : 'var(--accent)'
   return (
@@ -468,9 +469,9 @@ function AccountCard({ acc, isActive, info, isLoggedIn, expired, isRunning, canD
   const limits = useAccountLimits(isLoggedIn && !expired ? acc.configDir : null)
   const ok = isLoggedIn && !expired
   const sub = ok
-    ? [acc.email, info?.refreshExpiresAt ? `вход действует ${relExpiry(info.refreshExpiresAt)}` : null].filter(Boolean).join(' · ')
+    ? [acc.email, info?.refreshExpiresAt ? t(`вход действует ${relExpiry(info.refreshExpiresAt)}`, `login valid ${relExpiry(info.refreshExpiresAt)}`) : null].filter(Boolean).join(' · ')
     : null
-  const busy = isRunning ? 'Дождись завершения всех сессий' : undefined
+  const busy = isRunning ? t("Дождись завершения всех сессий", "Wait until all sessions finish") : undefined
   return (
     <div className={cn('acc-card', isActive && 'is-active')}>
       <div className="acc-head">
@@ -481,28 +482,28 @@ function AccountCard({ acc, isActive, info, isLoggedIn, expired, isRunning, canD
         <div className="min-w-0 flex-1">
           <div className="acc-name">
             <span className="truncate">{acc.name}</span>
-            {isActive && <span className="acc-badge is-acc">активный</span>}
+            {isActive && <span className="acc-badge is-acc">{t("активный", "active")}</span>}
             {info?.subscriptionType && <span className="acc-badge">{info.subscriptionType[0].toUpperCase() + info.subscriptionType.slice(1)}</span>}
           </div>
-          <div className="acc-sub">{sub || (expired ? 'Вход истёк' : 'Не авторизован')}</div>
+          <div className="acc-sub">{sub || (expired ? t("Вход истёк", "Login expired") : t("Не авторизован", "Not logged in"))}</div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {!isActive && ok && (
-            <button onClick={() => !isRunning && onSwitch()} disabled={isRunning} title={busy ?? 'Переключиться'} className="acc-btn">
-              Переключиться<ArrowRight size={14} />
+            <button onClick={() => !isRunning && onSwitch()} disabled={isRunning} title={busy ?? t("Переключиться", "Switch")} className="acc-btn">
+              {t("Переключиться", "Switch")}<ArrowRight size={14} />
             </button>
           )}
           {!ok ? (
-            <button onClick={onLogin} className="acc-btn is-primary"><LogIn size={14} />Войти</button>
+            <button onClick={onLogin} className="acc-btn is-primary"><LogIn size={14} />{t("Войти", "Log in")}</button>
           ) : (
-            <button onClick={() => !isRunning && onLogout()} disabled={isRunning} title={busy ?? 'Выйти'} className="acc-icon hover:!text-amber-400">
+            <button onClick={() => !isRunning && onLogout()} disabled={isRunning} title={busy ?? t("Выйти", "Log out")} className="acc-icon hover:!text-amber-400">
               <LogOut size={15} />
             </button>
           )}
           <button
             onClick={() => !isRunning && canDelete && onDelete()}
             disabled={!canDelete || isRunning}
-            title={busy ?? 'Удалить аккаунт (сессии останутся)'}
+            title={busy ?? t("Удалить аккаунт (сессии останутся)", "Delete account (sessions stay)")}
             className="acc-icon hover:!text-[var(--color-error)]"
           >
             <Trash2 size={15} />
@@ -511,13 +512,13 @@ function AccountCard({ acc, isActive, info, isLoggedIn, expired, isRunning, canD
       </div>
       {ok ? (
         <div className="acc-tiles">
-          <LimitTile label="5 часов" w={limits?.fiveHour} />
-          <LimitTile label="Неделя" w={limits?.weekly} />
+          <LimitTile label={t("5 часов", "5 hours")} w={limits?.fiveHour} />
+          <LimitTile label={t("Неделя", "Week")} w={limits?.weekly} />
         </div>
       ) : (
         <div className="acc-warn">
           <CircleAlert size={14} className="shrink-0" />
-          {expired ? 'Вход истёк — сессии этого аккаунта видны, но запустить их нельзя, пока не войдёшь заново' : 'Не авторизован — сессии этого аккаунта видны, но запустить их нельзя'}
+          {expired ? t("Вход истёк — сессии этого аккаунта видны, но запустить их нельзя, пока не войдёшь заново", "Login expired — this account's sessions are visible but can't be started until you log in again") : t("Не авторизован — сессии этого аккаунта видны, но запустить их нельзя", "Not logged in — this account's sessions are visible but can't be started")}
         </div>
       )}
     </div>
@@ -626,12 +627,12 @@ export function AccountsPage({ accounts, activeAccountId, isRunning, onAccountsC
           <div className="bg-bg-elevated border border-border-default rounded-2xl shadow-2xl p-5 w-80 flex flex-col gap-4">
             <div className="flex flex-col gap-1">
               <span className="text-[15px] font-medium text-text-primary">
-                {confirm.type === 'delete' ? 'Удалить аккаунт?' : 'Выйти из аккаунта?'}
+                {confirm.type === 'delete' ? t("Удалить аккаунт?", "Delete account?") : t("Выйти из аккаунта?", "Log out of account?")}
               </span>
               <span className="text-[13.5px] text-text-muted">
                 {confirm.type === 'delete'
-                  ? <>Аккаунт <span className="text-text-secondary font-medium">{confirmAcc.name}</span> и его авторизация будут удалены. <span className="text-text-secondary font-medium">Сессии останутся</span> — они хранятся отдельно.{accounts.length === 1 && <><br /><br /><span className="text-text-secondary font-medium">Это последний аккаунт</span> — Vael вернётся на стартовый экран, где можно добавить новый.</>}</>
-                  : <>Авторизация <span className="text-text-secondary font-medium">{confirmAcc.name}</span> будет сброшена. Сессии сохранятся.</>
+                  ? <>{t("Аккаунт", "Account")}{' '}<span className="text-text-secondary font-medium">{confirmAcc.name}</span> {t("и его авторизация будут удалены.", "and its login will be deleted.")}{' '}<span className="text-text-secondary font-medium">{t("Сессии останутся", "Sessions stay")}</span> {t("— они хранятся отдельно.", "— they are stored separately.")}{accounts.length === 1 && <><br /><br /><span className="text-text-secondary font-medium">{t("Это последний аккаунт", "This is the last account")}</span> {t("— Vael вернётся на стартовый экран, где можно добавить новый.", "— Vael will return to the start screen, where you can add a new one.")}</>}</>
+                  : <>{t("Авторизация", "The login of")}{' '}<span className="text-text-secondary font-medium">{confirmAcc.name}</span> {t("будет сброшена. Сессии сохранятся.", "will be reset. Sessions are kept.")}</>
                 }
               </span>
             </div>
@@ -640,7 +641,7 @@ export function AccountsPage({ accounts, activeAccountId, isRunning, onAccountsC
                 onClick={() => setConfirm(null)}
                 className="px-3 py-1.5 rounded-lg text-[14px] text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
               >
-                Отмена
+                {t("Отмена", "Cancel")}
               </button>
               <button
                 onClick={handleConfirm}
@@ -651,7 +652,7 @@ export function AccountsPage({ accounts, activeAccountId, isRunning, onAccountsC
                     : 'text-amber-400 hover:text-amber-300 bg-amber-400/10 hover:bg-amber-400/20',
                 )}
               >
-                {confirm.type === 'delete' ? 'Удалить' : 'Выйти'}
+                {confirm.type === 'delete' ? t("Удалить", "Delete") : t("Выйти", "Log out")}
               </button>
             </div>
           </div>
@@ -664,18 +665,18 @@ export function AccountsPage({ accounts, activeAccountId, isRunning, onAccountsC
           {tab === 'accounts' && (
             <div className="st-page">
               <div>
-                <h2 className="st-h2">Аккаунты</h2>
-                <p className="st-desc">Несколько логинов Claude — переключение без потери сессий</p>
+                <h2 className="st-h2">{t("Аккаунты", "Accounts")}</h2>
+                <p className="st-desc">{t("Несколько логинов Claude — переключение без потери сессий", "Several Claude logins — switch without losing sessions")}</p>
               </div>
 
               {pendingAuth && (
                 <div className="acc-pending">
                   <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse shrink-0 bg-accent" />
-                  Жду вход в <span className="text-text-primary font-medium">{pendingAuth.name}</span> — заверши авторизацию в открывшемся окне
+                  {t("Жду вход в", "Waiting for login to")}{' '}<span className="text-text-primary font-medium">{pendingAuth.name}</span> {t("— заверши авторизацию в открывшемся окне", "— finish logging in in the window that opened")}
                 </div>
               )}
 
-              {accounts.length === 0 && <p className="st-lbl py-4 text-center">Аккаунтов пока нет</p>}
+              {accounts.length === 0 && <p className="st-lbl py-4 text-center">{t("Аккаунтов пока нет", "No accounts yet")}</p>}
               {accounts.map(acc => {
                 const info = authInfo[acc.id]
                 // Пока authInfo не загрузился — опираемся на старую проверку,
@@ -706,16 +707,16 @@ export function AccountsPage({ accounts, activeAccountId, isRunning, onAccountsC
                     value={newName}
                     onChange={e => setNewName(cleanAccountName(e.target.value))}
                     onKeyDown={e => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') { setAdding(false); setNewName('') } }}
-                    placeholder="Название аккаунта, например work"
+                    placeholder={t("Название аккаунта, например work", "Account name, e.g. work")}
                   />
-                  <button onClick={() => { setAdding(false); setNewName('') }} className="acc-btn">Отмена</button>
+                  <button onClick={() => { setAdding(false); setNewName('') }} className="acc-btn">{t("Отмена", "Cancel")}</button>
                   <button onClick={handleCreate} disabled={!newName.trim() || creating} className="acc-btn is-primary disabled:opacity-40">
-                    {creating ? 'Создаю…' : 'Создать и войти'}
+                    {creating ? t("Создаю…", "Creating…") : t("Создать и войти", "Create and log in")}
                   </button>
                 </div>
               ) : (
                 <button className="acc-add" onClick={() => setAdding(true)}>
-                  <Plus size={15} />Добавить аккаунт
+                  <Plus size={15} />{t("Добавить аккаунт", "Add account")}
                 </button>
               )}
             </div>

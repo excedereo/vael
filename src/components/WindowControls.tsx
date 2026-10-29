@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Minus, Square, X } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { cn } from '../lib/utils.js'
+import { t } from '../lib/i18n.js'
 
 export function WindowControls() {
   const [maximized, setMaximized] = useState(false)
@@ -22,14 +23,14 @@ export function WindowControls() {
       <button
         onClick={() => api.windowMinimize()}
         className={cn(btn, 'text-text-ghost hover:text-text-muted hover:bg-surface-hover')}
-        title="Свернуть"
+        title={t("Свернуть", "Minimize")}
       >
         <Minus size={12} strokeWidth={1.5} />
       </button>
       <button
         onClick={() => api.windowMaximize().then(() => api.windowIsMaximized().then(setMaximized))}
         className={cn(btn, 'text-text-ghost hover:text-text-muted hover:bg-surface-hover')}
-        title={maximized ? 'Восстановить' : 'Развернуть'}
+        title={maximized ? t("Восстановить", "Restore") : t("Развернуть", "Maximize")}
       >
         {maximized
           ? <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><rect x="3" y="0.5" width="7" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.2"/><rect x="0.5" y="3" width="7" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.2" fill="var(--bg-sidebar)"/></svg>
@@ -39,7 +40,7 @@ export function WindowControls() {
       <button
         onClick={() => api.windowClose()}
         className={cn(btn, 'text-text-ghost hover:text-white hover:bg-red-500/70')}
-        title="Закрыть"
+        title={t("Закрыть", "Close")}
       >
         <X size={13} strokeWidth={1.5} />
       </button>

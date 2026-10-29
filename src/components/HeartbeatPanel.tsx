@@ -8,6 +8,7 @@ import { api, type WakeEntry } from '../lib/api.js'
 import { PageHeader, Section, ToggleRow } from './SettingsComponents.js'
 import { cn } from '../lib/utils.js'
 import type { Session } from '../types/index.js'
+import { t, LOCALE } from '../lib/i18n.js'
 
 interface Props {
   sessions: Session[]
@@ -26,19 +27,19 @@ const DEFAULT_TEMPLATE = '[FREE] прошло <timefromlastmessage> с посл�
 
 /** Готовые интервалы для кнопок быстрой постановки — то, чем пользуешься чаще всего */
 const QUICK: { label: string; ms: number }[] = [
-  { label: '5 мин', ms: 5 * 60_000 },
-  { label: '15 мин', ms: 15 * 60_000 },
-  { label: '30 мин', ms: 30 * 60_000 },
-  { label: '1 ч', ms: 60 * 60_000 },
-  { label: '3 ч', ms: 3 * 60 * 60_000 },
+  { label: t("5 мин", "5 min"), ms: 5 * 60_000 },
+  { label: t("15 мин", "15 min"), ms: 15 * 60_000 },
+  { label: t("30 мин", "30 min"), ms: 30 * 60_000 },
+  { label: t("1 ч", "1 h"), ms: 60 * 60_000 },
+  { label: t("3 ч", "3 h"), ms: 3 * 60 * 60_000 },
 ]
 
 const PLACEHOLDERS: { tag: string; desc: string }[] = [
-  { tag: '<timefromlastmessage>', desc: 'сколько прошло' },
-  { tag: '<time>', desc: 'время' },
-  { tag: '<date>', desc: 'дата' },
-  { tag: '<text>', desc: 'текст побудки' },
-  { tag: '<text?, >', desc: 'текст с префиксом, если есть' },
+  { tag: '<timefromlastmessage>', desc: t("сколько прошло", "time since") },
+  { tag: '<time>', desc: t("время", "time") },
+  { tag: '<date>', desc: t("дата", "date") },
+  { tag: '<text>', desc: t("текст побудки", "wake-up text") },
+  { tag: '<text?, >', desc: t("текст с префиксом, если есть", "text with a prefix, if any") },
 ]
 
 function fmtWhen(ms: number | undefined): string {
@@ -46,7 +47,7 @@ function fmtWhen(ms: number | undefined): string {
   const d = new Date(ms)
   const sameDay = d.toDateString() === new Date().toDateString()
   const time = d.toTimeString().slice(0, 5)
-  return sameDay ? time : `${d.toLocaleDateString('ru-RU')} ${time}`
+  return sameDay ? time : `${d.toLocaleDateString(LOCALE)} ${time}`
 }
 
 /**
@@ -59,14 +60,14 @@ function fmtWhen(ms: number | undefined): string {
 function fmtLeft(ms: number | undefined): string {
   if (!ms) return ''
   const left = ms - Date.now()
-  if (left < -60_000) return `просрочено на ${Math.round(-left / 60_000)} мин`
-  if (left <= 0) return 'вот-вот'
+  if (left < -60_000) return t(`просрочено на ${Math.round(-left / 60_000)} мин`, `overdue by ${Math.round(-left / 60_000)} min`)
+  if (left <= 0) return t("вот-вот", "any moment")
   const min = Math.round(left / 60_000)
-  if (min < 1) return 'меньше минуты'
-  if (min < 60) return `через ${min} мин`
+  if (min < 1) return t("меньше минуты", "less than a minute")
+  if (min < 60) return t(`через ${min} мин`, `in ${min} min`)
   const h = Math.floor(min / 60)
   const m = min % 60
-  return m ? `через ${h} ч ${m} мин` : `через ${h} ч`
+  return m ? t(`через ${h} ч ${m} мин`, `in ${h} h ${m} min`) : t(`через ${h} ч`, `in ${h} h`)
 }
 
 export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
@@ -195,13 +196,13 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
 
   if (loading) return (
     <div className="flex-1 flex items-center justify-center text-text-ghost text-sm">
-      Загрузка...
+      {t("Загрузка...", "Loading...")}
     </div>
   )
 
   const sessionLabel = sessionId
     ? sessions.find(s => s.id === sessionId)?.title || sessionId.slice(0, 8)
-    : 'последняя активная'
+    : t("последняя активная", "last active")
 
   // Живость именно этой сессии: у неё должен быть запущен PTY, иначе писать некуда
   const sessionAlive = sessionId ? health.alive.includes(sessionId) : health.alive.length > 0
@@ -213,7 +214,7 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
         <PageHeader
           icon={Heart}
           title="Heartbeat"
-          desc="Будит Ваели, когда её никто не зовёт — фришка приходит в сессию как обычное сообщение"
+          desc={t("Будит Ваели, когда её никто не зовёт — фришка приходит в сессию как обычное сообщение", "Wakes the session when nobody calls it — the message arrives as a normal message")}
         />
 
         {/* Сохранение закреплено сверху: настройки разбросаны по всей странице,
@@ -232,7 +233,7 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
                   : 'bg-surface-hover border-border-subtle text-text-ghost cursor-default active:scale-100',
             )}
           >
-            {saved ? 'Сохранено' : dirty ? 'Сохранить изменения' : 'Всё сохранено'}
+            {saved ? t("Сохранено", "Saved") : dirty ? t("Сохранить изменения", "Save changes") : t("Всё сохранено", "All saved")}
           </button>
         </div>
 
@@ -257,14 +258,14 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
 
           <div className="min-w-0 flex-1">
             <div className="text-[14px] font-medium text-text-primary">
-              {running ? 'Сердце бьётся' : 'Остановлено'}
+              {running ? t("Сердце бьётся", "Heartbeat is running") : t("Остановлено", "Stopped")}
             </div>
             <div className="text-[12px] text-text-faint mt-0.5 truncate">
               {running
                 ? queue.length > 0
-                  ? `${queue.length} ${queue.length === 1 ? 'побудка' : queue.length < 5 ? 'побудки' : 'побудок'} в очереди`
-                  : 'очередь пуста — тишина'
-                : 'фришки не приходят'}
+                  ? t(`${queue.length} ${queue.length === 1 ? 'побудка' : queue.length < 5 ? 'побудки' : 'побудок'} в очереди`, `${queue.length} ${queue.length === 1 ? 'wake-up' : 'wake-ups'} queued`)
+                  : t("очередь пуста — тишина", "queue is empty — quiet")
+                : t("фришки не приходят", "no messages are sent")}
             </div>
           </div>
 
@@ -283,8 +284,8 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
             )}
           >
             {running
-              ? <><Pause size={15} variant="Bold" color="currentColor" /> Стоп</>
-              : <><Play size={15} variant="Bold" color="currentColor" /> Запустить</>}
+              ? <><Pause size={15} variant="Bold" color="currentColor" /> {t("Стоп", "Stop")}</>
+              : <><Play size={15} variant="Bold" color="currentColor" /> {t("Запустить", "Start")}</>}
           </button>
         </div>
 
@@ -295,22 +296,21 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
             <div className="min-w-0">
               <div className="text-[13px] text-amber-200/90">{health.blocked}</div>
               <div className="text-[11.5px] text-amber-200/50 mt-1 leading-relaxed">
-                Фришки не уйдут в закрытую сессию — они копятся в очереди и отправятся,
-                когда сессия снова заработает
+                {t("Фришки не уйдут в закрытую сессию — они копятся в очереди и отправятся, когда сессия снова заработает", "Messages won't go to a closed session — they wait in the queue and are sent when the session runs again")}
               </div>
             </div>
           </div>
         )}
 
         {/* Сессия — первое, что нужно выбрать, поэтому наверху */}
-        <Section label="Сессия" icon={Code1} desc="куда приходят фришки">
+        <Section label={t("Сессия", "Session")} icon={Code1} desc={t("куда приходят фришки", "where messages arrive")}>
           <div className="px-4 py-3.5 space-y-2.5">
             <div className="relative">
               <input
                 type="text"
                 value={sessionId}
                 onChange={e => setSessionId(e.target.value)}
-                placeholder="uuid сессии — пусто: последняя активная"
+                placeholder={t("uuid сессии — пусто: последняя активная", "session uuid — empty: last active")}
                 spellCheck={false}
                 className={cn(
                   'w-full bg-surface-selected border rounded-xl px-3.5 py-2.5 pr-24',
@@ -333,18 +333,18 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
                     'w-1.5 h-1.5 rounded-full',
                     sessionAlive ? 'bg-accent animate-pulse' : 'bg-amber-400/70',
                   )} />
-                  {sessionAlive ? 'живая' : 'не запущена'}
+                  {sessionAlive ? t("живая", "live") : t("не запущена", "not running")}
                 </span>
               )}
             </div>
 
             <div className="text-[11.5px] text-text-ghost">
-              {sessionId ? sessionLabel : 'Будет использована последняя активная сессия'}
+              {sessionId ? sessionLabel : t("Будет использована последняя активная сессия", "The last active session will be used")}
             </div>
 
             {health.alive.length > 0 && (
               <div className="flex flex-wrap gap-1.5 pt-0.5">
-                <span className="text-[11px] text-text-ghost self-center mr-0.5">Запущены:</span>
+                <span className="text-[11px] text-text-ghost self-center mr-0.5">{t("Запущены:", "Running:")}</span>
                 {health.alive.map(id => (
                   <button
                     key={id}
@@ -367,7 +367,7 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
         </Section>
 
         {/* Быстрая постановка */}
-        <Section label="Разбудить" icon={Flash} desc="разово, от текущего момента">
+        <Section label={t("Разбудить", "Wake up")} icon={Flash} desc={t("разово, от текущего момента", "once, from now")}>
           <div className="px-4 py-3.5 space-y-3">
             <div className="flex flex-wrap gap-2">
               {QUICK.map(q => (
@@ -392,7 +392,7 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
                 )}
               >
                 <Flash size={13} variant="Bold" color="currentColor" />
-                сейчас
+                {t("сейчас", "now")}
               </button>
             </div>
 
@@ -409,7 +409,7 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
                   value={customText}
                   onChange={e => setCustomText(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && customText.trim()) addWake(5 * 60_000) }}
-                  placeholder="с текстом — что сделать, когда проснётся"
+                  placeholder={t("с текстом — что сделать, когда проснётся", "with a text — what to do on wake-up")}
                   className={cn(
                     'w-full bg-surface-selected border border-border-default rounded-xl',
                     'pl-9 pr-3 py-2 text-[13px] text-text-secondary placeholder:text-text-ghost',
@@ -419,24 +419,23 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
               </div>
             </div>
             <div className="text-[11px] text-text-ghost">
-              Текст подставится в шаблон вместо {'<text>'} — кнопки выше поставят побудку вместе с ним
+              {t("Текст подставится в шаблон вместо", "The text goes into the template instead of")}{' '}{'<text>'} {t("— кнопки выше поставят побудку вместе с ним", "— the buttons above schedule a wake-up with it")}
             </div>
           </div>
         </Section>
 
         {/* Очередь */}
         <Section
-          label="Очередь"
+          label={t("Очередь", "Queue")}
           icon={Timer1}
-          desc={queue.length > 0 ? `${queue.length} шт` : 'пусто'}
+          desc={queue.length > 0 ? t(`${queue.length} шт`, `${queue.length}`) : t("пусто", "empty")}
         >
           {queue.length === 0 ? (
             <div className="px-4 py-8 flex flex-col items-center gap-2 text-center">
               <Timer1 size={26} variant="Linear" color="var(--text-ghost)" />
-              <div className="text-[13px] text-text-faint">Ничего не запланировано</div>
+              <div className="text-[13px] text-text-faint">{t("Ничего не запланировано", "Nothing scheduled")}</div>
               <div className="text-[11px] text-text-ghost max-w-[300px]">
-                Ваели ставит себе побудки сама командой <code className="text-accent">vael wake 5min</code> —
-                они появятся здесь
+                {t("Ваели ставит себе побудки сама командой", "The model can schedule its own wake-ups with")}{' '}<code className="text-accent">vael wake 5min</code> {t("— они появятся здесь", "— they show up here")}
               </div>
             </div>
           ) : (
@@ -476,7 +475,7 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
                           </span>
                           {e.kind === 'every' && (
                             <span className="text-[10.5px] px-1.5 py-0.5 rounded bg-surface-active text-text-faint">
-                              каждые {Math.round((e.intervalMs ?? 0) / 60000)} мин
+                              {t("каждые", "every")}{' '}{Math.round((e.intervalMs ?? 0) / 60000)} {t("мин", "min")}
                             </span>
                           )}
                         </div>
@@ -491,12 +490,12 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
                           ? 'bg-accent-wash text-accent'
                           : 'bg-surface-active text-text-faint',
                       )}>
-                        {e.source === 'vaeli' ? 'Ваели' : 'ты'}
+                        {e.source === 'vaeli' ? t("Ваели", "model") : t("ты", "you")}
                       </span>
 
                       <button
                         onClick={() => cancel(e.id)}
-                        title="Отменить"
+                        title={t("Отменить", "Cancel")}
                         className={cn(
                           'shrink-0 opacity-0 group-hover:opacity-100 transition-all duration-150',
                           'text-text-ghost hover:text-red-400 active:scale-90',
@@ -515,7 +514,7 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
                   className="flex items-center gap-1.5 text-[12px] text-text-ghost hover:text-red-400 transition-colors"
                 >
                   <Trash size={13} variant="Linear" color="currentColor" />
-                  Очистить очередь
+                  {t("Очистить очередь", "Clear queue")}
                 </button>
               </div>
             </>
@@ -524,7 +523,7 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
 
         {/* Последняя фришка */}
         {lastFired && (
-          <Section label="Последняя фришка" icon={Send2}>
+          <Section label={t("Последняя фришка", "Last message")} icon={Send2}>
             <div className="px-4 py-3.5">
               <div className="rounded-xl bg-accent-wash border border-accent/20 px-3.5 py-3">
                 <div className="text-[13px] text-text-secondary break-words leading-relaxed">
@@ -532,14 +531,14 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
                 </div>
               </div>
               <div className="text-[11px] text-text-ghost mt-2 tabular-nums">
-                отправлена в {new Date(lastFired.at).toTimeString().slice(0, 5)}
+                {t("отправлена в", "sent to")}{' '}{new Date(lastFired.at).toTimeString().slice(0, 5)}
               </div>
             </div>
           </Section>
         )}
 
         {/* Шаблон */}
-        <Section label="Шаблон фришки" icon={MessageText1} desc="что именно придёт в сессию">
+        <Section label={t("Шаблон фришки", "Message template")} icon={MessageText1} desc={t("что именно придёт в сессию", "what exactly arrives in the session")}>
           <div className="px-4 py-3.5 space-y-3">
             <textarea
               value={template}
@@ -558,7 +557,7 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
                 <button
                   key={p.tag}
                   onClick={() => setTemplate(t => `${t}${p.tag}`)}
-                  title={`Добавить — ${p.desc}`}
+                  title={t(`Добавить — ${p.desc}`, `Add — ${p.desc}`)}
                   className={cn(
                     'flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-mono',
                     'bg-surface-hover border border-border-subtle text-text-faint',
@@ -576,25 +575,25 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
                 onClick={() => setTemplate(DEFAULT_TEMPLATE)}
                 className="text-[11.5px] text-text-ghost hover:text-text-secondary transition-colors"
               >
-                Вернуть стандартный
+                {t("Вернуть стандартный", "Reset to default")}
               </button>
             )}
           </div>
         </Section>
 
         {/* Настройки */}
-        <Section label="Настройки" icon={Setting4}>
+        <Section label={t("Настройки", "Settings")} icon={Setting4}>
           <ToggleRow
             icon={Play}
-            label="Автостарт"
-            desc="Запускаться вместе с Vael"
+            label={t("Автостарт", "Autostart")}
+            desc={t("Запускаться вместе с Vael", "Start together with Vael")}
             value={autostart}
             onChange={setAutostart}
           />
           <ToggleRow
             icon={Send2}
-            label="Дублировать в телеграм"
-            desc="Копия каждой фришки уходит в чат"
+            label={t("Дублировать в телеграм", "Copy to Telegram")}
+            desc={t("Копия каждой фришки уходит в чат", "A copy of every message goes to the chat")}
             value={mirror}
             onChange={setMirror}
           />

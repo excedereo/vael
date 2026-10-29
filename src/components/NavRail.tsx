@@ -2,6 +2,7 @@ import { MessagesSquare, GitFork, Zap, SquareTerminal, Settings } from 'lucide-r
 import logoSmall from '../assets/logo-small.svg'
 import type { LucideIcon as Icon } from 'lucide-react'
 import { cn } from '../lib/utils.js'
+import { t } from '../lib/i18n.js'
 
 export type Section = 'sessions' | 'memory' | 'pyre' | 'dev' | 'accounts' | 'settings'
 
@@ -13,14 +14,14 @@ interface NavItem {
 
 // Верхняя группа — работа, нижняя — контекст (аккаунт/настройки)
 const WORK: NavItem[] = [
-  { id: 'sessions', label: 'Сессии', icon: MessagesSquare },
+  { id: 'sessions', label: t("Сессии", "Sessions"), icon: MessagesSquare },
   { id: 'pyre',     label: 'Pyre',     icon: Zap },
 ]
-const MEMORY: NavItem = { id: 'memory', label: 'Память', icon: GitFork }
+const MEMORY: NavItem = { id: 'memory', label: t("Память", "Memory"), icon: GitFork }
 const DEV: NavItem = { id: 'dev', label: 'Dev', icon: SquareTerminal }
 // Аккаунты открываются из карточки аккаунта внизу сайдбара — отдельная иконка была дублем
 const CONTEXT: NavItem[] = [
-  { id: 'settings', label: 'Настройки', icon: Settings },
+  { id: 'settings', label: t("Настройки", "Settings"), icon: Settings },
 ]
 
 interface Props {

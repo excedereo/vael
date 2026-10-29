@@ -12,6 +12,7 @@ import { api } from '../lib/api.js'
 import { ModuleIcon } from './ModuleIcon.js'
 import { useSettingsTab, setSettingsTab, useAccountsTab, setAccountsTab } from '../lib/sectionTabs.js'
 import type { SettingsTab, AccountsTab } from '../lib/sectionTabs.js'
+import { t as tr } from '../lib/i18n.js'
 
 interface ContextMenu {
   x: number
@@ -54,14 +55,14 @@ interface Props {
 
 
 const SETTINGS_TAB_LABEL: Record<SettingsTab, string> = {
-  interface: 'Интерфейс',
-  sessions: 'Сессии',
-  notifications: 'Уведомления',
-  system: 'Система',
+  interface: tr("Интерфейс", "Interface"),
+  sessions: tr("Сессии", "Sessions"),
+  notifications: tr("Уведомления", "Notifications"),
+  system: tr("Система", "System"),
 }
 const ACCOUNTS_TAB_LABEL: Record<AccountsTab, string> = {
-  accounts: 'Аккаунты',
-  stats: 'Статистика',
+  accounts: tr("Аккаунты", "Accounts"),
+  stats: tr("Статистика", "Statistics"),
 }
 
 // Иконки под-вкладок — те же, что в шапках соответствующих страниц
@@ -106,17 +107,17 @@ type SortMode = 'recent' | 'created' | 'name' | 'custom'
 function dateGroup(ts: number): string {
   const day = new Date(); day.setHours(0, 0, 0, 0)
   const t = day.getTime()
-  if (ts >= t) return 'Сегодня'
-  if (ts >= t - 86_400_000) return 'Вчера'
-  if (ts >= t - 6 * 86_400_000) return 'На этой неделе'
-  if (ts >= t - 30 * 86_400_000) return 'В этом месяце'
-  return 'Раньше'
+  if (ts >= t) return tr("Сегодня", "Today")
+  if (ts >= t - 86_400_000) return tr("Вчера", "Yesterday")
+  if (ts >= t - 6 * 86_400_000) return tr("На этой неделе", "This week")
+  if (ts >= t - 30 * 86_400_000) return tr("В этом месяце", "This month")
+  return tr("Раньше", "Earlier")
 }
 const SORT_LABEL: Record<SortMode, string> = {
-  recent:  'Последний ответ',
-  created: 'Дате создания',
-  name:    'Названию',
-  custom:  'Своему порядку',
+  recent:  tr("Последний ответ", "Last answer"),
+  created: tr("Дате создания", "Date created"),
+  name:    tr("Названию", "Name"),
+  custom:  tr("Своему порядку", "Custom order"),
 }
 
 function sortSessions(list: Session[], mode: SortMode): Session[] {
@@ -199,7 +200,7 @@ function SessionItem({ session, active, onClick, onContextMenu, isRenaming, rena
         </motion.div>
       )}
 
-      <span className={cn('session-dot', isRunning ? 'is-live' : 'is-off')} title={isRunning ? 'Процесс запущен' : undefined} />
+      <span className={cn('session-dot', isRunning ? 'is-live' : 'is-off')} title={isRunning ? tr("Процесс запущен", "Process running") : undefined} />
 
       {/* Title with fade-out mask */}
       <div className="flex-1 min-w-0 relative overflow-hidden">
@@ -224,7 +225,7 @@ function SessionItem({ session, active, onClick, onContextMenu, isRenaming, rena
           </p>
         )}
       </div>
-      {isRunning && mode && <span className="session-mode">{mode === 'chat' ? 'чат' : 'tui'}</span>}
+      {isRunning && mode && <span className="session-mode">{mode === 'chat' ? tr("чат", "chat") : 'tui'}</span>}
     </div>
   )
 }
@@ -425,17 +426,17 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Escape') { setQuery(''); e.currentTarget.blur() } }}
-                placeholder="Поиск"
+                placeholder={tr("Поиск", "Search")}
                 spellCheck={false}
               />
               {query ? (
-                <button onClick={() => setQuery('')} className="text-text-faint hover:text-text-secondary" title="Очистить"><X size={13} /></button>
+                <button onClick={() => setQuery('')} className="text-text-faint hover:text-text-secondary" title={tr("Очистить", "Clear")}><X size={13} /></button>
               ) : <kbd>Ctrl K</kbd>}
             </label>
             <button
               onClick={() => setSortOpen(v => !v)}
               className={cn('no-drag w-7 h-7 shrink-0 rounded-md flex items-center justify-center transition-colors', sortOpen ? 'text-accent bg-accent-wash' : 'text-text-faint hover:text-text-secondary hover:bg-surface-hover')}
-              title={'Сортировка: ' + SORT_LABEL[sortMode].toLowerCase()}
+              title={tr("Сортировка: ", "Sort: ") + SORT_LABEL[sortMode].toLowerCase()}
             >
               <ArrowDownUp size={14} />
             </button>
@@ -443,7 +444,7 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
               onClick={onNew}
               disabled={isLocked}
               className="no-drag w-7 h-7 shrink-0 rounded-md flex items-center justify-center text-text-faint hover:text-text-primary hover:bg-surface-hover transition-colors disabled:opacity-30"
-              title="Новая сессия"
+              title={tr("Новая сессия", "New session")}
             >
               <SquarePen size={15} />
             </button>
@@ -455,7 +456,7 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
             {/* Поповер сортировки */}
             {section === 'sessions' && sortOpen && (
               <div className="absolute top-9 right-2 z-30 no-drag w-[204px] rounded-[11px] border border-border-strong bg-bg-elevated p-1.5 shadow-[0_20px_44px_-14px_rgba(0,0,0,0.9)]">
-                <div className="px-2.5 pt-1.5 pb-1 text-[9.5px] uppercase tracking-[0.15em] text-text-faint">Сортировать по</div>
+                <div className="px-2.5 pt-1.5 pb-1 text-[9.5px] uppercase tracking-[0.15em] text-text-faint">{tr("Сортировать по", "Sort by")}</div>
                 {(['recent', 'created', 'name', 'custom'] as SortMode[]).map(m => (
                   <button
                     key={m}
@@ -476,7 +477,7 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
                     className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12.5px] text-text-secondary hover:bg-surface-hover transition-colors"
                   >
                     <Archive size={14} className="text-text-faint flex-none" />
-                    Показывать архив
+                    {tr("Показывать архив", "Show archive")}
                     <span className={cn('ml-auto w-7 h-4 rounded-full relative flex-none transition-colors', showArchived ? 'bg-accent-deep' : 'bg-surface-active')}>
                       <span className={cn('absolute top-0.5 w-3 h-3 rounded-full transition-all', showArchived ? 'right-0.5 bg-white' : 'left-0.5 bg-text-muted')} />
                     </span>
@@ -501,7 +502,7 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
           <div className="flex-1 overflow-y-auto px-1.5 pt-1 thin-scroll">
             {liveSessions.length === 0 && (
               <p className="px-2 py-6 text-center text-[13px] text-text-ghost">
-                {query ? 'Ничего не нашлось' : 'Сессий пока нет'}
+                {query ? tr("Ничего не нашлось", "Nothing found") : tr("Сессий пока нет", "No sessions yet")}
               </p>
             )}
             {sortMode === 'recent' && !query
@@ -521,7 +522,7 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
                 >
                   <ChevronRight size={12} className={cn('flex-none transition-transform', archiveExpanded && 'rotate-90')} />
                   <Archive size={13} className="flex-none" />
-                  Архив
+                  {tr("Архив", "Archive")}
                   <span className="ml-auto text-[11px] text-text-faint bg-surface-hover rounded-full px-2 py-px">{archivedSessions.length}</span>
                 </button>
                 {archiveExpanded && (
@@ -539,13 +540,13 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
       {section === 'pyre' && (
         <div className="flex flex-col flex-1 min-h-0 overflow-y-auto">
           <div className="flex items-center justify-between px-3 pb-1.5">
-            <span className="text-[11px] text-text-faint uppercase tracking-widest">Модули</span>
+            <span className="text-[11px] text-text-faint uppercase tracking-widest">{tr("Модули", "Modules")}</span>
           </div>
           <div className="flex flex-col gap-0.5 px-2">
             {modules.length === 0 && (
               <div className="flex items-center justify-center gap-2 py-8 text-text-ghost">
                 <Zap size={16} strokeWidth={1.5} />
-                <span className="text-[13px]">Модулей нет</span>
+                <span className="text-[13px]">{tr("Модулей нет", "No modules")}</span>
               </div>
             )}
             {modules.map(m => {
@@ -582,7 +583,7 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
                         m.running ? 'bg-[var(--color-success)] animate-pulse' : 'bg-text-ghost',
                       )} />
                       <span className="text-[11px] text-text-faint">
-                        {m.running ? 'работает' : 'остановлен'}
+                        {m.running ? tr("работает", "running") : tr("остановлен", "stopped")}
                       </span>
                     </div>
                   </div>
@@ -624,7 +625,7 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
               className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[14px] text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
             >
               <span className="text-[11px] font-mono text-text-faint">ID</span>
-              Копировать ID
+              {tr("Копировать ID", "Copy ID")}
             </button>
             {onSummaries && (
               <button
@@ -632,7 +633,7 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
                 className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[14px] text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
               >
                 <ScrollText size={13} />
-                Пересказы
+                {tr("Пересказы", "Summaries")}
               </button>
             )}
             <button
@@ -640,14 +641,14 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
               className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[14px] text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
             >
               <Pencil size={13} />
-              Переименовать
+              {tr("Переименовать", "Rename")}
             </button>
             <button
               onClick={() => toggleArchive(ctxMenu.session)}
               className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[14px] text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
             >
               {ctxMenu.session.archived ? <ArchiveRestore size={13} /> : <Archive size={13} />}
-              {ctxMenu.session.archived ? 'Разархивировать' : 'Заархивировать'}
+              {ctxMenu.session.archived ? tr("Разархивировать", "Unarchive") : tr("Заархивировать", "Archive")}
             </button>
             <div className="h-px bg-border-subtle mx-1 my-1" />
             <button
@@ -655,7 +656,7 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
               className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[14px] text-[var(--color-error)]/80 hover:text-[var(--color-error)] hover:bg-[var(--error-bg)] transition-colors"
             >
               <Trash2 size={13} />
-              Удалить
+              {tr("Удалить", "Delete")}
             </button>
           </div>
         </div>,

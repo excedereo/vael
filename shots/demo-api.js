@@ -124,6 +124,9 @@ Summary:
 
   // Состояние, которое App поднимает из localStorage
   try {
+    // ?lang=en|ru — язык интерфейса, ?lang=none — экран выбора языка
+    const lang = new URLSearchParams(location.search).get('lang') || 'en'
+    if (lang === 'none') localStorage.removeItem('vaeli:lang'); else localStorage.setItem('vaeli:lang', lang)
     localStorage.setItem('activeAccountId', 'main')
     localStorage.setItem('vaeli:view-mode:default', 'chat')
     for (const x of sessions) localStorage.setItem('vaeli:view-mode:' + x.id, 'chat')

@@ -4,6 +4,7 @@ import {
 } from 'iconsax-reactjs'
 import { api, type MemoryNode } from '../lib/api.js'
 import { cn } from '../lib/utils.js'
+import { t } from '../lib/i18n.js'
 
 // Граф памяти. Два жеста для двух задач:
 //   зум  — осмотреться: чем ближе, тем глубже видна вложенность (LOD)
@@ -68,7 +69,7 @@ function makeSpokes(
     for (const d of dirs) out.push({ node: d })
   } else if (dirs.length) {
     out.push({
-      node: { ...dirs[0], name: 'папки', rel: `${ownerRel}::dirs`, children: dirs },
+      node: { ...dirs[0], name: t("папки", "folders"), rel: `${ownerRel}::dirs`, children: dirs },
       stack: dirs.length,
       stackKind: 'dir',
     })
@@ -78,7 +79,7 @@ function makeSpokes(
     for (const f of files) out.push({ node: f })
   } else if (files.length) {
     out.push({
-      node: { ...files[0], name: 'файлы', rel: `${ownerRel}::files`, children: files },
+      node: { ...files[0], name: t("файлы", "files"), rel: `${ownerRel}::files`, children: files },
       stack: files.length,
       stackKind: 'file',
     })
@@ -540,7 +541,7 @@ export function MemoryGraph(_props: Props) {
   const hoveredNode = hover ? byRel.get(hover) : null
 
   const crumbs = useMemo(() => {
-    const out = [{ label: 'память', level: 0 }]
+    const out = [{ label: t("память", "memory"), level: 0 }]
     trail.forEach((rel, i) => out.push({ label: rel.split('/').pop() ?? rel, level: i + 1 }))
     return out
   }, [trail])
@@ -731,7 +732,7 @@ export function MemoryGraph(_props: Props) {
                   }}
                 >
                   {isStack
-                    ? 'файлы'
+                    ? t("файлы", "files")
                     : isHover
                       ? p.node.name.replace(/\.md$/, '')
                       : trimLabel(p.node.name, labelLimit)}
@@ -763,7 +764,7 @@ export function MemoryGraph(_props: Props) {
         {trail.length > 0 && (
           <button
             onClick={() => surface(trail.length - 1)}
-            title="Назад (Esc)"
+            title={t("Назад (Esc)", "Back (Esc)")}
             className="ml-1 w-6 h-6 rounded flex items-center justify-center text-white/40 hover:text-white/85 hover:bg-white/8 transition-colors"
           >
             <ArrowLeft2 size={14} variant="Linear" color="currentColor" />
@@ -783,7 +784,7 @@ export function MemoryGraph(_props: Props) {
             zIndex: 60,
           }}
         >
-          <div className="text-[11px] text-white/40 mb-1">{hoveredNode.node.children.length} внутри</div>
+          <div className="text-[11px] text-white/40 mb-1">{hoveredNode.node.children.length} {t("внутри", "inside")}</div>
           {hoveredNode.node.children.slice(0, 9).map(c => (
             <div key={c.rel} className="text-[11.5px] text-white/75 truncate leading-[1.5] flex items-center gap-1.5">
               {c.type === 'dir'
@@ -793,7 +794,7 @@ export function MemoryGraph(_props: Props) {
             </div>
           ))}
           {hoveredNode.node.children.length > 9 && (
-            <div className="text-[11px] text-white/30 mt-0.5">…ещё {hoveredNode.node.children.length - 9}</div>
+            <div className="text-[11px] text-white/30 mt-0.5">{t("…ещё", "…more")}{' '}{hoveredNode.node.children.length - 9}</div>
           )}
         </div>
       ) : null}
@@ -808,7 +809,7 @@ export function MemoryGraph(_props: Props) {
             ref={searchRef}
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="имя файла или папки"
+            placeholder={t("имя файла или папки", "file or folder name")}
             className="bg-transparent outline-none text-[12.5px] text-white/85 placeholder:text-white/25 w-52"
           />
           <span className="text-[11px] text-white/35 tabular-nums">{matched ? matched.size : 0}</span>
@@ -823,14 +824,14 @@ export function MemoryGraph(_props: Props) {
           onClick={() => setCam({ x: 0, y: 0, k: 1 })}
           className="px-2.5 py-1 rounded-lg text-[11.5px] bg-white/6 border border-white/10 text-white/55 hover:text-white/90 hover:bg-white/12 transition-colors"
         >
-          сброс
+          {t("сброс", "reset")}
         </button>
         <span className="text-[11px] text-white/30 tabular-nums w-10 text-right">{Math.round(cam.k * 100)}%</span>
       </div>
 
       <div className="absolute bottom-4 left-4 text-[11px] text-white/25 leading-relaxed pointer-events-none">
-        <div>тянуть — двигать · колесо — глубина · клик по папке — внутрь</div>
-        <div className="opacity-75">пунктир — не грузится · F3 — поиск</div>
+        <div>{t("тянуть — двигать · колесо — глубина · клик по папке — внутрь", "drag — move · wheel — depth · click a folder — go inside")}</div>
+        <div className="opacity-75">{t("пунктир — не грузится · F3 — поиск", "dashed — not loaded · F3 — search")}</div>
       </div>
 
       {/* Редактор */}
@@ -863,12 +864,12 @@ export function MemoryGraph(_props: Props) {
                   disabled={saving}
                   className="px-3 py-1.5 rounded-lg text-[12px] shrink-0 bg-accent/85 text-white hover:bg-accent transition-colors"
                 >
-                  {saving ? 'Сохраняю…' : 'Сохранить'}
+                  {saving ? t("Сохраняю…", "Saving…") : t("Сохранить", "Save")}
                 </button>
               )}
               <button
                 onClick={() => { setOpenRel(null); setDirty(false) }}
-                title="Закрыть (Esc)"
+                title={t("Закрыть (Esc)", "Close (Esc)")}
                 className="w-8 h-8 rounded-lg shrink-0 flex items-center justify-center text-white/45 hover:text-white hover:bg-white/12 transition-colors"
               >
                 <CloseCircle size={18} variant="Linear" color="currentColor" />
@@ -886,8 +887,8 @@ export function MemoryGraph(_props: Props) {
             />
 
             <div className="px-4 py-2 border-t border-white/8 text-[11px] text-white/30 flex justify-between">
-              <span>{text.length.toLocaleString('ru')} символов</span>
-              <span>{dirty ? 'не сохранено · Ctrl+S' : 'сохранено · Esc закрыть'}</span>
+              <span>{text.length.toLocaleString('ru')} {t("символов", "characters")}</span>
+              <span>{dirty ? t("не сохранено · Ctrl+S", "unsaved · Ctrl+S") : t("сохранено · Esc закрыть", "saved · Esc to close")}</span>
             </div>
           </>
         )}

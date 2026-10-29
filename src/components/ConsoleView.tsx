@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '../lib/utils.js'
 import { Trash2, SlidersHorizontal, Check } from 'lucide-react'
+import { t, LOCALE } from '../lib/i18n.js'
 
 interface LogEntry {
   level: string
@@ -142,12 +143,12 @@ export function ConsoleView({ logs, onClear }: Props) {
         className="flex-1 overflow-y-auto px-2 py-1.5"
       >
         {visibleLogs.length === 0 && (
-          <p className="text-center text-[10px] text-text-ghost mt-6">Нет логов</p>
+          <p className="text-center text-[10px] text-text-ghost mt-6">{t("Нет логов", "No logs")}</p>
         )}
         {visibleLogs.map(log => (
           <div key={log.id} className="flex gap-1.5 py-[1px] group">
             <span className="text-[9px] text-text-ghost shrink-0 mt-[1px] font-mono">
-              {new Date(log.ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              {new Date(log.ts).toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </span>
             <span className={cn(
               'text-[10px] font-mono leading-relaxed break-all',

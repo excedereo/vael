@@ -2,6 +2,7 @@ import { api } from '../lib/api.js'
 import { TgPanel } from './TgPanel.js'
 import { HeartbeatPanel } from './HeartbeatPanel.js'
 import type { Session } from '../types/index.js'
+import { t } from '../lib/i18n.js'
 
 interface ModuleInfo {
   id: string
@@ -31,7 +32,7 @@ export function PyrePage({ sessions, activeModuleId, onModulesChange }: Props) {
 
   return (
     <div className="flex-1 flex items-center justify-center text-text-ghost text-sm">
-      Выбери модуль
+      {t("Выбери модуль", "Pick a module")}
     </div>
   )
 }

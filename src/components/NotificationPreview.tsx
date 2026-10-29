@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Notification, VolumeHigh, Timer1, MessageQuestion, TickCircle, CloseCircle, Play } from 'iconsax-reactjs'
 import { api } from '../lib/api.js'
 import type { NotificationSettings } from '../hooks/useSettings.js'
+import { t } from '../lib/i18n.js'
 
 /**
  * Макет экрана с уведомлениями рядом с настройками.
@@ -20,26 +21,26 @@ const KIND = {
   asking: {
     accent: '#d97757',
     icon: MessageQuestion,
-    name: 'Вопрос',
-    when: 'Сессия ждёт твоего ответа',
-    title: 'Рефакторинг сессий',
-    body: 'Ждёт ответа на вопрос',
+    name: t("Вопрос", "Question"),
+    when: t("Сессия ждёт твоего ответа", "The session is waiting for your answer"),
+    title: t("Рефакторинг сессий", "Session refactoring"),
+    body: t("Ждёт ответа на вопрос", "Waiting for an answer to a question"),
   },
   done: {
     accent: '#4ade80',
     icon: TickCircle,
-    name: 'Готово',
-    when: 'Claude закончил и ответил',
-    title: 'Сборка проекта',
-    body: 'Готово: ошибок нет',
+    name: t("Готово", "Done"),
+    when: t("Claude закончил и ответил", "Claude finished and answered"),
+    title: t("Сборка проекта", "Project build"),
+    body: t("Готово: ошибок нет", "Done: no errors"),
   },
   error: {
     accent: '#e26d6d',
     icon: CloseCircle,
-    name: 'Ошибка',
-    when: 'Процесс упал или прервался',
-    title: 'Тесты',
-    body: 'Процесс завершился с кодом 1',
+    name: t("Ошибка", "Error"),
+    when: t("Процесс упал или прервался", "The process crashed or was interrupted"),
+    title: t("Тесты", "Tests"),
+    body: t("Процесс завершился с кодом 1", "The process exited with code 1"),
   },
 } as const
 
@@ -163,7 +164,7 @@ export function NotificationPreview({ settings }: { settings: NotificationSettin
       <div>
         <div className="flex items-baseline justify-between mb-2.5 px-0.5">
           <span className="text-[12px] font-semibold text-text-muted uppercase tracking-[0.08em]">
-            Как это выглядит
+            {t("Как это выглядит", "How it looks")}
           </span>
           <span className="text-[11px] text-text-ghost tabular-nums">
             {realW}×{realH}
@@ -223,7 +224,7 @@ export function NotificationPreview({ settings }: { settings: NotificationSettin
                   [top ? 'bottom' : 'top']: 6,
                 }}
               >
-                до {settings.maxStack} в стопке
+                {t("до", "to")}{' '}{settings.maxStack} {t("в стопке", "in a stack")}
               </div>
             )}
           </div>
@@ -238,13 +239,13 @@ export function NotificationPreview({ settings }: { settings: NotificationSettin
       <div>
         <div className="flex items-center justify-between mb-2.5 px-0.5">
           <span className="text-[12px] font-semibold text-text-muted uppercase tracking-[0.08em]">
-            Типы уведомлений
+            {t("Типы уведомлений", "Notification types")}
           </span>
           <button
             onClick={() => api.previewNotifications()}
             className="text-[11.5px] text-text-faint hover:text-accent transition-colors"
           >
-            показать все
+            {t("показать все", "show all")}
           </button>
         </div>
         <div className="rounded-2xl border border-border-default bg-bg-surface overflow-hidden divide-y divide-white/[0.07]">
@@ -258,18 +259,18 @@ export function NotificationPreview({ settings }: { settings: NotificationSettin
         <div className="flex items-center gap-2 text-[12.5px] text-text-muted">
           <Timer1 size={15} variant="Linear" color="var(--text-faint)" className="shrink-0" />
           {settings.holdForever
-            ? 'Висит до клика или открытия Vael'
-            : `Исчезает через ${settings.holdSeconds} с`}
+            ? t("Висит до клика или открытия Vael", "Stays until clicked or Vael is opened")
+            : t(`Исчезает через ${settings.holdSeconds} с`, `Disappears after ${settings.holdSeconds} s`)}
         </div>
         <div className="flex items-center gap-2 text-[12.5px] text-text-muted">
           <VolumeHigh size={15} variant="Linear" color="var(--text-faint)" className="shrink-0" />
           {settings.soundEnabled
-            ? `Звук ${Math.round(settings.soundVolume * 100)}%`
-            : 'Без звука'}
+            ? t(`Звук ${Math.round(settings.soundVolume * 100)}%`, `Sound ${Math.round(settings.soundVolume * 100)}%`)
+            : t("Без звука", "No sound")}
         </div>
         <div className="flex items-center gap-2 text-[12.5px] text-text-muted">
           <Notification size={15} variant="Linear" color="var(--text-faint)" className="shrink-0" />
-          {settings.width}px · масштаб {Math.round(settings.scale * 100)}%
+          {settings.width}{t("px · масштаб", "px · scale")}{' '}{Math.round(settings.scale * 100)}%
         </div>
       </div>
     </div>
@@ -296,8 +297,8 @@ function KindRow({ kind }: { kind: Kind }) {
 
       <button
         onClick={() => api.previewNotification(kind)}
-        title="Показать это уведомление"
-        aria-label={`Показать: ${k.name}`}
+        title={t("Показать это уведомление", "Show this notification")}
+        aria-label={t(`Показать: ${k.name}`, `Show: ${k.name}`)}
         className="shrink-0 w-8 h-8 rounded-lg grid place-items-center text-text-faint hover:text-text-primary hover:bg-surface-hover transition-colors"
       >
         <Play size={15} variant="Bold" color="currentColor" />
@@ -312,7 +313,7 @@ export function NotificationPreviewDisabled() {
     <div className="rounded-2xl border border-dashed border-border-default px-5 py-10 text-center">
       <Notification size={26} variant="Linear" color="var(--text-ghost)" className="mx-auto mb-2.5" />
       <p className="text-[13px] text-text-ghost leading-snug">
-        Уведомления выключены — карточки не появятся
+        {t("Уведомления выключены — карточки не появятся", "Notifications are off — cards won't appear")}
       </p>
     </div>
   )

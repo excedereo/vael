@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, AlertCircle } from 'lucide-react'
+import { t } from '../lib/i18n.js'
 
 interface Props {
   message: string | null
@@ -26,7 +27,7 @@ export function ErrorToast({ message, onClose }: Props) {
         >
           <AlertCircle size={15} className="text-red-400 shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
-            <div className="text-[12px] font-medium text-red-400">Ошибка</div>
+            <div className="text-[12px] font-medium text-red-400">{t("Ошибка", "Error")}</div>
             <div className="text-[11px] text-text-muted mt-0.5 leading-relaxed">{message}</div>
           </div>
           <button onClick={onClose} className="text-text-faint hover:text-text-secondary transition-colors shrink-0">

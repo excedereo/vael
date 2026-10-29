@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import { api } from '../lib/api.js'
+import { t } from '../lib/i18n.js'
 
 export interface DepsState {
   npm: string | null
@@ -25,7 +26,7 @@ export function useDependencies() {
       const newDeps = await api.checkDeps()
       setDeps(newDeps)
     } else {
-      setInstallLog(result.log || 'Неизвестная ошибка')
+      setInstallLog(result.log || t("Неизвестная ошибка", "Unknown error"))
     }
   }, [])
 

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Check } from 'lucide-react'
 import { cn } from '../lib/utils.js'
 import type { ModelId, EffortLevel, PermissionMode } from './InputBar.js'
+import { t } from '../lib/i18n.js'
 
 const PERMISSION_LABELS: Record<PermissionMode, string> = {
   bypassPermissions: 'Bypass',
@@ -109,7 +110,7 @@ export function InputBarToolbar({
                   : 'text-text-faint hover:text-text-secondary hover:bg-surface-hover active:bg-surface-active active:scale-95',
             )}
           >
-            {ptyStarting ? 'запуск сессии…' : ptyConfirm ? 'завершить сессию?' : 'сессия активна'}
+            {ptyStarting ? t("запуск сессии…", "starting session…") : ptyConfirm ? t("завершить сессию?", "end session?") : t("сессия активна", "session is active")}
           </button>
         )}
 

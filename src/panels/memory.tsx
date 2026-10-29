@@ -5,6 +5,7 @@ import { MemoryPage } from '../components/MemoryPage.js'
 import { MemoryGraph } from '../components/MemoryGraph.js'
 import type { VaeliPanel } from '../types/panel.js'
 import { cn } from '../lib/utils.js'
+import { t } from '../lib/i18n.js'
 
 function MemoryWrapper() {
   const [view, setView] = useState<'list' | 'graph'>('list')
@@ -22,8 +23,8 @@ function MemoryWrapper() {
         )}
       >
         {([
-          ['list', Category, 'Список'],
-          ['graph', Element3, 'Граф'],
+          ['list', Category, t("Список", "List")],
+          ['graph', Element3, t("Граф", "Graph")],
         ] as const).map(([id, Icon, title]) => (
           <button
             key={id}
@@ -54,7 +55,7 @@ function MemoryWrapper() {
 
 export const memoryPanel: VaeliPanel = {
   id: 'memory',
-  label: 'Память',
+  label: t("Память", "Memory"),
   icon: <BookOpen size={16} />,
   render() {
     return <MemoryWrapper />

@@ -6,6 +6,7 @@ import { api, type ChatStreamEvent, type ChatModelInfo, type ChatInit } from '..
 import type { ChatItem } from '../types/index'
 import { buildUserContent, splitUserContent, type ComposedPart } from '../../shared/chatContent.js'
 import { saveCliModels } from '../lib/cliModels.js'
+import { t as tr } from '../lib/i18n.js'
 
 export interface ChatCommand { name: string; description?: string; argumentHint?: string }
 
@@ -334,12 +335,12 @@ export function useChatSession(sessionId: string | null, jsonlPath: string | nul
           }
           setStatus('')
         } else if (ev.subtype === 'api_retry') {
-          setStatus(`Повтор запроса ${ev.attempt}/${ev.max_retries}${ev.error ? ' · ' + ev.error : ''}`)
+          setStatus(tr(`Повтор запроса ${ev.attempt}/${ev.max_retries}${ev.error ? ' · ' + ev.error : ''}`, `Retrying request ${ev.attempt}/${ev.max_retries}${ev.error ? ' · ' + ev.error : ''}`))
         }
         return
 
       case 'conversation_reset':
-        push({ kind: 'divider', key: nextKey(), text: 'новый разговор' })
+        push({ kind: 'divider', key: nextKey(), text: tr("новый разговор", "new conversation") })
         setContextTokens(null)
         return
 
@@ -353,12 +354,12 @@ export function useChatSession(sessionId: string | null, jsonlPath: string | nul
           try { localStorage.setItem(windowKey(mu[0]), String(mu[1].contextWindow)) } catch {}
         }
         const aborted = String(ev.terminal_reason ?? '').startsWith('aborted')
-        if (aborted) push({ kind: 'meta', key: nextKey(), text: 'Остановлено' })
-        else if (ev.is_error) push({ kind: 'error', key: nextKey(), text: String(ev.result || ev.subtype || 'ошибка') })
+        if (aborted) push({ kind: 'meta', key: nextKey(), text: tr("Остановлено", "Stopped") })
+        else if (ev.is_error) push({ kind: 'error', key: nextKey(), text: String(ev.result || ev.subtype || tr("ошибка", "error")) })
         // Итог хода как у CLI: время, вход последнего запроса, выход за весь ход
         if (!aborted && ev.num_turns > 0 && ev.duration_ms) {
           const out = ev.usage?.output_tokens ?? t.outDone
-          push({ kind: 'meta', key: nextKey(), text: `${(ev.duration_ms / 1000).toFixed(1)} с · ↑ ${fmtTokens(t.inputTokens)} · ↓ ${fmtTokens(out)}`, stats: { sec: ev.duration_ms / 1000, input: t.inputTokens, cache: t.cacheTokens, output: out, requests: t.requests } })
+          push({ kind: 'meta', key: nextKey(), text: tr(`${(ev.duration_ms / 1000).toFixed(1)} с · ↑ ${fmtTokens(t.inputTokens)} · ↓ ${fmtTokens(out)}`, `${(ev.duration_ms / 1000).toFixed(1)} s · ↑ ${fmtTokens(t.inputTokens)} · ↓ ${fmtTokens(out)}`), stats: { sec: ev.duration_ms / 1000, input: t.inputTokens, cache: t.cacheTokens, output: out, requests: t.requests } })
         }
         t.startedAt = 0
         // Недописанный стрим (прервали) — закрываем висящие блоки
@@ -392,7 +393,7 @@ export function useChatSession(sessionId: string | null, jsonlPath: string | nul
       if (sid !== sessionId) return
       setBusy(false)
       ref.current.turn.startedAt = 0
-      if (code) push({ kind: 'error', key: nextKey(), text: `Процесс завершился с кодом ${code}` })
+      if (code) push({ kind: 'error', key: nextKey(), text: tr(`Процесс завершился с кодом ${code}`, `Process exited with code ${code}`) })
     })
     return () => { offEvent(); offExit() }
   }, [sessionId, handle, push])
@@ -431,7 +432,7 @@ export function useChatSession(sessionId: string | null, jsonlPath: string | nul
     setBusy(true)
     const r = await api.chatSend(sessionId, content)
     if (!r.ok) {
-      settleOutbox(false); setBusy(false); ref.current.turn.startedAt = 0; push({ kind: 'error', key: nextKey(), text: 'Процесс чата не запущен' }) }
+      settleOutbox(false); setBusy(false); ref.current.turn.startedAt = 0; push({ kind: 'error', key: nextKey(), text: tr("Процесс чата не запущен", "Chat process is not running") }) }
   }, [sessionId, push, beginTurn, settleOutbox])
 
   const getProgress = useCallback((): ChatProgress | null => {
@@ -456,14 +457,14 @@ export function useChatSession(sessionId: string | null, jsonlPath: string | nul
     if (!sessionId) return
     const r = await api.chatSetModel(sessionId, value)
     if (r.ok && r.model) { setModel(r.model); setContextWindow(loadWindow(r.model)) }
-    else if (!r.ok) push({ kind: 'error', key: nextKey(), text: r.error ?? 'Не удалось сменить модель' })
+    else if (!r.ok) push({ kind: 'error', key: nextKey(), text: r.error ?? tr("Не удалось сменить модель", "Could not change the model") })
   }, [sessionId, push])
 
   const changeMode = useCallback(async (value: string) => {
     if (!sessionId) return
     const r = await api.chatSetPermissionMode(sessionId, value)
     if (r.ok) setPermissionMode(r.mode ?? value)
-    else push({ kind: 'error', key: nextKey(), text: r.error ?? 'Не удалось сменить режим' })
+    else push({ kind: 'error', key: nextKey(), text: r.error ?? tr("Не удалось сменить режим", "Could not change the mode") })
   }, [sessionId, push])
 
   // Отдельного запроса на effort у CLI нет — шлём команду и прячем её служебный ответ

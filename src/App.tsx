@@ -25,6 +25,7 @@ import { AccountSwitchModal } from './components/AccountSwitchModal.js'
 import { FirstLaunch } from './components/FirstLaunch.js'
 import { DepsScreen } from './components/DepsScreen.js'
 import { SummariesModal } from './components/SummariesModal.js'
+import { LanguageScreen } from './components/LanguageScreen.js'
 import { ErrorToast } from './components/ErrorToast.js'
 import { DevPanel } from './components/DevPanel.js'
 import { NavControls } from './components/NavControls.js'
@@ -44,6 +45,7 @@ import { statusLog } from './lib/statusLog.js'
 import { loadNotificationSettings } from './hooks/useSettings.js'
 import { loadDefaultSessionConfig } from './components/SettingsPage.js'
 import { cn } from './lib/utils.js'
+import { t, LANG_CHOSEN } from './lib/i18n.js'
 
 export default function App() {
   return (
@@ -398,7 +400,7 @@ function AppInner() {
     }
     const r = await api.deleteSession(`${session.projectPath}\\${session.id}.jsonl`)
     setDeleting(false)
-    if (r && r.ok === false) { setDeleteError(r.error ?? 'не получилось'); return }
+    if (r && r.ok === false) { setDeleteError(r.error ?? t("не получилось", "failed")); return }
     setDeleteTarget(null)
     if (activeSessionId === session.id) setActiveSessionId(null)
     dropSession(session.id)
@@ -420,6 +422,9 @@ function AppInner() {
     if (acc.id !== activeAccountId) await switchAccount(acc.id)
     refreshAccounts()
   }, [activeAccountId, switchAccount, refreshAccounts])
+
+  // Phase: язык — самым первым, пока он не выбран явно
+  if (!LANG_CHOSEN) return <LanguageScreen />
 
   // Phase: зависимости — первыми: без claude не работает и вход в аккаунт
   if (deps === null) return <div className="fixed inset-0 bg-bg-base" />
@@ -450,10 +455,10 @@ function AppInner() {
       {tempCleanupBanner && (
         <div className="fixed top-10 left-1/2 -translate-x-1/2 z-[300] animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-bg-elevated border border-border-default shadow-2xl shadow-black/60 text-[14px]">
-            <span className="text-text-secondary">Очистка temp папки…</span>
-            <span className="text-text-faint">{tempCleanupCountdown}с</span>
+            <span className="text-text-secondary">{t("Очистка temp папки…", "Cleaning temp folder…")}</span>
+            <span className="text-text-faint">{tempCleanupCountdown}{t("с", "s")}</span>
             <button onClick={() => api.tempCancelCleanup()} className="text-text-muted hover:text-text-primary transition-colors border border-border-default rounded-lg px-2.5 py-1 text-[13px]">
-              Отмена
+              {t("Отмена", "Cancel")}
             </button>
           </div>
         </div>
@@ -529,7 +534,7 @@ function AppInner() {
               transition={{ duration: 0.15 }}
               className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-bg-base/80 backdrop-blur-sm border-2 border-dashed border-accent/40 rounded-none pointer-events-none"
             >
-              <span className="text-[15px] text-text-secondary">Перетащите файлы сюда</span>
+              <span className="text-[15px] text-text-secondary">{t("Перетащите файлы сюда", "Drop files here")}</span>
             </motion.div>
           )}
         </AnimatePresence>
@@ -538,8 +543,8 @@ function AppInner() {
           <div className="app-drag-region flex items-center flex-1 min-w-0 h-full pl-2 pr-3 gap-2.5">
             <button
               onClick={() => setSidebarCollapsed(v => !v)}
-              title={sidebarCollapsed ? 'Развернуть панель' : 'Свернуть панель'}
-              aria-label={sidebarCollapsed ? 'Развернуть панель' : 'Свернуть панель'}
+              title={sidebarCollapsed ? t("Развернуть панель", "Expand panel") : t("Свернуть панель", "Collapse panel")}
+              aria-label={sidebarCollapsed ? t("Развернуть панель", "Expand panel") : t("Свернуть панель", "Collapse panel")}
               className="no-drag w-7 h-7 shrink-0 rounded-md flex items-center justify-center text-text-faint hover:text-text-secondary hover:bg-surface-hover transition-colors"
             >
               {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
@@ -548,7 +553,7 @@ function AppInner() {
               <>
                 <span className={cn('session-dot', isPtySpawned || isChatActive ? 'is-live' : 'is-off')} />
                 <span className="text-[14px] font-medium text-text-primary truncate select-none pointer-events-none" title={activeSession?.title}>
-                  {activeSession ? (activeSession.title || 'Без названия') : 'Новая сессия'}
+                  {activeSession ? (activeSession.title || t("Без названия", "Untitled")) : t("Новая сессия", "New session")}
                 </span>
               </>
             ) : (
@@ -558,12 +563,12 @@ function AppInner() {
             )}
           </div>
           {section === 'sessions' && (
-            <div className="view-toggle no-drag shrink-0" role="tablist" aria-label="Вид сессии">
-              <button className={cn(viewMode === 'terminal' && 'is-active')} onClick={() => handleViewModeChange('terminal')} title="Живой TUI claude в терминале">
-                <SquareTerminal size={13} />Терминал
+            <div className="view-toggle no-drag shrink-0" role="tablist" aria-label={t("Вид сессии", "Session view")}>
+              <button className={cn(viewMode === 'terminal' && 'is-active')} onClick={() => handleViewModeChange('terminal')} title={t("Живой TUI claude в терминале", "Live claude TUI in a terminal")}>
+                <SquareTerminal size={13} />{t("Терминал", "Terminal")}
               </button>
-              <button className={cn(viewMode === 'chat' && 'is-active')} onClick={() => handleViewModeChange('chat')} title="Чат поверх stream-json">
-                <MessageSquare size={13} />Чат
+              <button className={cn(viewMode === 'chat' && 'is-active')} onClick={() => handleViewModeChange('chat')} title={t("Чат поверх stream-json", "Chat on top of stream-json")}>
+                <MessageSquare size={13} />{t("Чат", "Chat")}
               </button>
             </div>
           )}
@@ -583,20 +588,20 @@ function AppInner() {
           <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { if (!deleting) setDeleteTarget(null) }} />
             <div className="relative w-[360px] bg-bg-elevated border border-border-default rounded-2xl p-5 shadow-2xl space-y-3 animate-in fade-in zoom-in-95 duration-150">
-              <h2 className="text-base font-medium text-text-primary">Удалить сессию?</h2>
-              <p className="text-[13.5px] text-text-primary truncate" title={deleteTarget.title}>«{deleteTarget.title || 'Без названия'}»</p>
+              <h2 className="text-base font-medium text-text-primary">{t("Удалить сессию?", "Delete session?")}</h2>
+              <p className="text-[13.5px] text-text-primary truncate" title={deleteTarget.title}>«{deleteTarget.title || t("Без названия", "Untitled")}»</p>
               <p className="text-[13px] text-text-muted leading-relaxed">
-                Переписка уедет в корзину Windows — оттуда её можно вернуть.
-                {(Object.values(chatSessions).includes(deleteTarget.id) || Object.keys(spawnedSessions).some(tid => (termToSession[tid] ?? tid) === deleteTarget.id)) && ' Запущенный процесс будет остановлен.'}
+                {t("Переписка уедет в корзину Windows — оттуда её можно вернуть.", "The conversation goes to the Windows Recycle Bin — you can restore it from there.")}
+                {(Object.values(chatSessions).includes(deleteTarget.id) || Object.keys(spawnedSessions).some(tid => (termToSession[tid] ?? tid) === deleteTarget.id)) && t(" Запущенный процесс будет остановлен.", " The running process will be stopped.")}
               </p>
-              {deleteError && <p className="text-[13px] text-[var(--color-error)]">Не удалось: {deleteError}</p>}
+              {deleteError && <p className="text-[13px] text-[var(--color-error)]">{t("Не удалось:", "Failed:")}{' '}{deleteError}</p>}
               <div className="flex gap-2 justify-end pt-1">
                 <button autoFocus disabled={deleting} onClick={() => setDeleteTarget(null)} className="text-sm px-3 py-1.5 rounded-lg text-text-secondary hover:bg-surface-hover transition-colors disabled:opacity-40">
-                  Отмена
+                  {t("Отмена", "Cancel")}
                 </button>
                 <button onClick={confirmDelete} disabled={deleting} className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg text-red-400 bg-red-400/10 hover:bg-red-400/20 transition-colors">
                   {deleting && <span className="w-3.5 h-3.5 rounded-full border-2 border-red-400/30 border-t-red-400 animate-spin" />}
-                  {deleting ? 'Удаляю…' : 'Удалить'}
+                  {deleting ? t("Удаляю…", "Deleting…") : t("Удалить", "Delete")}
                 </button>
               </div>
             </div>
@@ -607,11 +612,11 @@ function AppInner() {
           <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setKillSessionModal(false)} />
             <div className="relative w-80 bg-bg-surface border border-border-default rounded-2xl p-5 shadow-2xl space-y-4">
-              <h2 className="text-base font-semibold text-text-primary">Закрыть сессию?</h2>
-              <p className="text-sm text-text-secondary">Процесс claude будет убит. Сама сессия никуда не денется — её можно будет открыть снова.</p>
+              <h2 className="text-base font-semibold text-text-primary">{t("Закрыть сессию?", "Close session?")}</h2>
+              <p className="text-sm text-text-secondary">{t("Процесс claude будет убит. Сама сессия никуда не денется — её можно будет открыть снова.", "The claude process will be killed. The session itself stays — you can open it again.")}</p>
               <div className="flex gap-2 justify-end">
                 <button onClick={() => setKillSessionModal(false)} className="text-sm px-3 py-1.5 rounded-lg text-text-secondary hover:bg-surface-hover transition-colors">
-                  Отмена
+                  {t("Отмена", "Cancel")}
                 </button>
                 <button
                   onClick={() => {
@@ -631,7 +636,7 @@ function AppInner() {
                   }}
                   className="text-sm px-3 py-1.5 rounded-lg text-red-400 bg-red-400/10 hover:bg-red-400/20 transition-colors"
                 >
-                  Завершить
+                  {t("Завершить", "End")}
                 </button>
               </div>
             </div>
@@ -859,7 +864,7 @@ function SessionMenu({ sessionId, canKill, onKill }: { sessionId: string | null;
     <div ref={ref} className="relative no-drag shrink-0 ml-1">
       <button
         onClick={() => setOpen(v => !v)}
-        title="Действия с сессией"
+        title={t("Действия с сессией", "Session actions")}
         className={cn('w-7 h-7 rounded-md flex items-center justify-center transition-colors', open ? 'text-text-primary bg-surface-hover' : 'text-text-faint hover:text-text-secondary hover:bg-surface-hover')}
       >
         <Ellipsis size={16} />
@@ -868,12 +873,12 @@ function SessionMenu({ sessionId, canKill, onKill }: { sessionId: string | null;
         <div className="header-menu">
           {sessionId && (
             <button onClick={() => { navigator.clipboard.writeText(sessionId).catch(() => {}); setOpen(false) }}>
-              <Copy size={14} />Скопировать ID сессии
+              <Copy size={14} />{t("Скопировать ID сессии", "Copy session ID")}
             </button>
           )}
           {canKill && (
             <button className="is-danger" onClick={() => { setOpen(false); onKill() }}>
-              <StopCircle size={14} />Завершить процесс
+              <StopCircle size={14} />{t("Завершить процесс", "End process")}
             </button>
           )}
         </div>

@@ -1,4 +1,5 @@
 import { Download, X, RotateCcw, AlertTriangle } from 'lucide-react'
+import { t } from '../lib/i18n.js'
 
 export type UpdateState =
   | { status: 'available'; version: string }
@@ -22,7 +23,7 @@ export function UpdateBanner({ state, onClick, onDismiss }: Props) {
           <div className="flex items-start gap-2">
             <AlertTriangle size={13} className="shrink-0 mt-0.5" style={{ color: 'var(--error-text)' }} />
             <div className="flex-1 min-w-0">
-              <span className="text-[12px] font-semibold leading-tight block" style={{ color: 'var(--error-text)' }}>Ошибка скачивания</span>
+              <span className="text-[12px] font-semibold leading-tight block" style={{ color: 'var(--error-text)' }}>{t("Ошибка скачивания", "Download error")}</span>
               <span className="text-[11px] leading-tight block text-text-muted">{state.message}</span>
             </div>
           </div>
@@ -33,7 +34,7 @@ export function UpdateBanner({ state, onClick, onDismiss }: Props) {
               style={{ background: 'var(--error-border)', color: 'var(--error-text)' }}
             >
               <RotateCcw size={11} />
-              Попробовать снова
+              {t("Попробовать снова", "Try again")}
             </button>
             {onDismiss && (
               <button
@@ -41,7 +42,7 @@ export function UpdateBanner({ state, onClick, onDismiss }: Props) {
                 className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-text-muted hover:text-text-secondary transition-colors"
               >
                 <X size={11} />
-                Закрыть
+                {t("Закрыть", "Close")}
               </button>
             )}
           </div>
@@ -61,8 +62,8 @@ export function UpdateBanner({ state, onClick, onDismiss }: Props) {
             <Download size={13} className="text-accent" />
           </div>
           <div className="flex flex-col min-w-0">
-            <span className="text-[12px] font-semibold text-accent leading-tight">Доступно обновление</span>
-            <span className="text-[11px] text-text-muted leading-tight">v{state.version} — нажми чтобы скачать</span>
+            <span className="text-[12px] font-semibold text-accent leading-tight">{t("Доступно обновление", "Update available")}</span>
+            <span className="text-[11px] text-text-muted leading-tight">v{state.version} {t("— нажми чтобы скачать", "— click to download")}</span>
           </div>
         </div>
       )}
@@ -70,7 +71,7 @@ export function UpdateBanner({ state, onClick, onDismiss }: Props) {
       {state.status === 'downloading' && (
         <div className="flex flex-col gap-1.5 px-3 py-2.5">
           <div className="flex items-center justify-between">
-            <span className="text-[12px] font-semibold text-accent">Скачивание обновления...</span>
+            <span className="text-[12px] font-semibold text-accent">{t("Скачивание обновления...", "Downloading update...")}</span>
             <span className="text-[11px] text-text-muted">{Math.round(state.progress)}%</span>
           </div>
           <div className="h-1 rounded-full overflow-hidden" style={{ background: 'var(--border-default)' }}>
@@ -88,8 +89,8 @@ export function UpdateBanner({ state, onClick, onDismiss }: Props) {
             <Download size={13} className="text-accent" />
           </div>
           <div className="flex flex-col min-w-0">
-            <span className="text-[12px] font-semibold text-accent leading-tight">Готово к установке</span>
-            <span className="text-[11px] text-text-muted leading-tight">Нажми чтобы перезапустить</span>
+            <span className="text-[12px] font-semibold text-accent leading-tight">{t("Готово к установке", "Ready to install")}</span>
+            <span className="text-[11px] text-text-muted leading-tight">{t("Нажми чтобы перезапустить", "Click to restart")}</span>
           </div>
         </div>
       )}

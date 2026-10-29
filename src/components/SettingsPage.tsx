@@ -7,7 +7,7 @@ import { loadCliModels } from '../lib/cliModels.js'
 import { BUILTIN_THEMES } from '../lib/builtinThemes.js'
 import {
   Section, ToggleRow, Toggle, ThemePicker, Dropdown,
-  PageHeader, Row,
+  PageHeader, Row, SegmentedControl,
 } from './SettingsComponents.js'
 import { Brush, Size, Message, Cpu, Flash, ShieldTick, Monitor, Folder2, Broom, InfoCircle, Refresh2, Global, Data } from 'iconsax-reactjs'
 import { NotificationSettingsSection } from './NotificationSettings.js'
@@ -21,6 +21,7 @@ import {
 import { useSettings, loadVpnCheck, saveVpnCheck, DEFAULT_CONTENT_PADDING as SETTINGS_DEFAULT_CONTENT_PADDING } from '../hooks/useSettings.js'
 import { NetworkStatusRow } from './NetworkBanner.js'
 import type { UISettings } from '../hooks/useSettings.js'
+import { t, LANG, setLang } from '../lib/i18n.js'
 
 interface Props {
   onBack: () => void
@@ -102,25 +103,25 @@ function saveDefaultSessionConfig(c: DefaultSessionConfig) {
 function modelOptions() {
   const list = loadCliModels().filter(m => m.value !== 'default')
   if (!list.length) return [
-    { value: 'opus',   label: 'Opus',   sub: 'последняя Opus' },
-    { value: 'sonnet', label: 'Sonnet', sub: 'последняя Sonnet' },
-    { value: 'haiku',  label: 'Haiku',  sub: 'последняя Haiku' },
+    { value: 'opus',   label: 'Opus',   sub: t("последняя Opus", "latest Opus") },
+    { value: 'sonnet', label: 'Sonnet', sub: t("последняя Sonnet", "latest Sonnet") },
+    { value: 'haiku',  label: 'Haiku',  sub: t("последняя Haiku", "latest Haiku") },
   ]
   return list.map(m => ({ value: m.value, label: m.displayName, sub: m.description ?? '' }))
 }
 const EFFORT_OPTIONS_DEF = [
-  { value: 'low',    label: 'Low',    sub: 'быстро, экономно' },
-  { value: 'medium', label: 'Medium', sub: 'баланс' },
-  { value: 'high',   label: 'High',   sub: 'глубже' },
-  { value: 'xhigh',  label: 'X-High', sub: 'очень глубоко' },
-  { value: 'max',    label: 'Max',    sub: 'максимум' },
+  { value: 'low',    label: 'Low',    sub: t("быстро, экономно", "fast, economical") },
+  { value: 'medium', label: 'Medium', sub: t("баланс", "balanced") },
+  { value: 'high',   label: 'High',   sub: t("глубже", "deeper") },
+  { value: 'xhigh',  label: 'X-High', sub: t("очень глубоко", "very deep") },
+  { value: 'max',    label: 'Max',    sub: t("максимум", "maximum") },
 ]
 const PERMISSION_OPTIONS_DEF = [
-  { value: 'bypassPermissions', label: 'Bypass',       sub: 'пропустить все проверки' },
-  { value: 'auto',              label: 'Auto',         sub: 'автоматически' },
-  { value: 'acceptEdits',       label: 'Accept Edits', sub: 'принимать правки' },
-  { value: 'default',           label: 'Default',      sub: 'стандартный' },
-  { value: 'plan',              label: 'Plan',         sub: 'только планировать' },
+  { value: 'bypassPermissions', label: 'Bypass',       sub: t("пропустить все проверки", "skip all checks") },
+  { value: 'auto',              label: 'Auto',         sub: t("автоматически", "automatic") },
+  { value: 'acceptEdits',       label: 'Accept Edits', sub: t("принимать правки", "accept edits") },
+  { value: 'default',           label: 'Default',      sub: t("стандартный", "default") },
+  { value: 'plan',              label: 'Plan',         sub: t("только планировать", "plan only") },
 ]
 
 // PTY-recommended values — applied when applyPtyOptimizations is true
@@ -131,9 +132,9 @@ const PTY_RECOMMENDED: Partial<ClaudeSettings> = {
 }
 
 const CAT_LABELS: Record<OptionCategory, string> = {
-  model:      'Модель',
-  effort:     'Мышление',
-  permission: 'Доступ',
+  model:      t("Модель", "Model"),
+  effort:     t("Мышление", "Thinking"),
+  permission: t("Доступ", "Access"),
 }
 
 const CAT_COLORS: Record<OptionCategory, { bg: string; text: string }> = {
@@ -164,8 +165,8 @@ function CustomOptionsTable() {
   const handleAdd = () => {
     const v = form.value.trim()
     const l = form.label.trim()
-    if (!v || !l) { setErr('Значение и название обязательны'); return }
-    if (allOpts[form.cat].find(o => o.value === v)) { setErr('Такое значение уже есть'); return }
+    if (!v || !l) { setErr(t("Значение и название обязательны", "Value and name are required")); return }
+    if (allOpts[form.cat].find(o => o.value === v)) { setErr(t("Такое значение уже есть", "This value already exists")); return }
     refresh(form.cat, [...allOpts[form.cat], { value: v, label: l, sub: form.sub.trim() || undefined }])
     setForm(f => ({ cat: f.cat, value: '', label: '', sub: '' }))
     setAdding(false)
@@ -181,14 +182,14 @@ function CustomOptionsTable() {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between px-1">
-        <span className="text-[12px] font-semibold text-text-muted uppercase tracking-[0.08em]">Кастомные опции</span>
+        <span className="text-[12px] font-semibold text-text-muted uppercase tracking-[0.08em]">{t("Кастомные опции", "Custom options")}</span>
         {!adding && (
           <button
             onClick={() => setAdding(true)}
             className="flex items-center gap-1 px-2 py-1 rounded-lg text-[12px] border border-border-default text-text-muted hover:text-text-primary hover:border-border-strong transition-colors"
           >
             <Plus size={11} />
-            Добавить
+            {t("Добавить", "Add")}
           </button>
         )}
       </div>
@@ -198,7 +199,7 @@ function CustomOptionsTable() {
           className="rounded-xl border border-dashed border-border-subtle px-4 py-5 text-center text-[13px] text-text-ghost"
           style={{ background: 'var(--bg-surface)' }}
         >
-          Нет кастомных опций
+          {t("Нет кастомных опций", "No custom options")}
         </div>
       )}
 
@@ -246,7 +247,7 @@ function CustomOptionsTable() {
           style={{ background: 'var(--bg-surface)' }}
         >
           <div className="flex items-center gap-2">
-            <span className="text-[11px] text-text-faint uppercase tracking-wider mr-1">Тип</span>
+            <span className="text-[11px] text-text-faint uppercase tracking-wider mr-1">{t("Тип", "Type")}</span>
             {cats.map(c => {
               const clr = CAT_COLORS[c]
               const active = form.cat === c
@@ -267,7 +268,7 @@ function CustomOptionsTable() {
 
           <div className="grid grid-cols-3 gap-4">
             <div className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-faint)' }}>Значение / флаг</span>
+              <span className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-faint)' }}>{t("Значение / флаг", "Value / flag")}</span>
               <input
                 autoFocus
                 value={form.value}
@@ -278,7 +279,7 @@ function CustomOptionsTable() {
               />
             </div>
             <div className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-faint)' }}>Название</span>
+              <span className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-faint)' }}>{t("Название", "Name")}</span>
               <input
                 value={form.label}
                 onChange={e => setForm(f => ({ ...f, label: e.target.value }))}
@@ -288,12 +289,12 @@ function CustomOptionsTable() {
               />
             </div>
             <div className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-faint)' }}>Описание</span>
+              <span className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-faint)' }}>{t("Описание", "Description")}</span>
               <input
                 value={form.sub}
                 onChange={e => setForm(f => ({ ...f, sub: e.target.value }))}
                 onKeyDown={e => e.key === 'Enter' && handleAdd()}
-                placeholder="необязательно"
+                placeholder={t("необязательно", "optional")}
                 className={inputBase}
               />
             </div>
@@ -307,14 +308,14 @@ function CustomOptionsTable() {
               className="px-3 py-1.5 rounded-lg text-[12px] font-medium transition-opacity hover:opacity-90"
               style={{ background: 'var(--accent)', color: 'white' }}
             >
-              Добавить
+              {t("Добавить", "Add")}
             </button>
             <button
               onClick={() => { setAdding(false); setErr('') }}
               className="px-3 py-1.5 rounded-lg text-[12px] border border-border-default transition-colors hover:border-border-strong"
               style={{ color: 'var(--text-muted)' }}
             >
-              Отмена
+              {t("Отмена", "Cancel")}
             </button>
           </div>
         </div>
@@ -450,21 +451,27 @@ export function SettingsPage(_props: Props) {
             {tab === 'interface' && (<>
               <PageHeader
                 icon={Brush}
-                title="Интерфейс"
-                desc="Тема оформления и то, как раскладывается контент"
+                title={t("Интерфейс", "Interface")}
+                desc={t("Тема оформления и то, как раскладывается контент", "Theme and how content is laid out")}
               />
 
-              <Section label="Тема" icon={Brush}>
-                <Row icon={Brush} label="Оформление" desc="Свои темы кладутся в папку с темами">
+              <Section label={t("Язык", "Language")} icon={Global}>
+                <Row icon={Global} label={t("Язык интерфейса", "Interface language")} desc={t("Окно перезагрузится, сессии продолжат работать", "The window reloads, sessions keep running")}>
+                  <SegmentedControl value={LANG} options={[{ id: "ru", label: "Русский" }, { id: "en", label: "English" }]} onChange={v => { if (v !== LANG) setLang(v) }} />
+                </Row>
+              </Section>
+
+              <Section label={t("Тема", "Theme")} icon={Brush}>
+                <Row icon={Brush} label={t("Оформление", "Appearance")} desc={t("Свои темы кладутся в папку с темами", "Custom themes go into the themes folder")}>
                   <ThemePicker themes={themes} activeThemeFile={activeThemeFile} setActiveThemeFile={setActiveThemeFile} />
                 </Row>
               </Section>
 
-              <Section label="Отображение" icon={Size}>
+              <Section label={t("Отображение", "Display")} icon={Size}>
                 <Row
                   icon={Size}
-                  label="Отступ контента"
-                  desc="Боковые отступы чата и поля ввода"
+                  label={t("Отступ контента", "Content padding")}
+                  desc={t("Боковые отступы чата и поля ввода", "Side padding of the chat and the input")}
                 >
                   <div className="flex items-center gap-2">
                     <input
@@ -484,8 +491,8 @@ export function SettingsPage(_props: Props) {
 
                 <ToggleRow
                   icon={Data}
-                  label="Раздел Память"
-                  desc="Иконка памяти в боковой панели — файлы и граф"
+                  label={t("Раздел Память", "Memory section")}
+                  desc={t("Иконка памяти в боковой панели — файлы и граф", "Memory icon in the sidebar — files and graph")}
                   value={showMemory}
                   onChange={v => {
                     setShowMemory(v)
@@ -505,15 +512,15 @@ export function SettingsPage(_props: Props) {
             {tab === 'sessions' && (<>
               <PageHeader
                 icon={Message}
-                title="Сессии"
-                desc="С какими параметрами стартует новая сессия"
+                title={t("Сессии", "Sessions")}
+                desc={t("С какими параметрами стартует новая сессия", "What a new session starts with")}
               />
 
-              <Section label="По умолчанию" icon={Message} desc="применяется к новым сессиям">
+              <Section label={t("По умолчанию", "Defaults")} icon={Message} desc={t("применяется к новым сессиям", "applies to new sessions")}>
                 {([
-                  { label: 'Модель',   key: 'model' as const,           icon: Cpu,      desc: 'Чем отвечает Claude',            options: [...modelOptions(),         ...customModels]  },
-                  { label: 'Мышление', key: 'effort' as const,          icon: Flash,    desc: 'Глубина рассуждений',            options: [...EFFORT_OPTIONS_DEF,     ...customEfforts] },
-                  { label: 'Доступ',   key: 'permissionMode' as const,  icon: ShieldTick, desc: 'Что можно делать без спроса',  options: [...PERMISSION_OPTIONS_DEF, ...customPerms] },
+                  { label: t("Модель", "Model"),   key: 'model' as const,           icon: Cpu,      desc: t("Чем отвечает Claude", "Which model answers"),            options: [...modelOptions(),         ...customModels]  },
+                  { label: t("Мышление", "Thinking"), key: 'effort' as const,          icon: Flash,    desc: t("Глубина рассуждений", "Reasoning depth"),            options: [...EFFORT_OPTIONS_DEF,     ...customEfforts] },
+                  { label: t("Доступ", "Access"),   key: 'permissionMode' as const,  icon: ShieldTick, desc: t("Что можно делать без спроса", "What it may do without asking"),  options: [...PERMISSION_OPTIONS_DEF, ...customPerms] },
                 ] as const).map(({ label, key, icon, desc, options }) => (
                   <Row key={key} icon={icon} label={label} desc={desc}>
                     <Dropdown value={defaultConfig[key]} options={options} onChange={v => updateDefaultConfig({ [key]: v })} />
@@ -527,17 +534,17 @@ export function SettingsPage(_props: Props) {
             {tab === 'system' && (<>
               <PageHeader
                 icon={Monitor}
-                title="Система"
-                desc="Файлы на диске, обновления и служебные параметры"
+                title={t("Система", "System")}
+                desc={t("Файлы на диске, обновления и служебные параметры", "Files on disk, updates and service options")}
               />
 
-              <Section label="Вложения" icon={Folder2}>
+              <Section label={t("Вложения", "Attachments")} icon={Folder2}>
                 <Row
                   icon={Folder2}
-                  label="Папка attachments"
+                  label={t("Папка attachments", "attachments folder")}
                   desc={attachDirSize
-                    ? `${attachDirSize.count} файлов · ${(attachDirSize.bytes / 1024).toFixed(1)} KB`
-                    : 'Загрузка…'}
+                    ? t(`${attachDirSize.count} файлов · ${(attachDirSize.bytes / 1024).toFixed(1)} KB`, `${attachDirSize.count} files · ${(attachDirSize.bytes / 1024).toFixed(1)} KB`)
+                    : t("Загрузка…", "Loading…")}
                 >
                   <div className="flex items-center gap-2">
                     <button
@@ -545,7 +552,7 @@ export function SettingsPage(_props: Props) {
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] border border-border-default text-text-muted hover:text-text-primary hover:border-border-strong transition-colors"
                     >
                       <FolderOpen size={11} />
-                      Открыть
+                      {t("Открыть", "Open")}
                     </button>
                     <button
                       onClick={async () => {
@@ -564,23 +571,23 @@ export function SettingsPage(_props: Props) {
                       )}
                     >
                       {attachClearing ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
-                      Очистить
+                      {t("Очистить", "Clear")}
                     </button>
                   </div>
                 </Row>
                 <Row
                   icon={Broom}
-                  label="Авто-удаление"
-                  desc="Удалять вложения старше указанного времени"
+                  label={t("Авто-удаление", "Auto-delete")}
+                  desc={t("Удалять вложения старше указанного времени", "Delete attachments older than the given time")}
                 >
                   <Dropdown
                     value={attachAutoDelete}
                     options={[
-                      { value: '7d',    label: '7 дней' },
-                      { value: '14d',   label: '14 дней' },
-                      { value: '1mo',   label: '1 месяц' },
-                      { value: '3mo',   label: '3 месяца' },
-                      { value: 'never', label: 'Никогда' },
+                      { value: '7d',    label: t("7 дней", "7 days") },
+                      { value: '14d',   label: t("14 дней", "14 days") },
+                      { value: '1mo',   label: t("1 месяц", "1 month") },
+                      { value: '3mo',   label: t("3 месяца", "3 months") },
+                      { value: 'never', label: t("Никогда", "Never") },
                     ]}
                     onChange={async v => {
                       setAttachAutoDelete(v)
@@ -590,10 +597,10 @@ export function SettingsPage(_props: Props) {
                 </Row>
               </Section>
 
-              <Section label="Обновления" icon={Refresh2}>
+              <Section label={t("Обновления", "Updates")} icon={Refresh2}>
                 <ToggleRow
-                  label="Авто-обновление"
-                  desc="Скачивать и устанавливать обновления автоматически"
+                  label={t("Авто-обновление", "Auto-update")}
+                  desc={t("Скачивать и устанавливать обновления автоматически", "Download and install updates automatically")}
                   value={autoDownload}
                   onChange={async v => {
                     setAutoDownload(v)
@@ -602,7 +609,7 @@ export function SettingsPage(_props: Props) {
                   }}
                 />
                 {vaelVersion && (
-                  <Row icon={InfoCircle} label="Vael" desc="Текущая версия приложения">
+                  <Row icon={InfoCircle} label="Vael" desc={t("Текущая версия приложения", "Current app version")}>
                     <a
                       href="#"
                       className="flex items-center gap-1.5 text-[13px] transition-colors"
@@ -617,7 +624,7 @@ export function SettingsPage(_props: Props) {
                   </Row>
                 )}
                 {version && (
-                  <Row icon={Cpu} label="Claude Code CLI" desc="Версия установленного CLI">
+                  <Row icon={Cpu} label="Claude Code CLI" desc={t("Версия установленного CLI", "Installed CLI version")}>
                     <a
                       href="#"
                       className="flex items-center gap-1.5 text-[13px] transition-colors"
@@ -633,11 +640,11 @@ export function SettingsPage(_props: Props) {
                 )}
               </Section>
 
-              <Section label="Сеть" icon={Global} desc="как нас видит Anthropic">
+              <Section label={t("Сеть", "Network")} icon={Global} desc={t("как нас видит Anthropic", "how Anthropic sees us")}>
                 <Row
                   icon={ShieldTick}
-                  label="Предупреждать о выключенном VPN"
-                  desc={`Баннер, если выход из: ${vpnCheck.warnCountries.join(', ')}`}
+                  label={t("Предупреждать о выключенном VPN", "Warn when VPN is off")}
+                  desc={t(`Баннер, если выход из: ${vpnCheck.warnCountries.join(', ')}`, `Banner if the exit is in: ${vpnCheck.warnCountries.join(', ')}`)}
                 >
                   <Toggle
                     value={vpnCheck.enabled}
@@ -651,18 +658,18 @@ export function SettingsPage(_props: Props) {
                 {vpnCheck.enabled && (
                   <Row
                     icon={Global}
-                    label="Текущий выход"
-                    desc="Страна и адрес, которые видит Anthropic"
+                    label={t("Текущий выход", "Current exit")}
+                    desc={t("Страна и адрес, которые видит Anthropic", "Country and address Anthropic sees")}
                   >
                     <NetworkStatusRow />
                   </Row>
                 )}
               </Section>
 
-              <Section label="Для разработчика" icon={Flash} desc="служебное">
+              <Section label={t("Для разработчика", "For developers")} icon={Flash} desc={t("служебное", "internal")}>
                 <ToggleRow
-                  label="Включить Dev-настройки"
-                  desc="Показать расширенные настройки для разработчиков"
+                  label={t("Включить Dev-настройки", "Enable dev settings")}
+                  desc={t("Показать расширенные настройки для разработчиков", "Show advanced settings for developers")}
                   value={showDev}
                   onChange={v => {
                     setShowDev(v)
@@ -677,8 +684,8 @@ export function SettingsPage(_props: Props) {
                 />
                 {showDev && (
                   <ToggleRow
-                    label="Dev окно"
-                    desc="Показывать вкладку Dev в сайдбаре для тестирования"
+                    label={t("Dev окно", "Dev window")}
+                    desc={t("Показывать вкладку Dev в сайдбаре для тестирования", "Show the Dev tab in the sidebar for testing")}
                     value={devConsole}
                     onChange={v => {
                       setDevConsole(v)

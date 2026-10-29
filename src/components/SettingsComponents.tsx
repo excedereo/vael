@@ -6,27 +6,28 @@ import type { Icon as IconType } from 'iconsax-reactjs'
 import { cn } from '../lib/utils.js'
 import { api } from '../lib/api.js'
 import { applyTheme, saveActiveTheme } from '../lib/theme.js'
+import { t } from '../lib/i18n.js'
 
 // PTY-recommended values — displayed in PtyOptSection
 const PTY_ITEMS = [
   { label: 'Prompt suggestions',   value: 'off', locked: true,  desc: undefined },
   { label: 'Spinner tips',         value: 'off', locked: true,  desc: undefined },
   { label: 'Skip copy picker',     value: 'on',  locked: true,  desc: undefined },
-  { label: 'Auto updates channel', value: 'rc',  locked: false, desc: 'Задержка обновлений до RC-версии' },
+  { label: 'Auto updates channel', value: 'rc',  locked: false, desc: t("Задержка обновлений до RC-версии", "Delay updates until the RC version") },
 ]
 
 export function PtyOptSection({ applyPty, onToggle }: { applyPty: boolean; onToggle: (v: boolean) => void }) {
   return (
     <div>
-      <div className="text-[11px] font-medium text-text-faint uppercase tracking-wider mb-2 px-1">PTY-оптимизации</div>
+      <div className="text-[11px] font-medium text-text-faint uppercase tracking-wider mb-2 px-1">{t("PTY-оптимизации", "PTY optimizations")}</div>
       <div className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden divide-y divide-white/5 mb-2">
         <div className="flex items-center justify-between px-4 py-3 gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 text-[14px] text-text-secondary">
               <ShieldCheck size={13} className="text-accent shrink-0" />
-              Применять рекомендованные настройки
+              {t("Применять рекомендованные настройки", "Apply recommended settings")}
             </div>
-            <div className="text-[12px] text-text-faint mt-0.5">Vael выставит оптимальные значения при каждом сохранении</div>
+            <div className="text-[12px] text-text-faint mt-0.5">{t("Vael выставит оптимальные значения при каждом сохранении", "Vael sets optimal values on every save")}</div>
           </div>
           <button
             onClick={() => onToggle(!applyPty)}
@@ -108,7 +109,7 @@ export function ThemePicker({ themes, activeThemeFile, setActiveThemeFile }: {
           open && 'bg-surface-selected border-border-strong',
         )}
       >
-        <span>{active?.name ?? 'Выбрать тему'}</span>
+        <span>{active?.name ?? t("Выбрать тему", "Choose a theme")}</span>
         <ChevronDown size={11} className={cn('text-text-faint transition-transform', open && 'rotate-180')} />
       </button>
       {open && createPortal(
@@ -117,7 +118,7 @@ export function ThemePicker({ themes, activeThemeFile, setActiveThemeFile }: {
           style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999 }}
           className="bg-bg-elevated border border-border-default rounded-xl shadow-2xl shadow-black/60 overflow-hidden min-w-[180px] animate-in fade-in zoom-in-95 duration-100 origin-top-right"
         >
-          {themes.length === 0 && <div className="px-3 py-2 text-[13px] text-text-ghost">Темы не найдены</div>}
+          {themes.length === 0 && <div className="px-3 py-2 text-[13px] text-text-ghost">{t("Темы не найдены", "No themes found")}</div>}
           {themes.map(t => {
             const isActive = activeThemeFile === t.file
             return (
@@ -136,7 +137,7 @@ export function ThemePicker({ themes, activeThemeFile, setActiveThemeFile }: {
               onClick={() => { api.openThemesFolder(); setOpen(false) }}
               className="w-full flex items-center gap-1.5 px-3 py-2 text-[12px] text-text-faint hover:text-text-muted transition-colors"
             >
-              <FolderOpen size={10} />Открыть папку
+              <FolderOpen size={10} />{t("Открыть папку", "Open folder")}
             </button>
           </div>
         </div>,
