@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, dialog, clipboard } from 'electron'
+import { ipcMain, BrowserWindow, dialog, clipboard, shell } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
@@ -24,11 +24,14 @@ export function registerSessionHandlers(
       .filter(Boolean)
   })
 
-  ipcMain.handle('sessions:delete', (_, sessionPath: string) => {
+  // В корзину, а не насовсем: случайное удаление можно вернуть из корзины Windows.
+  // Вместе с jsonl уходят .meta.json и папка сессии (результаты инструментов, подагенты)
+  ipcMain.handle('sessions:delete', async (_, sessionPath: string) => {
     try {
-      if (fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath)
-      const metaPath = sessionPath.replace(/\.jsonl$/, '.meta.json')
-      if (fs.existsSync(metaPath)) fs.unlinkSync(metaPath)
+      const base = sessionPath.replace(/\.jsonl$/, '')
+      for (const p of [sessionPath, base + '.meta.json', base]) {
+        if (fs.existsSync(p)) await shell.trashItem(p)
+      }
       return { ok: true }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }

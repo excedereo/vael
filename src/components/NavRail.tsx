@@ -1,5 +1,6 @@
-import { Messages, Data, Flash, Code1, Profile, Setting2 } from 'iconsax-reactjs'
-import type { Icon } from 'iconsax-reactjs'
+import { MessagesSquare, GitFork, Zap, SquareTerminal, Settings } from 'lucide-react'
+import logoSmall from '../assets/logo-small.svg'
+import type { LucideIcon as Icon } from 'lucide-react'
 import { cn } from '../lib/utils.js'
 
 export type Section = 'sessions' | 'memory' | 'pyre' | 'dev' | 'accounts' | 'settings'
@@ -12,14 +13,14 @@ interface NavItem {
 
 // Верхняя группа — работа, нижняя — контекст (аккаунт/настройки)
 const WORK: NavItem[] = [
-  { id: 'sessions', label: 'Sessions', icon: Messages },
-  { id: 'pyre',     label: 'Pyre',     icon: Flash },
+  { id: 'sessions', label: 'Сессии', icon: MessagesSquare },
+  { id: 'pyre',     label: 'Pyre',     icon: Zap },
 ]
-const MEMORY: NavItem = { id: 'memory', label: 'Memory', icon: Data }
-const DEV: NavItem = { id: 'dev', label: 'Dev', icon: Code1 }
+const MEMORY: NavItem = { id: 'memory', label: 'Память', icon: GitFork }
+const DEV: NavItem = { id: 'dev', label: 'Dev', icon: SquareTerminal }
+// Аккаунты открываются из карточки аккаунта внизу сайдбара — отдельная иконка была дублем
 const CONTEXT: NavItem[] = [
-  { id: 'accounts', label: 'Accounts', icon: Profile },
-  { id: 'settings', label: 'Settings', icon: Setting2 },
+  { id: 'settings', label: 'Настройки', icon: Settings },
 ]
 
 interface Props {
@@ -44,20 +45,13 @@ function RailButton({ item, active, onSelect, busy }: {
       title={item.label}
       aria-label={item.label}
       aria-current={active}
-      className={cn(
-        'relative w-11 h-11 rounded-[12px] flex items-center justify-center transition-colors',
-        active ? 'text-accent bg-accent-wash' : 'text-text-faint hover:text-text-secondary hover:bg-surface-hover',
-      )}
+      className={cn('rail-btn', active && 'is-active')}
     >
-      {/* рельс активного раздела */}
-      {active && (
-        <span className="absolute -left-[9px] top-2.5 bottom-2.5 w-[3px] rounded-full bg-accent" />
-      )}
       {/* бейдж живой работы в неоткрытом разделе */}
       {busy && !active && (
         <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-[var(--color-success)] shadow-[0_0_5px_rgba(74,222,128,0.8)]" />
       )}
-      <Icon size={26} variant={active ? 'Bold' : 'Linear'} color="currentColor" />
+      <Icon size={17} strokeWidth={1.8} />
     </button>
   )
 }
@@ -70,7 +64,11 @@ export function NavRail({ active, onSelect, showDev, showMemory, busySections = 
     ...(showDev ? [DEV] : []),
   ]
   return (
-    <div className="w-[56px] shrink-0 flex flex-col items-center pt-[38px] pb-2.5 gap-1 bg-bg-base border-r border-border-subtle">
+    <div className="w-[52px] shrink-0 flex flex-col items-center pb-2.5 gap-1.5 border-r border-border-subtle" style={{ background: 'var(--bg-rail, var(--bg-base))' }}>
+      {/* Верхняя линия окна — как у сайдбара и шапки */}
+      <div className="app-drag-region w-full h-11 shrink-0 flex items-center justify-center border-b border-border-subtle mb-1">
+        <img src={logoSmall} alt="Vael" className="w-[26px] h-[26px] select-none" draggable={false} />
+      </div>
       {top.map(item => (
         <RailButton
           key={item.id}

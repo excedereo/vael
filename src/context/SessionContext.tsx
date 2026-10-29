@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import { api } from '../lib/api.js'
 
 // Держать в синхроне с SessionStatusValue в electron/ipc/pty.ts
@@ -60,9 +60,17 @@ export interface SessionContextValue {
   sessionStatuses: Record<string, SessionStatus>
   sessionReplies: Record<string, string>        // sessionId → последний ответ
 
+  // чат-режим: ключ ('__new__' или sessionId) → реальный sessionId живого чат-процесса
+  chatSessions: Record<string, string>
+
   // управление
   spawn(termId: string, sessionId: string | null, projectPath: string | null, configDir: string, config: SessionConfig): void
+  /** Гасит и PTY, и чат сессии, снимает слежение — единственный способ закрыть сессию */
   kill(sessionId: string): void
+  /** Только PTY: при переключении в чат слежение за статусом должно остаться */
+  killPty(sessionId: string): void
+  startChat(key: string, sessionId: string | null, configDir: string | null, config: SessionConfig): Promise<string>
+  stopChat(sessionId: string): Promise<void>
   resolveTermId(sessionId: string): string | undefined
   isAlive(sessionId: string): boolean
 
@@ -97,6 +105,42 @@ export function SessionProvider({ children }: Props) {
   const [termToSession, setTermToSession] = useState<Record<string, string>>({})
   const [sessionStatuses, setSessionStatuses] = useState<Record<string, SessionStatus>>({})
   const [sessionReplies, setSessionReplies] = useState<Record<string, string>>({})
+  const [chatSessions, setChatSessions] = useState<Record<string, string>>({})
+
+  // Новый чат живёт под ключом '__new__', пока CLI не создал jsonl — потом
+  // переезжает под свой id. Упавший процесс убираем из карты
+  useEffect(() => {
+    // Без перезапуска main старый preload этих методов не знает — HMR не должен ронять окно
+    if (!api.onChatCreated || !api.onChatExit) return
+    // Перезагрузка окна не трогает процессы в main: подхватываем живые чаты,
+    // а не запускаем их заново — иначе обрывается ответ на середине
+    api.chatList?.().then(list => {
+      if (!list.length) return
+      setChatSessions(prev => {
+        const next = { ...prev }
+        for (const c of list) next[c.hasJsonl ? c.sessionId : '__new__'] = c.sessionId
+        return next
+      })
+    }).catch(() => {})
+    const unsubCreated = api.onChatCreated((sessionId) => {
+      setChatSessions(prev => {
+        if (prev['__new__'] !== sessionId) return prev
+        const next = { ...prev, [sessionId]: sessionId }
+        delete next['__new__']
+        return next
+      })
+    })
+    const unsubExit = api.onChatExit((sessionId) => {
+      setChatSessions(prev => {
+        const keys = Object.keys(prev).filter(k => prev[k] === sessionId)
+        if (keys.length === 0) return prev
+        const next = { ...prev }
+        for (const k of keys) delete next[k]
+        return next
+      })
+    })
+    return () => { unsubCreated(); unsubExit() }
+  }, [])
 
   // Подписка на статусы и ответы сессий от main process
   useEffect(() => {
@@ -116,11 +160,16 @@ export function SessionProvider({ children }: Props) {
     return Object.entries(termToSession).find(([, sid]) => sid === sessionId)?.[0]
   }, [termToSession])
 
+  const isChatAlive = useCallback((sessionId: string): boolean => {
+    return Object.values(chatSessions).includes(sessionId)
+  }, [chatSessions])
+
   const isAlive = useCallback((sessionId: string): boolean => {
+    if (isChatAlive(sessionId)) return true
     const termId = resolveTermId(sessionId)
     if (!termId) return false
     return termId in spawnedSessions
-  }, [resolveTermId, spawnedSessions])
+  }, [resolveTermId, spawnedSessions, isChatAlive])
 
   const spawn = useCallback((
     termId: string,
@@ -132,28 +181,62 @@ export function SessionProvider({ children }: Props) {
     setSpawnedSessions(prev => ({ ...prev, [termId]: (prev[termId] ?? 0) + 1 }))
   }, [])
 
-  const kill = useCallback((sessionId: string) => {
+  const killPty = useCallback((sessionId: string) => {
+    // У сессии, открытой из списка, termId совпадает с sessionId, но в
+    // termToSession она может и не попасть — тогда ищем по самому ключу
     const termId = Object.entries(termToSession).find(([, sid]) => sid === sessionId)?.[0]
+      ?? (sessionId in spawnedSessions ? sessionId : undefined)
       ?? (sessionId === '__new__' ? '__new__' : undefined)
 
     if (termId) {
-      api.ptySessionKill(termId)
+      api.ptyKill(termId)
       setSpawnedSessions(prev => { const next = { ...prev }; delete next[termId]; return next })
       setTermToSession(prev => { const next = { ...prev }; delete next[termId]; return next })
     }
+  }, [termToSession, spawnedSessions])
+
+  const startChat = useCallback(async (key: string, sessionId: string | null, configDir: string | null, config: SessionConfig) => {
+    const r = await api.chatStart({
+      sessionId,
+      configDir,
+      model: config.model || undefined,
+      effort: config.effort || undefined,
+      permissionMode: config.permissionMode || undefined,
+    })
+    setChatSessions(prev => ({ ...prev, [key]: r.sessionId }))
+    return r.sessionId
+  }, [])
+
+  const stopChat = useCallback(async (sessionId: string) => {
+    setChatSessions(prev => {
+      const next = { ...prev }
+      for (const k of Object.keys(next)) if (next[k] === sessionId || k === sessionId) delete next[k]
+      return next
+    })
+    await api.chatKill(sessionId)
+  }, [])
+
+  const kill = useCallback((sessionId: string) => {
+    killPty(sessionId)
+    const chatId = chatSessions[sessionId] ?? (Object.values(chatSessions).includes(sessionId) ? sessionId : undefined)
+    if (chatId) stopChat(chatId)
 
     api.unwatchSession(sessionId)
     setSessionStatuses(prev => { const next = { ...prev }; delete next[sessionId]; return next })
-  }, [termToSession])
+  }, [killPty, stopChat, chatSessions])
 
   const sendMessageRef = useRef<(sessionId: string, text: string) => void>(() => {})
 
   const sendMessage = useCallback((sessionId: string, text: string) => {
+    if (isChatAlive(sessionId)) {
+      api.chatSend(sessionId, text)
+      return
+    }
     const termId = resolveTermId(sessionId)
     if (termId) {
       api.ptyWrite(termId, text + '\r')
     }
-  }, [resolveTermId])
+  }, [resolveTermId, isChatAlive])
 
   sendMessageRef.current = sendMessage
 
@@ -178,8 +261,12 @@ export function SessionProvider({ children }: Props) {
     termToSession,
     sessionStatuses,
     sessionReplies,
+    chatSessions,
     spawn,
     kill,
+    killPty,
+    startChat,
+    stopChat,
     resolveTermId,
     isAlive,
     sendMessage,

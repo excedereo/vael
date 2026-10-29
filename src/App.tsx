@@ -1,6 +1,7 @@
 import { useCallback, useState, useEffect, useRef } from 'react'
+import type { Account } from './types/index'
 import { AnimatePresence, motion } from 'framer-motion'
-import { X, StopCircle, PanelLeftOpen } from 'lucide-react'
+import { X, StopCircle, PanelLeftOpen, PanelLeftClose, SquareTerminal, MessageSquare, Ellipsis, Copy } from 'lucide-react'
 import { useAppState } from './hooks/useAppState.js'
 import { useNavHistory } from './hooks/useNavHistory.js'
 import { useUpdateManager } from './hooks/useUpdateManager.js'
@@ -21,10 +22,14 @@ import { AccountsPage } from './components/AccountsPage.js'
 import { SettingsPage } from './components/SettingsPage.js'
 import { AccountSwitchModal } from './components/AccountSwitchModal.js'
 import { FirstLaunch } from './components/FirstLaunch.js'
+import { DepsScreen } from './components/DepsScreen.js'
+import { SummariesModal } from './components/SummariesModal.js'
 import { ErrorToast } from './components/ErrorToast.js'
 import { DevPanel } from './components/DevPanel.js'
 import { NavControls } from './components/NavControls.js'
 import { PtyTerminalView } from './components/PtyTerminalView.js'
+import { ChatView } from './components/ChatView.js'
+import { useViewMode, setViewMode, type ViewMode } from './lib/viewMode.js'
 import { SessionToolbar } from './components/SessionToolbar.js'
 import { SessionWelcome } from './components/SessionWelcome.js'
 import { ConfettiCanvas } from './components/ConfettiCanvas.js'
@@ -32,7 +37,7 @@ import { WindowControls } from './components/WindowControls.js'
 import { UpdateBanner } from './components/UpdateBanner.js'
 import { NetworkBanner } from './components/NetworkBanner.js'
 import { api } from './lib/api.js'
-import { Session } from './types/index'
+import type { Session } from './types/index'
 import { restoreSavedTheme } from './lib/theme.js'
 import { statusLog } from './lib/statusLog.js'
 import { loadNotificationSettings } from './hooks/useSettings.js'
@@ -63,6 +68,7 @@ function AppInner() {
     switchAccount,
     refreshSessions,
     refreshAccounts,
+    dropSession,
   } = useAppState()
 
   const { uiSettings } = useSettings()
@@ -71,12 +77,8 @@ function AppInner() {
   const DEFAULT_CONFIG = { ...loadDefaultSessionConfig(), prompt: '' }
 
   const SESSION_MODEL_MIGRATION: Record<string, string> = {
-    'sonnet': 'claude-sonnet-5',
-    'opus':   'claude-opus-5',
-    'haiku':  'claude-haiku-4-5-20251001',
-    'fable':  'claude-fable-5',
-    'claude-sonnet-4-6': 'claude-sonnet-5',
-    'claude-opus-4-8':   'claude-opus-5',
+    'claude-sonnet-4-6': 'sonnet',
+    'claude-opus-4-8':   'opus',
   }
 
   function loadSessionConfig(sessionId: string | null) {
@@ -101,7 +103,11 @@ function AppInner() {
     } catch {}
   }
 
-  const { spawnedSessions, setSpawnedSessions, termToSession, setTermToSession, watchSession, unwatchSession } = useSessionContext()
+  const { spawnedSessions, setSpawnedSessions, termToSession, setTermToSession, watchSession, unwatchSession, chatSessions, startChat, stopChat, killPty, kill } = useSessionContext()
+  const [deleteTarget, setDeleteTarget] = useState<import('./types/index').Session | null>(null)
+  const [summariesFor, setSummariesFor] = useState<import('./types/index').Session | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const [sessionConfig, setSessionConfig] = useState(DEFAULT_CONFIG)
   const [spawnTrigger, setSpawnTrigger] = useState(0)
@@ -117,9 +123,10 @@ function AppInner() {
   const [section, setSection] = useState<Section>('sessions')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   // Memory скрыта по умолчанию, включается флагом в настройках
-  const [showMemory, setShowMemory] = useState(() => localStorage.getItem('vaeli:showMemory') === '1')
+  // Раздел памяти включён по умолчанию: скрывали временно, пока он был пустым
+  const [showMemory, setShowMemory] = useState(() => localStorage.getItem('vaeli:showMemory') !== '0')
   useEffect(() => {
-    const h = () => setShowMemory(localStorage.getItem('vaeli:showMemory') === '1')
+    const h = () => setShowMemory(localStorage.getItem('vaeli:showMemory') !== '0')
     window.addEventListener('vaeli:showMemoryChanged', h)
     return () => window.removeEventListener('vaeli:showMemoryChanged', h)
   }, [])
@@ -217,6 +224,54 @@ function AppInner() {
   const [switchTarget, setSwitchTarget] = useState<string | null>(null)
 
   const activeSession = sessions.find(s => s.id === activeSessionId) || null
+  const activeConfigDir = accounts.find(a => a.id === activeAccountId)?.configDir ?? null
+
+  // ── Терминал или чат ───────────────────────────────────────────────────────
+  // Одна сессия — один процесс: при переключении старый гасится, новый
+  // поднимается на той же сессии, история общая (один jsonl)
+  const viewMode = useViewMode(activeSessionId)
+  const isPtySpawned = Object.keys(spawnedSessions).some(tid => {
+    const resolved = termToSession[tid] ?? (tid === '__new__' ? null : tid)
+    return activeSessionId ? resolved === activeSessionId : tid === '__new__'
+  })
+  const isChatActive = activeSessionId
+    ? Object.values(chatSessions).includes(activeSessionId)
+    : '__new__' in chatSessions
+
+  const handleViewModeChange = useCallback(async (mode: ViewMode) => {
+    if (mode === viewMode) return
+    setViewMode(activeSessionId, mode)
+    // У новой PTY-сессии id может уже быть известен, хотя activeSessionId ещё null
+    const sid = activeSessionId ?? termToSession['__new__'] ?? null
+    const cfg = loadSessionConfig(sid)
+    if (mode === 'chat' && isPtySpawned) {
+      killPty(sid ?? '__new__')
+      // pty:kill не ждёт смерти процесса — даём CLI отпустить сессию
+      await new Promise(r => setTimeout(r, 400))
+      await startChat(sid ?? '__new__', sid, activeConfigDir, cfg)
+      if (sid && !activeSessionId) setActiveSessionId(sid)
+    } else if (mode === 'terminal' && isChatActive) {
+      const chatId = activeSessionId ?? chatSessions['__new__']
+      await stopChat(chatId)
+      // Новый чат без единого сообщения — сессии ещё нет, поднимать терминал не на чем
+      if (!activeSessionId) return
+      setSpawnedSessions(prev => ({ ...prev, [activeSessionId]: (prev[activeSessionId] ?? 0) + 1 }))
+      setTermToSession(prev => ({ ...prev, [activeSessionId]: activeSessionId }))
+    }
+  }, [viewMode, activeSessionId, termToSession, isPtySpawned, isChatActive, chatSessions, killPty, startChat, stopChat, activeConfigDir, setActiveSessionId])
+
+  // Новый чат получил jsonl — показываем его в списке и делаем активным
+  useEffect(() => {
+    if (!api.onChatCreated) return
+    return api.onChatCreated((sessionId) => {
+      setViewMode(sessionId, 'chat')
+      setNewSessionId(sessionId)
+      setActiveSessionId(prev => prev ?? sessionId)
+      setTimeout(() => refreshSessions(), 300)
+      setTimeout(() => refreshSessions(), 1500)
+      setTimeout(() => setNewSessionId(null), 4000)
+    })
+  }, [refreshSessions, setActiveSessionId])
 
   useEffect(() => {
     if (!activeSession) return
@@ -322,75 +377,62 @@ function AppInner() {
     setSpawnTrigger(0)
   }, [setActiveSessionId])
 
-  const handleDeleteSession = useCallback(async (session: import('./types/index').Session) => {
-    const sessionPath = `${session.projectPath}\\${session.id}.jsonl`
-    await api.deleteSession(sessionPath)
+  // Из меню — только спросить; удаляет confirmDelete после «Удалить» в окне
+  const handleDeleteSession = useCallback((session: import('./types/index').Session) => {
+    setDeleteError(null)
+    setDeleteTarget(session)
+  }, [])
+
+  const confirmDelete = useCallback(async () => {
+    const session = deleteTarget
+    if (!session || deleting) return
+    setDeleting(true)
+    setDeleteError(null)
+    const live = Object.values(chatSessions).includes(session.id)
+      || Object.keys(spawnedSessions).some(tid => (termToSession[tid] ?? tid) === session.id)
+    if (live) {
+      // Живой процесс сначала гасим, иначе он допишет в файл уже из корзины
+      kill(session.id)
+      await new Promise(r => setTimeout(r, 500))
+    }
+    const r = await api.deleteSession(`${session.projectPath}\\${session.id}.jsonl`)
+    setDeleting(false)
+    if (r && r.ok === false) { setDeleteError(r.error ?? 'не получилось'); return }
+    setDeleteTarget(null)
     if (activeSessionId === session.id) setActiveSessionId(null)
-    refreshSessions()
-  }, [activeSessionId, setActiveSessionId, refreshSessions])
+    dropSession(session.id)
+  }, [deleteTarget, deleting, chatSessions, spawnedSessions, termToSession, kill, activeSessionId, setActiveSessionId, dropSession])
+
+  // Есть ли вход хоть в одном аккаунте. Перепроверяется при каждом обновлении списка:
+  // AccountsPage после выхода зовёт refreshAccounts
+  const [anyLoggedIn, setAnyLoggedIn] = useState<boolean | null>(null)
+  useEffect(() => {
+    if (!accountsLoaded || accounts.length === 0) return
+    let dead = false
+    Promise.all(accounts.map(a => api.checkCredentials(a.configDir)))
+      .then(r => { if (!dead) setAnyLoggedIn(r.some(Boolean)) })
+      .catch(() => {})
+    return () => { dead = true }
+  }, [accounts, accountsLoaded])
+  const onRelogin = useCallback(async (acc: Account) => {
+    setAnyLoggedIn(true)
+    if (acc.id !== activeAccountId) await switchAccount(acc.id)
+    refreshAccounts()
+  }, [activeAccountId, switchAccount, refreshAccounts])
+
+  // Phase: зависимости — первыми: без claude не работает и вход в аккаунт
+  if (deps === null) return <div className="fixed inset-0 bg-bg-base" />
+  if (!deps.ready) {
+    return <DepsScreen deps={deps} installing={installing} installLog={installLog} onInstall={handleInstallClaude} onRecheck={() => api.checkDeps().then(setDeps)} />
+  }
 
   // Phase: no accounts
   if (accountsLoaded && accounts.length === 0) {
     return <FirstLaunch onCreated={refreshAccounts} />
   }
-
-  // Phase: no deps
-  if (deps !== null && !deps.ready) {
-    return (
-      <div className="flex h-screen bg-bg-base text-white items-center justify-center">
-        <div className="flex flex-col items-center gap-5 max-w-sm text-center px-6">
-          <div className="w-12 h-12 rounded-2xl bg-bg-elevated border border-border-default flex items-center justify-center text-2xl">
-            ⚡
-          </div>
-          <div className="flex flex-col gap-2">
-            <span className="text-[15px] text-text-primary font-medium">Нужен Claude Code</span>
-            <span className="text-[14px] text-text-muted leading-relaxed">
-              {installing
-                ? 'Устанавливаем Claude Code, подожди немного…'
-                : 'Vael не может работать без Claude Code. Можем установить автоматически.'}
-            </span>
-          </div>
-          {!installing && (
-            <div className="w-full flex flex-col gap-1.5">
-              {[
-                { label: 'npm', value: deps.npm },
-                { label: 'claude', value: deps.claude },
-              ].map(({ label, value }) => (
-                <div key={label} className="flex items-center justify-between px-3 py-2 bg-bg-elevated rounded-xl border border-border-default">
-                  <span className="text-[13px] text-text-muted font-mono">{label}</span>
-                  <span className={cn('text-[13px] font-mono', value ? 'text-emerald-400' : 'text-red-400')}>
-                    {value ?? 'не найден'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-          {installLog && (
-            <div className="w-full px-3 py-2 bg-bg-elevated rounded-xl border border-border-default text-left">
-              <span className="text-[12px] text-red-400 font-mono whitespace-pre-wrap break-all">{installLog}</span>
-            </div>
-          )}
-          {installing ? (
-            <div className="flex items-center gap-2 text-[14px] text-text-muted">
-              <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-              Установка…
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2 w-full">
-              <button onClick={handleInstallClaude} className="w-full py-2.5 rounded-xl bg-accent text-white text-[14px] font-medium hover:bg-accent/90 transition-colors">
-                Установить автоматически
-              </button>
-              <button onClick={() => api.openExternal('https://docs.anthropic.com/en/docs/claude-code/setup')} className="w-full py-2.5 rounded-xl border border-border-default text-[14px] text-text-muted hover:text-text-primary hover:border-border-strong transition-colors">
-                Открыть документацию
-              </button>
-              <button onClick={() => api.checkDeps().then(setDeps)} className="text-[13px] text-text-ghost hover:text-text-faint transition-colors">
-                Проверить снова
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    )
+  // Phase: аккаунты есть, но из всех вышли — тот же экран, только «войти снова»
+  if (accountsLoaded && anyLoggedIn === false) {
+    return <FirstLaunch relogin={accounts} onCreated={onRelogin} />
   }
 
   // Phase: ready — main UI
@@ -422,17 +464,6 @@ function AppInner() {
         {/* Стрелки назад/вперёд убраны из UI до решения, где им жить.
             Сам хук навигации остался: боковые кнопки мыши работают. */}
         <NavControls onBack={handleGoBack} onForward={handleGoForward} />
-        {/* Свёрнутый сайдбар: вернуть его можно только отсюда — своей шапки у него уже нет */}
-        {sidebarCollapsed && (
-          <button
-            onClick={() => setSidebarCollapsed(false)}
-            title="Развернуть панель"
-            aria-label="Развернуть панель"
-            className="w-7 h-7 rounded-md flex items-center justify-center text-text-faint hover:text-text-secondary hover:bg-surface-hover transition-colors"
-          >
-            <PanelLeftOpen size={16} />
-          </button>
-        )}
       </div>
 
       {/* Иконочный столбец разделов */}
@@ -446,21 +477,25 @@ function AppInner() {
 
       {/* Sidebar — список под текущий раздел */}
       <div
-        className={cn('shrink-0 border-r border-border-subtle flex flex-col bg-bg-sidebar transition-[width] duration-200 ease-out overflow-hidden', sidebarCollapsed ? 'w-0' : 'w-[214px]')}
+        className={cn('shrink-0 border-r border-border-subtle flex flex-col bg-bg-sidebar transition-[width] duration-200 ease-out overflow-hidden', sidebarCollapsed ? 'w-0' : 'w-[248px]')}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => { e.preventDefault(); e.stopPropagation() }}
       >
-        <div className="h-10 shrink-0" />
         <div className="flex-1 min-h-0">
           <Sidebar
             section={section}
             sessions={sessions}
             activeSessionId={activeSessionId}
             newSessionId={newSessionId}
-            runningSessionIds={Object.keys(spawnedSessions).map(tid => termToSession[tid] ?? (tid === '__new__' ? null : tid)).filter(Boolean) as string[]}
+            runningSessionIds={[
+              ...Object.keys(spawnedSessions).map(tid => termToSession[tid] ?? (tid === '__new__' ? null : tid)),
+              ...Object.values(chatSessions),
+            ].filter(Boolean) as string[]}
+            chatSessionIds={Object.values(chatSessions)}
             onSelect={handleSelectSession}
             onNew={handleNewSession}
             onDelete={handleDeleteSession}
+            onSummaries={setSummariesFor}
             isLocked={isLocked}
             memoryTokens={memoryTokens}
             modules={modules}
@@ -471,7 +506,6 @@ function AppInner() {
             isRunning={isRunning}
             onSwitchAccount={(id) => setSwitchTarget(id)}
             onMetaChange={refreshSessions}
-            onCollapse={() => setSidebarCollapsed(true)}
           />
         </div>
         {updateState && <UpdateBanner state={updateState} onClick={handleUpdateClick} onDismiss={() => {}} />}
@@ -499,47 +533,81 @@ function AppInner() {
           )}
         </AnimatePresence>
 
-        <div className="h-10 shrink-0 border-b border-border-subtle flex items-center">
-          <div
-            className="app-drag-region flex items-center flex-1 min-w-0 h-full px-5 gap-2"
-            style={{ marginLeft: sidebarCollapsed ? '9rem' : 0 }}
-          >
-            {section === 'sessions' && (() => {
-              const isSpawned = Object.keys(spawnedSessions).some(tid => {
-                const resolved = termToSession[tid] ?? (tid === '__new__' ? null : tid)
-                return activeSessionId ? resolved === activeSessionId : tid === '__new__'
-              })
-              return isSpawned && (
-                <button
-                  onClick={() => setKillSessionModal(true)}
-                  className="no-drag flex items-center gap-1.5 px-2 h-6 rounded-md transition-colors text-text-ghost hover:text-[var(--color-error)] hover:bg-surface-hover shrink-0 text-[12px]"
-                  title="Завершить сессию"
-                >
-                  <StopCircle size={12} />
-                  <span>Закрыть сессию</span>
-                </button>
-              )
-            })()}
-            {section === 'sessions' && activeSession && (
-              <span className="text-sm text-text-faint truncate select-none pointer-events-none">
-                {activeSession.title || activeSession.id}
-              </span>
-            )}
-            {section !== 'sessions' && (
-              <span className="text-sm text-text-secondary truncate select-none pointer-events-none capitalize">
+        <div className="h-11 shrink-0 border-b border-border-subtle flex items-center">
+          <div className="app-drag-region flex items-center flex-1 min-w-0 h-full pl-2 pr-3 gap-2.5">
+            <button
+              onClick={() => setSidebarCollapsed(v => !v)}
+              title={sidebarCollapsed ? 'Развернуть панель' : 'Свернуть панель'}
+              aria-label={sidebarCollapsed ? 'Развернуть панель' : 'Свернуть панель'}
+              className="no-drag w-7 h-7 shrink-0 rounded-md flex items-center justify-center text-text-faint hover:text-text-secondary hover:bg-surface-hover transition-colors"
+            >
+              {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+            </button>
+            {section === 'sessions' ? (
+              <>
+                <span className={cn('session-dot', isPtySpawned || isChatActive ? 'is-live' : 'is-off')} />
+                <span className="text-[14px] font-medium text-text-primary truncate select-none pointer-events-none" title={activeSession?.title}>
+                  {activeSession ? (activeSession.title || 'Без названия') : 'Новая сессия'}
+                </span>
+              </>
+            ) : (
+              <span className="text-[13.5px] font-medium text-text-primary truncate select-none pointer-events-none capitalize">
                 {section}
               </span>
             )}
           </div>
+          {section === 'sessions' && (
+            <div className="view-toggle no-drag shrink-0" role="tablist" aria-label="Вид сессии">
+              <button className={cn(viewMode === 'terminal' && 'is-active')} onClick={() => handleViewModeChange('terminal')} title="Живой TUI claude в терминале">
+                <SquareTerminal size={13} />Терминал
+              </button>
+              <button className={cn(viewMode === 'chat' && 'is-active')} onClick={() => handleViewModeChange('chat')} title="Чат поверх stream-json">
+                <MessageSquare size={13} />Чат
+              </button>
+            </div>
+          )}
+          {section === 'sessions' && (
+            <SessionMenu
+              sessionId={activeSessionId}
+              canKill={isPtySpawned || isChatActive}
+              onKill={() => setKillSessionModal(true)}
+            />
+          )}
           <WindowControls />
         </div>
+
+        {summariesFor && <SummariesModal session={summariesFor} onClose={() => setSummariesFor(null)} />}
+
+        {deleteTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { if (!deleting) setDeleteTarget(null) }} />
+            <div className="relative w-[360px] bg-bg-elevated border border-border-default rounded-2xl p-5 shadow-2xl space-y-3 animate-in fade-in zoom-in-95 duration-150">
+              <h2 className="text-base font-medium text-text-primary">Удалить сессию?</h2>
+              <p className="text-[13.5px] text-text-primary truncate" title={deleteTarget.title}>«{deleteTarget.title || 'Без названия'}»</p>
+              <p className="text-[13px] text-text-muted leading-relaxed">
+                Переписка уедет в корзину Windows — оттуда её можно вернуть.
+                {(Object.values(chatSessions).includes(deleteTarget.id) || Object.keys(spawnedSessions).some(tid => (termToSession[tid] ?? tid) === deleteTarget.id)) && ' Запущенный процесс будет остановлен.'}
+              </p>
+              {deleteError && <p className="text-[13px] text-[var(--color-error)]">Не удалось: {deleteError}</p>}
+              <div className="flex gap-2 justify-end pt-1">
+                <button autoFocus disabled={deleting} onClick={() => setDeleteTarget(null)} className="text-sm px-3 py-1.5 rounded-lg text-text-secondary hover:bg-surface-hover transition-colors disabled:opacity-40">
+                  Отмена
+                </button>
+                <button onClick={confirmDelete} disabled={deleting} className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg text-red-400 bg-red-400/10 hover:bg-red-400/20 transition-colors">
+                  {deleting && <span className="w-3.5 h-3.5 rounded-full border-2 border-red-400/30 border-t-red-400 animate-spin" />}
+                  {deleting ? 'Удаляю…' : 'Удалить'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {killSessionModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setKillSessionModal(false)} />
             <div className="relative w-80 bg-bg-surface border border-border-default rounded-2xl p-5 shadow-2xl space-y-4">
               <h2 className="text-base font-semibold text-text-primary">Закрыть сессию?</h2>
-              <p className="text-sm text-text-secondary">PTY процесс будет убит. Сама сессия никуда не денется — её можно будет открыть снова.</p>
+              <p className="text-sm text-text-secondary">Процесс claude будет убит. Сама сессия никуда не денется — её можно будет открыть снова.</p>
               <div className="flex gap-2 justify-end">
                 <button onClick={() => setKillSessionModal(false)} className="text-sm px-3 py-1.5 rounded-lg text-text-secondary hover:bg-surface-hover transition-colors">
                   Отмена
@@ -547,6 +615,10 @@ function AppInner() {
                 <button
                   onClick={() => {
                     setKillSessionModal(false)
+                    if (isChatActive) {
+                      stopChat(activeSessionId ?? chatSessions['__new__'])
+                      return
+                    }
                     const termId = Object.keys(spawnedSessions).find(tid => {
                       const resolved = termToSession[tid] ?? (tid === '__new__' ? null : tid)
                       return activeSessionId ? resolved === activeSessionId : tid === '__new__'
@@ -602,16 +674,28 @@ function AppInner() {
                   />
                 )
               })}
+              {/* Чат-сессии: как и терминалы, живут в DOM все — поток не теряется
+                  при переключении. Ключ — реальный id, а не '__new__': иначе
+                  при переезде нового чата под свой id лента пересоздастся */}
+              {Object.entries(chatSessions).map(([key, sid]) => {
+                const sess = sessions.find(s => s.id === sid)
+                const visible = activeSessionId ? sid === activeSessionId : key === '__new__'
+                return (
+                  <div key={sid} className="absolute inset-0" style={{ display: visible ? 'flex' : 'none' }}>
+                    <ChatView
+                      sessionId={sid}
+                      jsonlPath={sess ? `${sess.projectPath}\\${sess.id}.jsonl` : null}
+                      alive
+                      visible={visible && section === 'sessions'}
+                      effort={key === '__new__' ? sessionConfig.effort : loadSessionConfig(sid).effort}
+                    />
+                  </div>
+                )
+              })}
             </div>
 
             <AnimatePresence>
-              {(() => {
-                const isSpawned = Object.keys(spawnedSessions).some(tid => {
-                  const resolved = termToSession[tid] ?? (tid === '__new__' ? null : tid)
-                  return activeSessionId ? resolved === activeSessionId : tid === '__new__'
-                })
-                return !isSpawned
-              })() && (startPhase === 'idle' || startPhase === 'confetti' || startPhase === 'fadeout') && (
+              {!isPtySpawned && !isChatActive && (startPhase === 'idle' || startPhase === 'confetti' || startPhase === 'fadeout') && (
                 <motion.div
                   key="welcome"
                   className="absolute inset-0"
@@ -644,11 +728,13 @@ function AppInner() {
                     onStart={(btnRect) => {
                       if (activeSessionId) saveSessionConfig(activeSessionId, sessionConfig)
                       const key = activeSessionId ?? '__new__'
-                      const doSpawn = () => {
-                        setSpawnedSessions(prev => ({ ...prev, [key]: (prev[key] ?? 0) + 1 }))
-                        if (activeSessionId) setTermToSession(prev => ({ ...prev, [key]: activeSessionId }))
-                        setSpawnTrigger(t => t + 1)
-                      }
+                      const doSpawn = viewMode === 'chat'
+                        ? () => { startChat(key, activeSessionId, activeConfigDir, sessionConfig) }
+                        : () => {
+                          setSpawnedSessions(prev => ({ ...prev, [key]: (prev[key] ?? 0) + 1 }))
+                          if (activeSessionId) setTermToSession(prev => ({ ...prev, [key]: activeSessionId }))
+                          setSpawnTrigger(t => t + 1)
+                        }
                       if (!activeSessionId) {
                         setConfettiOrigin(btnRect)
                         setPendingStart(() => doSpawn)
@@ -751,6 +837,46 @@ function AppInner() {
         )
       })()}
 
+    </div>
+  )
+}
+
+/** «⋯» в шапке сессии: редкие действия, чтобы не висели текстом рядом с названием */
+function SessionMenu({ sessionId, canKill, onKill }: { sessionId: string | null; canKill: boolean; onKill: () => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [open])
+  if (!sessionId && !canKill) return null
+  return (
+    <div ref={ref} className="relative no-drag shrink-0 ml-1">
+      <button
+        onClick={() => setOpen(v => !v)}
+        title="Действия с сессией"
+        className={cn('w-7 h-7 rounded-md flex items-center justify-center transition-colors', open ? 'text-text-primary bg-surface-hover' : 'text-text-faint hover:text-text-secondary hover:bg-surface-hover')}
+      >
+        <Ellipsis size={16} />
+      </button>
+      {open && (
+        <div className="header-menu">
+          {sessionId && (
+            <button onClick={() => { navigator.clipboard.writeText(sessionId).catch(() => {}); setOpen(false) }}>
+              <Copy size={14} />Скопировать ID сессии
+            </button>
+          )}
+          {canKill && (
+            <button className="is-danger" onClick={() => { setOpen(false); onKill() }}>
+              <StopCircle size={14} />Завершить процесс
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }

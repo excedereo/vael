@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Account, Session, SyncStatus } from '../types/index'
+import type { Account, Session, SyncStatus } from '../types/index'
 import { api } from '../lib/api.js'
 
 export function useAppState() {
@@ -111,5 +111,7 @@ export function useAppState() {
     switchAccount,
     refreshSessions,
     refreshAccounts,
+    // Убрать сессию из списка без пересканирования всех jsonl — оно вешает main-процесс
+    dropSession: (id: string) => setSessions(prev => prev.filter(s => s.id !== id)),
   }
 }

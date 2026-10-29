@@ -156,6 +156,65 @@ export interface CompactMetadata {
   trigger?: string
 }
 
+// ── Chat mode (stream-json) ───────────────────────────────────────────────────
+
+/** Элемент ленты чата: и история из jsonl, и живой поток рисуются из него */
+/** Файл, который CLI вернул в контекст после сжатия: целиком (lines) или только именем (ref) */
+export interface CompactFile { path: string; lines?: number; ref?: boolean }
+/** Хвост jsonl сразу после компакта */
+export interface CompactTail { files: CompactFile[]; summary: string | null }
+/** Один пересказ сессии */
+export interface CompactSummary { at?: number; before?: number; after?: number; summary: string }
+
+export type ChatItem =
+  | { kind: 'user'; key: string; text: string; attachments?: string[]; pending?: boolean; at?: number }
+  | { kind: 'text'; key: string; text: string; at?: number }
+  | { kind: 'thinking'; key: string; done: boolean }
+  | { kind: 'tool'; key: string; id: string; name: string; input: unknown; result?: string; isError?: boolean; done?: boolean }
+  | { kind: 'note'; key: string; text: string; markdown?: boolean }
+  | { kind: 'divider'; key: string; text: string }
+  /** Сжатие контекста: идёт / сжато (было → стало) / не вышло */
+  | { kind: 'compact'; key: string; state: 'running' | 'done' | 'failed'; startedAt?: number; before?: number; after?: number; error?: string; files?: CompactFile[]; summary?: string }
+  | { kind: 'meta'; key: string; text: string; stats?: TurnStats }
+  | { kind: 'error'; key: string; text: string }
+
+/** Итог хода: из чего сложилась его цена */
+export interface TurnStats {
+  sec: number
+  /** новый вход: input + запись в кэш */
+  input: number
+  /** чтение из кэша по всем запросам хода */
+  cache: number
+  output: number
+  requests: number
+}
+
+export interface ChatHistory {
+  items: ChatItem[]
+  /** размер контекста по последнему запросу, если он есть в jsonl */
+  contextTokens: number | null
+  model: string | null
+}
+
+/**
+ * Вложение к сообщению чата. Картинки и PDF уходят блоками прямо в сообщение,
+ * текст — содержимым; что не влезает или бинарное — путём, его прочитает сама модель
+ */
+export type ChatAttachment =
+  | { kind: 'image'; name: string; size: number; mediaType: string; data: string }
+  | { kind: 'pdf'; name: string; size: number; data: string }
+  | { kind: 'text'; name: string; size: number; text: string; path?: string }
+  | { kind: 'path'; name: string; size: number; path: string; reason: string }
+
+export interface ChatStartOptions {
+  /** null — новая сессия, id сгенерирует main */
+  sessionId: string | null
+  configDir: string | null
+  model?: string
+  effort?: string
+  permissionMode?: string
+}
+
 // ── Module types ──────────────────────────────────────────────────────────────
 
 export interface ModuleInfo {

@@ -2,7 +2,7 @@
 import { cn } from '../lib/utils.js'
 import { CornerDownLeft, Square, Terminal } from 'lucide-react'
 // InputBarToolbar — model/effort/permission/PTY popups extracted to separate component
-import { AttachedFiles, AttachedFile } from './AttachedFiles.js'
+import { AttachedFiles, type AttachedFile } from './AttachedFiles.js'
 import { InputBarToolbar } from './InputBarToolbar.js'
 import { api } from '../lib/api.js'
 

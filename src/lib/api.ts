@@ -1,4 +1,48 @@
-import { Account, Session, JsonlEntry, StreamEvent, UsageData, ContextData, SessionMeta } from '../types/index'
+import type { Account, Session, JsonlEntry, StreamEvent, UsageData, ContextData, SessionMeta } from '../types/index'
+import type { ChatHistory, ChatStartOptions, ChatAttachment, CompactTail, CompactSummary } from '../../shared/types.js'
+
+/** Модель из ответа CLI на initialize */
+export interface ChatModelInfo {
+  value: string
+  resolvedModel?: string
+  displayName: string
+  description?: string
+  supportedEffortLevels?: string[]
+}
+
+/** rate_limit_info из потока CLI */
+export interface RateLimitWindow { utilization: number; resetsAt: number; status?: string }
+export interface RateLimitInfo {
+  status?: string
+  unifiedWindows?: { five_hour?: RateLimitWindow; seven_day?: RateLimitWindow }
+  overageStatus?: string
+}
+
+/** Последний известный rate_limit_info аккаунта и когда он пришёл */
+export interface AccountLimits { info: RateLimitInfo; at: number }
+
+export interface ChatInit {
+  commands: { name: string; description?: string; argumentHint?: string }[]
+  models: ChatModelInfo[]
+  account: { email?: string; subscriptionType?: string } | null
+}
+
+/** Сырое событие stream-json от CLI; поля разбирает useChatSession */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ChatStreamEvent = { type: string; subtype?: string; [k: string]: any }
+
+/** Узел дерева памяти для графа. Держать в синхроне с electron/ipc/memory.ts */
+export interface MemoryNode {
+  name: string
+  rel: string
+  type: 'file' | 'dir'
+  size?: number
+  /** попадает ли файл в контекст по текущему конфигу */
+  loaded?: boolean
+  /** цели [[ссылок]] внутри файла */
+  links?: string[]
+  children?: MemoryNode[]
+}
 
 /** Запись в очереди побудок Heartbeat. Держать в синхроне с electron/modules/heartbeat.ts */
 export interface WakeEntry {
@@ -83,6 +127,9 @@ export interface StatsCache {
   firstSessionDate?: string
   /** Сообщения по часам суток, 0..23 */
   hourCounts?: number[]
+  /** день → сессия → токены */
+  dailySessionTokens?: Record<string, Record<string, number>>
+  sessionTitles?: Record<string, string>
 }
 
 // Type-safe wrapper around window.api exposed by preload
@@ -98,7 +145,7 @@ export interface ElectronAPI {
 
   getSessions: (accountId: string) => Promise<Session[]>
   readSession: (sessionPath: string) => Promise<JsonlEntry[]>
-  deleteSession: (sessionPath: string) => Promise<{ ok: boolean }>
+  deleteSession: (sessionPath: string) => Promise<{ ok: boolean; error?: string }>
   readSessionMeta: (jsonlPath: string) => Promise<SessionMeta>
   writeSessionMeta: (jsonlPath: string, patch: Partial<SessionMeta>) => Promise<SessionMeta>
   getSessionInfo: (jsonlPath: string) => Promise<SessionInfo>
@@ -125,6 +172,28 @@ export interface ElectronAPI {
   ptyResize: (termId: string, cols: number, rows: number) => Promise<{ ok: boolean }>
   ptyKill: (termId: string) => Promise<{ ok: boolean }>
   ptyAlive: (termId: string) => Promise<{ alive: boolean }>
+
+  // Chat mode (stream-json)
+  chatStart: (opts: ChatStartOptions) => Promise<{ ok: boolean; sessionId: string }>
+  chatSend: (sessionId: string, content: string | unknown[]) => Promise<{ ok: boolean }>
+  chatInit: (sessionId: string) => Promise<ChatInit | null>
+  limitsGet: (configDir: string | null) => Promise<AccountLimits | null>
+  onLimitsUpdate: (cb: (configDir: string, value: AccountLimits) => void) => () => void
+  chatContextUsage: (sessionId: string) => Promise<{ ok: boolean; totalTokens?: number; maxTokens?: number; error?: string }>
+  chatReadAttachments: (paths: string[]) => Promise<ChatAttachment[]>
+  chatPickFiles: () => Promise<string[]>
+  chatInterrupt: (sessionId: string) => Promise<{ ok: boolean; error?: string }>
+  chatSetModel: (sessionId: string, model: string) => Promise<{ ok: boolean; model?: string; error?: string }>
+  chatSetPermissionMode: (sessionId: string, mode: string) => Promise<{ ok: boolean; mode?: string; error?: string }>
+  chatKill: (sessionId: string) => Promise<{ ok: boolean }>
+  chatAlive: (sessionId: string) => Promise<{ alive: boolean }>
+  chatList: () => Promise<{ sessionId: string; hasJsonl: boolean }[]>
+  chatHistory: (jsonlPath: string) => Promise<ChatHistory>
+  chatCompactTail: (jsonlPath: string, pre?: number) => Promise<CompactTail>
+  chatSummaries: (jsonlPath: string) => Promise<CompactSummary[]>
+  onChatEvent: (cb: (sessionId: string, ev: ChatStreamEvent) => void) => () => void
+  onChatExit: (cb: (sessionId: string, code: number | null) => void) => () => void
+  onChatCreated: (cb: (sessionId: string) => void) => () => void
   onPtyData: (cb: (termId: string, data: string) => void) => () => void
   onPtyExit: (cb: (termId: string) => void) => () => void
 
@@ -176,6 +245,7 @@ export interface ElectronAPI {
   memoryCreateDir: (name: string, dirPath?: string) => Promise<{ ok: boolean; path?: string; error?: string }>
   memoryDeleteFile: (filePath: string) => Promise<{ ok: boolean }>
   memoryGetClaudeMd: () => Promise<{ ok: boolean; path: string; content: string }>
+  memoryTree: () => Promise<{ ok: boolean; root: string; nodes: MemoryNode[] }>
   memoryGetDir: () => Promise<string>
   memoryRename: (oldPath: string, newName: string) => Promise<{ ok: boolean; path?: string; error?: string }>
   memoryGetMeta: () => Promise<Record<string, { auto: boolean }>>

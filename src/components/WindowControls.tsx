@@ -15,10 +15,10 @@ export function WindowControls() {
     return () => clearInterval(iv)
   }, [])
 
-  const btn = 'no-drag w-[46px] h-10 flex items-center justify-center transition-colors'
+  const btn = 'no-drag w-[46px] h-11 flex items-center justify-center transition-colors'
 
   return (
-    <div className="no-drag flex items-center shrink-0 h-10">
+    <div className="no-drag flex items-center shrink-0 h-11">
       <button
         onClick={() => api.windowMinimize()}
         className={cn(btn, 'text-text-ghost hover:text-text-muted hover:bg-surface-hover')}

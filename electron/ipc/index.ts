@@ -12,6 +12,7 @@ import { registerSettingsHandlers } from './settings.js'
 import { registerTempHandlers } from './temp.js'
 import { registerNativeConsoleHandlers } from './nativeConsole.js'
 import { registerPtyHandlers } from './pty.js'
+import { registerChatHandlers } from './chat.js'
 
 export interface HandlerDeps {
   getWindow: () => BrowserWindow | null
@@ -33,4 +34,5 @@ export function registerAllHandlers(deps: HandlerDeps) {
   registerTempHandlers(getWindow)
   registerNativeConsoleHandlers(getWindow)
   registerPtyHandlers(getWindow)
+  registerChatHandlers(getWindow)
 }

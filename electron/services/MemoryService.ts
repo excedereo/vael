@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { PATHS } from './SettingsService.js'
+import { hasMemoryConfig, loadMemoryConfig, buildBlockBody } from './MemoryConfig.js'
 
 // Вся логика памяти — индексы, CLAUDE.md блок, мета-данные
 
@@ -117,10 +118,42 @@ export function rebuildIndexChain(startDir: string, meta: MemoryMeta) {
   }
 }
 
+/** Вставляет готовое тело блока между маркерами в CLAUDE.md. */
+function writeBlock(body: string) {
+  if (!fs.existsSync(PATHS.claudeMd)) return
+  const existing = fs.readFileSync(PATHS.claudeMd, 'utf-8')
+  const block = `${VAEL_BLOCK_START}\n${body}\n${VAEL_BLOCK_END}`
+
+  const startIdx = existing.indexOf(VAEL_BLOCK_START)
+  const endIdx = existing.indexOf(VAEL_BLOCK_END)
+  let updated: string
+  if (startIdx !== -1 && endIdx !== -1) {
+    let afterEnd = endIdx + VAEL_BLOCK_END.length
+    const rest = existing.slice(afterEnd)
+    const tokenLineMatch = rest.match(/^\n-{3,}[^\n]*-{3,}/)
+    if (tokenLineMatch) afterEnd += tokenLineMatch[0].length
+    updated = existing.slice(0, startIdx) + block + existing.slice(afterEnd)
+  } else {
+    updated = existing.trimEnd() + '\n\n' + block + '\n'
+  }
+  fs.writeFileSync(PATHS.claudeMd, updated, 'utf-8')
+}
+
 export function rebuildClaudeMdBlock(meta: MemoryMeta) {
   if (!fs.existsSync(PATHS.claudeMd)) return
 
-  const existing = fs.readFileSync(PATHS.claudeMd, 'utf-8')
+  // Новая схема: правила снаружи, в memory.config.json. Пока конфига нет,
+  // работает старая сборка по фронтматтерам — чтобы не ломать уже собранные
+  // памяти у тех, кто конфиг не заводил.
+  if (hasMemoryConfig(PATHS.memory)) {
+    const cfg = loadMemoryConfig(PATHS.memory)
+    const { body, tokens, fileCount } = buildBlockBody(PATHS.memory, cfg)
+    lastMemoryTokens = { auto: tokens, total: tokens }
+    console.log(`[memory] блок собран по конфигу: ${fileCount} файлов, ~${Math.round(tokens / 1000)}k токенов`)
+    writeBlock(body)
+    return
+  }
+
   const alwaysLines: string[] = []
   const onDemandLines: string[] = []
   const tagMap: Record<string, string[]> = {}
@@ -195,33 +228,26 @@ export function rebuildClaudeMdBlock(meta: MemoryMeta) {
   lastMemoryTokens = { auto: autoTokens, total: Math.round(totalChars / 4) }
 
   const block = [
-    VAEL_BLOCK_START,
     `Memory root: ${PATHS.memory}`,
     '',
     alwaysLines.length > 0 ? '## Always loaded:\n' + alwaysLines.join('\n\n') : '',
     topDirs.length > 0 ? '## Available on demand (read INDEX.md of category first):\n' + topDirs.join('\n') : '',
     onDemandLines.length > 0 ? '## Individual files on demand:\n' + onDemandLines.join('\n') : '',
     tagLines.length > 0 ? '## Tags:\nФайлы с тегами загружаются только когда в сообщении встречается соответствующий тег в скобках, например [TG]. При виде тега — прочитать соответствующий файл.\n' + tagLines.join('\n') : '',
-  ].filter(Boolean).join('\n') + '\n' + VAEL_BLOCK_END
+  ].filter(Boolean).join('\n')
 
-  const startIdx = existing.indexOf(VAEL_BLOCK_START)
-  const endIdx = existing.indexOf(VAEL_BLOCK_END)
-  let updated: string
-  if (startIdx !== -1 && endIdx !== -1) {
-    let afterEnd = endIdx + VAEL_BLOCK_END.length
-    const rest = existing.slice(afterEnd)
-    const tokenLineMatch = rest.match(/^\n-{3,}[^\n]*-{3,}/)
-    if (tokenLineMatch) afterEnd += tokenLineMatch[0].length
-    updated = existing.slice(0, startIdx) + block + existing.slice(afterEnd)
-  } else {
-    updated = existing.trimEnd() + '\n\n' + block + '\n'
-  }
-
-  fs.writeFileSync(PATHS.claudeMd, updated, 'utf-8')
+  writeBlock(block)
 }
 
 export function rebuildAllIndexes() {
   try {
+    // При конфиге INDEX.md не нужны: карта памяти живёт в MEMORY.md, который
+    // пишется руками, а что грузить — решает конфиг, а не заголовки файлов
+    if (hasMemoryConfig(PATHS.memory)) {
+      rebuildClaudeMdBlock({})
+      return
+    }
+
     const meta = loadMeta()
     function walkDirs(dirPath: string) {
       try {

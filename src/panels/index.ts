@@ -1,4 +1,4 @@
-import { VaeliPanel } from '../types/panel.js'
+import type { VaeliPanel } from '../types/panel.js'
 import { memoryPanel } from './memory.js'
 import { pyrePanel } from './pyre.js'
 

@@ -1,4 +1,4 @@
-import { SyncStatus } from '../types/index'
+import type { SyncStatus } from '../types/index'
 import { cn } from '../lib/utils.js'
 import { Loader2, AlertCircle, CheckCircle } from 'lucide-react'
 

@@ -50,3 +50,4 @@ launch.vbs
 
 # Internal
 .claude/
+shots/capture.log

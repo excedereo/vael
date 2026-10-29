@@ -1,4 +1,4 @@
-import { ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 export type { SessionStatus } from '../context/SessionContext.js'
 import type { SessionStatus } from '../context/SessionContext.js'

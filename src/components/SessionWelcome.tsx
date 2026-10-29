@@ -1,16 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, ChevronDown, Check, Plus, Zap } from 'lucide-react'
+import { Play, ChevronDown, Check, Plus } from 'lucide-react'
+import logo from '../assets/logo.svg'
 import { loadCustomOptions } from '../lib/customOptions.js'
 import { api, type SessionInfo } from '../lib/api.js'
+import { loadCliModels, modelDisplayName } from '../lib/cliModels.js'
+import { MdBlock } from './ChatView.js'
+import { cn } from '../lib/utils.js'
 
-// Красивые ярлыки для чипов Resume-экрана
-const MODEL_LABEL: Record<string, string> = {
-  'claude-sonnet-5': 'Sonnet 5',
-  'claude-opus-5': 'Opus 5',
-  'claude-fable-5': 'Fable 5',
-  'claude-haiku-4-5-20251001': 'Haiku 4.5',
-}
 const PERM_LABEL: Record<string, string> = {
   bypassPermissions: 'Bypass',
   acceptEdits: 'Accept Edits',
@@ -18,10 +15,7 @@ const PERM_LABEL: Record<string, string> = {
   plan: 'Plan',
   auto: 'Auto',
 }
-function prettyModel(m: string | null): string | null {
-  if (!m) return null
-  return MODEL_LABEL[m] ?? m
-}
+const EFFORT_LABEL: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-High', max: 'Max' }
 
 interface Option {
   value: string
@@ -29,11 +23,13 @@ interface Option {
   sub?: string
 }
 
-function Dropdown({ label, value, options, onChange }: {
+function Dropdown({ label, value, options, onChange, display }: {
   label: string
   value: string
   options: Option[]
   onChange: (v: string) => void
+  /** подпись, если значения нет в списке (старый id модели и т.п.) */
+  display?: string
 }) {
   const [open, setOpen] = useState(false)
   const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({})
@@ -43,17 +39,12 @@ function Dropdown({ label, value, options, onChange }: {
   const openMenu = () => {
     if (!btnRef.current) return
     const rect = btnRef.current.getBoundingClientRect()
-    const spaceBelow = window.innerHeight - rect.bottom
-    const menuH = options.length * 48
-    const above = spaceBelow < menuH + 8
-
+    const above = window.innerHeight - rect.bottom < Math.min(options.length, 5) * 46 + 8
     setMenuStyle({
       position: 'fixed',
       left: rect.left,
       width: rect.width,
-      ...(above
-        ? { bottom: window.innerHeight - rect.top + 4 }
-        : { top: rect.bottom + 4 }),
+      ...(above ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 }),
       zIndex: 9999,
     })
     setOpen(true)
@@ -69,76 +60,32 @@ function Dropdown({ label, value, options, onChange }: {
   }, [open])
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="text-[10.5px] uppercase tracking-[0.12em]" style={{ color: 'var(--text-faint)' }}>
-        {label}
-      </div>
-      <button
-        ref={btnRef}
-        onClick={() => open ? setOpen(false) : openMenu()}
-        className="flex items-center justify-between px-3.5 py-2.5 rounded-lg text-sm transition-colors duration-150"
-        style={{
-          background: open ? 'var(--surface-hover)' : 'var(--welcome-card)',
-          border: '1.5px solid var(--border-default)',
-          color: 'var(--text-primary)',
-        }}
-      >
-        <div className="flex flex-col items-start">
-          <span className="font-medium">{selected?.label ?? value}</span>
-          {selected?.sub && (
-            <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{selected.sub}</span>
-          )}
-        </div>
-        <motion.span
-          animate={{ rotate: open ? 180 : 0 }}
-          transition={{ duration: 0.15 }}
-          style={{ color: 'var(--text-muted)' }}
-        >
-          <ChevronDown size={13} />
-        </motion.span>
+    <div className="flex flex-col gap-1.5 min-w-0">
+      <div className="text-[12px] text-text-muted px-0.5">{label}</div>
+      <button ref={btnRef} onClick={() => open ? setOpen(false) : openMenu()} className={cn('welcome-field', open && 'is-open')}>
+        <span className="truncate">{selected?.label ?? display ?? value}</span>
+        <ChevronDown size={14} className={cn('shrink-0 text-text-muted transition-transform', open && 'rotate-180')} />
       </button>
 
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: -4, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.97 }}
+            initial={{ opacity: 0, y: -3 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -3 }}
             transition={{ duration: 0.12, ease: 'easeOut' }}
-            style={{
-              ...menuStyle,
-              background: 'var(--bg-elevated)',
-              border: '1.5px solid var(--border-strong)',
-              borderRadius: 10,
-              overflow: 'hidden',
-              boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
-            }}
+            style={menuStyle}
+            className="welcome-menu"
           >
-            <div style={{ maxHeight: 48 * 4, overflowY: 'auto' }}>
-            {options.map((opt, i) => (
-              <motion.button
-                key={opt.value}
-                initial={{ opacity: 0, x: -3 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.02 }}
-                onClick={() => { onChange(opt.value); setOpen(false) }}
-                className="w-full text-left px-3 py-2.5 flex items-center justify-between gap-2 transition-colors duration-100"
-                style={{ color: opt.value === value ? 'var(--text-primary)' : 'var(--text-secondary)' }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-hover)')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-              >
-                <div>
-                  <div className="text-sm font-medium" style={{ color: opt.value === value ? 'var(--accent)' : 'inherit' }}>
-                    {opt.label}
-                  </div>
-                  {opt.sub && (
-                    <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{opt.sub}</div>
-                  )}
-                </div>
-                {opt.value === value && <Check size={11} style={{ color: 'var(--accent)', flexShrink: 0 }} />}
-              </motion.button>
+            {options.map(opt => (
+              <button key={opt.value} onClick={() => { onChange(opt.value); setOpen(false) }} className={cn('welcome-menu-item', opt.value === value && 'is-on')}>
+                <span className="min-w-0">
+                  <span className="block truncate">{opt.label}</span>
+                  {opt.sub && <span className="block truncate text-[11.5px] text-text-muted">{opt.sub}</span>}
+                </span>
+                {opt.value === value && <Check size={13} className="shrink-0 text-accent" />}
+              </button>
             ))}
-            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -182,11 +129,11 @@ function relTime(ms?: number): string {
   return new Date(ms).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
 }
 
-const MODELS: Option[] = [
-  { value: 'claude-sonnet-5',          label: 'Sonnet 5', sub: 'claude-sonnet-5' },
-  { value: 'claude-opus-5',            label: 'Opus 5',   sub: 'claude-opus-5' },
-  { value: 'claude-fable-5',             label: 'Fable 5',    sub: 'claude-fable-5' },
-  { value: 'claude-haiku-4-5-20251001',  label: 'Haiku 4.5',  sub: 'claude-haiku-4-5' },
+// Пока CLI ни разу не прислал список — только алиасы, они всегда указывают на свежие версии
+const FALLBACK_MODELS: Option[] = [
+  { value: 'opus',   label: 'Opus',   sub: 'последняя Opus' },
+  { value: 'sonnet', label: 'Sonnet', sub: 'последняя Sonnet' },
+  { value: 'haiku',  label: 'Haiku',  sub: 'последняя Haiku' },
 ]
 
 const EFFORTS: Option[] = [
@@ -209,12 +156,17 @@ const PROMPTS: Option[] = [
   { value: '', label: 'Нет', sub: 'без промпта' },
 ]
 
+function cliModelOptions(): Option[] {
+  const list = loadCliModels().filter(m => m.value !== 'default')
+  if (!list.length) return FALLBACK_MODELS
+  return list.map(m => ({ value: m.value, label: m.displayName, sub: m.description }))
+}
+
 export function SessionWelcome({ sessionTitle, isNew = false, jsonlPath, messageCount, lastModified, config, onChange, onStart, onSettings, onImport }: Props) {
-  const color = isNew ? 'var(--accent, #d97757)' : 'var(--accent, #d97757)'
-  const glow  = 'var(--accent-glow, rgba(217,119,87,0.14))'
   const btnRef = useRef<HTMLButtonElement>(null)
   const [clicked, setClicked] = useState(false)
 
+  const [cliModels, setCliModels]            = useState(cliModelOptions)
   const [customModels, setCustomModels]      = useState(() => loadCustomOptions('model'))
   const [customEfforts, setCustomEfforts]    = useState(() => loadCustomOptions('effort'))
   const [customPerms, setCustomPerms]        = useState(() => loadCustomOptions('permission'))
@@ -251,18 +203,41 @@ export function SessionWelcome({ sessionTitle, isNew = false, jsonlPath, message
       setCustomEfforts(loadCustomOptions('effort'))
       setCustomPerms(loadCustomOptions('permission'))
     }
+    const refreshCli = () => setCliModels(cliModelOptions())
     window.addEventListener('vaeli:customOptionsChanged', refresh)
-    return () => window.removeEventListener('vaeli:customOptionsChanged', refresh)
+    window.addEventListener('vaeli:cliModelsChanged', refreshCli)
+    return () => {
+      window.removeEventListener('vaeli:customOptionsChanged', refresh)
+      window.removeEventListener('vaeli:cliModelsChanged', refreshCli)
+    }
   }, [])
 
-  const allModels      = [...MODELS,      ...customModels]
+  const start = () => { setClicked(true); onStart(btnRef.current?.getBoundingClientRect()) }
+
+  // Enter — то же, что кнопка: экран всё равно ждёт только одного действия
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.altKey) return
+      // Экран остаётся смонтированным и в других разделах — там Enter не наш
+      if (!btnRef.current || btnRef.current.offsetParent === null) return
+      const t = e.target as HTMLElement | null
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(t.tagName))) return
+      e.preventDefault()
+      start()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  const allModels      = [...cliModels,   ...customModels]
   const allEfforts     = [...EFFORTS,     ...customEfforts]
   const allPermissions = [...PERMISSIONS, ...customPerms]
-  const btnText = isNew
-    ? (clicked ? 'Запуск' : 'Начать')
-    : 'Продолжить'
 
-  const chips = [prettyModel(info?.model ?? null), info?.effort ?? null, info?.permissionMode ? (PERM_LABEL[info.permissionMode] ?? info.permissionMode) : null].filter(Boolean) as string[]
+  const params = [
+    modelDisplayName(info?.model),
+    info?.effort ? (EFFORT_LABEL[info.effort] ?? info.effort) : null,
+    info?.permissionMode ? (PERM_LABEL[info.permissionMode] ?? info.permissionMode) : null,
+  ].filter(Boolean) as string[]
 
   return (
     <motion.div
@@ -274,146 +249,55 @@ export function SessionWelcome({ sessionTitle, isNew = false, jsonlPath, message
       style={{ background: 'var(--bg-base)' }}
     >
       <motion.div
-        initial={{ opacity: 0, y: 10 }}
+        initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-[520px] px-4 flex flex-col gap-5"
+        className="w-full max-w-[560px] px-6 flex flex-col gap-5"
       >
         {isNew ? (
-          <div className="flex flex-col items-center text-center gap-1.5 mb-1">
-            <div className="w-[52px] h-[52px] rounded-[16px] flex items-center justify-center mb-2 relative overflow-hidden"
-              style={{ background: 'var(--accent-crystal, var(--accent))', boxShadow: '0 8px 24px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.25)' }}>
-              <Plus size={23} style={{ color: 'white' }} strokeWidth={2} />
-            </div>
-            <div className="text-[20px] font-medium tracking-tight" style={{ color: 'var(--text-primary)' }}>
-              Что делаем?
-            </div>
-            <div className="text-[13.5px]" style={{ color: 'var(--text-muted)' }}>
-              Настрой сессию и запусти — или просто начни пустую.
-            </div>
+          <div className="flex flex-col items-center text-center gap-2">
+            <img src={logo} alt="" className="w-14 h-14 select-none" draggable={false} />
+            <div className="text-[22px] font-medium tracking-tight text-text-primary mt-2">Что делаем?</div>
+            <div className="text-[13.5px] text-text-muted">Настрой сессию и запусти — или просто начни пустую</div>
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
-            {sessionTitle && (
-              <div className="flex items-center gap-2.5">
-                <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: color, boxShadow: `0 0 8px ${glow}` }} />
-                <div className="text-lg font-medium leading-snug overflow-hidden" style={{ color: 'var(--text-primary)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, textOverflow: 'ellipsis' }}>
-                  {sessionTitle}
-                </div>
-              </div>
-            )}
-            <div className="text-[12.5px] pl-[22px]" style={{ color: 'var(--text-faint)' }}>
-              {[relTime(lastModified), messageCount ? `${messageCount} сообщений` : null].filter(Boolean).join(' · ')}
+          <div className="flex flex-col gap-1.5">
+            <div className="text-[22px] font-medium tracking-tight leading-snug text-text-primary line-clamp-2">
+              {sessionTitle || 'Без названия'}
+            </div>
+            <div className="text-[13px] text-text-muted">
+              {[relTime(lastModified), messageCount ? `${messageCount} сообщений` : null, ...params].filter(Boolean).join(' · ')}
             </div>
           </div>
         )}
 
         {isNew ? (
-          <>
-            <div className="flex items-center gap-2">
-              <div className="flex-1 h-px" style={{ background: 'var(--border-subtle)' }} />
-              {onSettings && (
-                <button
-                  onClick={onSettings}
-                  title="Добавить кастомные опции"
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] uppercase tracking-wider transition-colors"
-                  style={{ color: 'var(--text-faint)' }}
-                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-muted)')}
-                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-faint)')}
-                >
-                  <Plus size={10} />
-                  настроить
-                </button>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Dropdown label="модель"     value={config.model}          options={allModels}      onChange={v => onChange({ ...config, model: v })} />
-              <Dropdown label="мышление"   value={config.effort}         options={allEfforts}     onChange={v => onChange({ ...config, effort: v })} />
-              <Dropdown label="разрешения" value={config.permissionMode} options={allPermissions} onChange={v => onChange({ ...config, permissionMode: v })} />
-              <Dropdown label="промпт"     value={config.prompt}         options={PROMPTS}        onChange={v => onChange({ ...config, prompt: v })} />
-            </div>
-          </>
-        ) : (
-          <>
-            {/* «На чём остановились» — кусок последнего ответа из jsonl */}
-            {info?.lastText && (
-              <div className="rounded-xl overflow-hidden" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-default)' }}>
-                <div className="px-3.5 py-2 text-[10px] uppercase tracking-[0.15em]" style={{ color: 'var(--text-faint)', borderBottom: '1px solid var(--border-subtle)' }}>
-                  На чём остановились
-                </div>
-                <div className="px-3.5 py-3 text-[13px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                  <span style={{ display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
-                    {info.lastText}
-                  </span>
-                </div>
-              </div>
-            )}
+          <div className="grid grid-cols-2 gap-3">
+            <Dropdown label="Модель"     value={config.model}          options={allModels}      onChange={v => onChange({ ...config, model: v })} display={modelDisplayName(config.model) ?? undefined} />
+            <Dropdown label="Мышление"   value={config.effort}         options={allEfforts}     onChange={v => onChange({ ...config, effort: v })} />
+            <Dropdown label="Разрешения" value={config.permissionMode} options={allPermissions} onChange={v => onChange({ ...config, permissionMode: v })} />
+            <Dropdown label="Промпт"     value={config.prompt}         options={PROMPTS}        onChange={v => onChange({ ...config, prompt: v })} />
+          </div>
+        ) : info?.lastText ? (
+          // Последний ответ — как в самой ленте, только приглушённо и с фейдом
+          <div className="welcome-last">
+            <div className="text-[12px] text-text-muted mb-2">Последний ответ</div>
+            <div className="chat-md welcome-last-text"><MdBlock text={info.lastText.slice(0, 1500)} /></div>
+          </div>
+        ) : null}
 
-            {/* Реальные параметры сессии — факт из jsonl, не контрол */}
-            {chips.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5">
-                {chips.map((c, i) => (
-                  <span key={i} className="text-[11.5px] px-2.5 py-1 rounded-full"
-                    style={{ color: 'var(--text-muted)', border: '1px solid var(--border-strong)' }}>
-                    {c}
-                  </span>
-                ))}
-                <span className="ml-auto text-[11px]" style={{ color: 'var(--text-ghost)' }}>
-                  параметры из сессии — менять только командой внутри
-                </span>
-              </div>
-            )}
-          </>
+        <button ref={btnRef} onClick={start} className="welcome-start">
+          <Play size={12} fill="currentColor" />
+          {isNew ? (clicked ? 'Запуск…' : 'Начать') : 'Продолжить'}
+          <kbd>Enter</kbd>
+        </button>
+
+        {isNew && (onImport || onSettings) && (
+          <div className="flex justify-center gap-4 -mt-1 text-[12.5px]">
+            {onImport && <button onClick={onImport} className="text-text-muted hover:text-text-secondary transition-colors">Импортировать сессию</button>}
+            {onSettings && <button onClick={onSettings} className="flex items-center gap-1 text-text-muted hover:text-text-secondary transition-colors"><Plus size={12} />Свои варианты</button>}
+          </div>
         )}
-
-        <motion.button
-          ref={btnRef}
-          whileHover={{ scale: 1.015 }}
-          whileTap={{ scale: 0.97 }}
-          onClick={() => { setClicked(true); onStart(btnRef.current?.getBoundingClientRect()) }}
-          className="welcome-start-btn w-full flex items-center justify-center gap-2 py-3 rounded-xl text-base font-semibold mt-1 overflow-hidden relative"
-          style={{
-            background: 'var(--accent-crystal, var(--accent))',
-            boxShadow: `0 0 22px ${glow}, inset 0 1px 0 rgba(255,255,255,0.18)`,
-            color: 'white',
-            willChange: 'transform',
-          }}
-        >
-          <span className="welcome-btn-glint" />
-          {isNew
-            ? (clicked ? <Zap size={13} fill="currentColor" /> : <Play size={11} fill="currentColor" />)
-            : <Play size={11} fill="currentColor" />}
-          {btnText}
-        </motion.button>
-
-        {isNew && onImport && (
-          <button
-            onClick={onImport}
-            className="w-full text-center text-[13px] transition-colors -mt-2"
-            style={{ color: 'var(--text-ghost)' }}
-            onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-faint)')}
-            onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-ghost)')}
-          >
-            импортировать сессию
-          </button>
-        )}
-
-        <style>{`
-          .welcome-btn-glint {
-            position: absolute;
-            top: 0; left: -75%;
-            width: 50%; height: 100%;
-            background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.28) 50%, transparent 70%);
-            transform: skewX(-20deg);
-            pointer-events: none;
-          }
-          .welcome-start-btn:hover .welcome-btn-glint {
-            animation: btn-glint 0.55s ease forwards;
-          }
-          @keyframes btn-glint {
-            to { left: 130%; }
-          }
-        `}</style>
       </motion.div>
     </motion.div>
   )

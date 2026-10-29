@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Account } from '../types/index'
+import type { Account } from '../types/index'
 import { cn } from '../lib/utils.js'
 
 interface Props {

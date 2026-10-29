@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import path from 'path'
 import { appendFileSync } from 'fs'
@@ -15,6 +15,7 @@ import { linkAllAccounts, linkAccountSessions } from './services/SessionStoreSer
 import { rebuildAllIndexes, startMemoryWatcher } from './services/MemoryService.js'
 import { registerAllHandlers } from './ipc/index.js'
 import { watchSessionDirect, unsubscribeSessionReply, subscribeSessionReply, ptyWriteBySessionId, stopAllSessionWatches, killAllPtys, detectStatus, isPtyAlive, listAlivePtySessions } from './ipc/pty.js'
+import { isChatAlive, listChatSessions, chatWriteLikePty, killAllChats } from './services/ChatService.js'
 import { runStartupTempCleanup } from './ipc/temp.js'
 import { registerNotificationIpc } from './ipc/notifications.js'
 import { destroyNotificationWindow } from './services/NotificationWindow.js'
@@ -77,12 +78,19 @@ process.on('uncaughtException', (err) => {
 
 // ── Window ────────────────────────────────────────────────────────────────────
 
+// Наружу отдаём только веб и почту: file:// или схемы приложений из ответа модели не запускаем
+function openInBrowser(url: string) {
+  if (/^(https?|mailto):/i.test(url)) shell.openExternal(url).catch(() => {})
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400, height: 900, minWidth: 900, minHeight: 600,
     backgroundColor: '#0a0a0a',
     titleBarStyle: 'hidden',
     frame: false,
+    // Многоразмерный .ico: на 16–32px в нём упрощённый рисунок, иначе в панели задач каша
+    icon: path.join(__dirname, process.env.VITE_DEV_SERVER_URL ? '../public/icon.ico' : '../dist/icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -104,7 +112,14 @@ function createWindow() {
     const devUrl = process.env.VITE_DEV_SERVER_URL
     const isDevUrl = devUrl && url.startsWith(devUrl)
     const isAppFile = url.startsWith(`file://${path.resolve(__dirname, '..')}`)
-    if (!isDevUrl && !isAppFile) e.preventDefault()
+    if (isDevUrl || isAppFile) return
+    e.preventDefault()
+    openInBrowser(url)
+  })
+  // Ссылки с target=_blank и window.open — в браузер по умолчанию, а не новым окном Electron
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    openInBrowser(url)
+    return { action: 'deny' }
   })
   mainWindow.webContents.on('will-redirect', (e) => e.preventDefault())
   mainWindow.webContents.on('did-navigate', (_, url) => console.log('[nav] did-navigate:', url))
@@ -204,7 +219,8 @@ app.whenReady().then(() => {
     unwatchSession: (sessionId) => unsubscribeSessionReply(sessionId),
     subscribeReply: (sessionId, cb) => subscribeSessionReply(sessionId, cb),
     unsubscribeReply: (sessionId) => unsubscribeSessionReply(sessionId),
-    ptyWrite: (sessionId, data) => ptyWriteBySessionId(sessionId, data),
+    // Сессия может жить как PTY или как чат — модулям это всё равно
+    ptyWrite: (sessionId, data) => { if (!chatWriteLikePty(sessionId, data)) ptyWriteBySessionId(sessionId, data) },
     userData: app.getPath('userData'),
     getSessionStatus: (sessionId) => {
       const jsonl = findJsonlForSession(sessionId)
@@ -212,8 +228,8 @@ app.whenReady().then(() => {
     },
     findSessionJsonl: (sessionId) => findJsonlForSession(sessionId),
     getModule: (id) => moduleRegistry.get(id),
-    isPtyAlive: (sessionId) => isPtyAlive(sessionId),
-    listAlivePtySessions: () => listAlivePtySessions(),
+    isPtyAlive: (sessionId) => isPtyAlive(sessionId) || isChatAlive(sessionId),
+    listAlivePtySessions: () => [...listAlivePtySessions(), ...listChatSessions()],
   })
 
   registerNotificationIpc(() => mainWindow)
@@ -230,6 +246,7 @@ app.on('before-quit', () => {
   moduleRegistry.destroy()
   stopAllSessionWatches()
   killAllPtys()
+  killAllChats()
   destroyNotificationWindow()
 })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })

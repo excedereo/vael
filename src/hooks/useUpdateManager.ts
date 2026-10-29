@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import { api } from '../lib/api.js'
-import { UpdateState } from '../components/UpdateBanner.js'
+import type { UpdateState } from '../components/UpdateBanner.js'
 
 export type { UpdateState }
 

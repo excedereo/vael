@@ -10,6 +10,12 @@ import {
 import type { FsEntry } from '../services/MemoryService.js'
 import { PATHS } from '../services/SettingsService.js'
 import { computeStats } from '../services/StatsService.js'
+import { hasMemoryConfig, loadMemoryConfig, collectMemory } from '../services/MemoryConfig.js'
+
+/** Какие файлы реально попадают в контекст — для подсветки в графе. */
+function loadedSet(root: string, cfg: ReturnType<typeof loadMemoryConfig>): Set<string> {
+  return new Set(collectMemory(root, cfg).files.keys())
+}
 
 export function registerMemoryHandlers() {
   ipcMain.handle('memory:listDir', async (_, dirPath?: string) => {
@@ -124,6 +130,56 @@ export function registerMemoryHandlers() {
     }
   })
 
+  // Дерево целиком + [[связи]] между файлами — граф строится за один вызов,
+  // а не обходом listDir по каждой папке
+  ipcMain.handle('memory:tree', () => {
+    const cfg = hasMemoryConfig(PATHS.memory) ? loadMemoryConfig(PATHS.memory) : null
+    const loaded = cfg ? loadedSet(PATHS.memory, cfg) : null
+
+    interface Node {
+      name: string
+      rel: string
+      type: 'file' | 'dir'
+      size?: number
+      /** попадает ли в контекст */
+      loaded?: boolean
+      links?: string[]
+      children?: Node[]
+    }
+
+    const walk = (abs: string, rel: string): Node[] => {
+      let entries: fs.Dirent[]
+      try { entries = fs.readdirSync(abs, { withFileTypes: true }) } catch { return [] }
+      const out: Node[] = []
+      for (const e of entries.sort((a, b) => {
+        if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1
+        return a.name.localeCompare(b.name)
+      })) {
+        if (e.name.startsWith('.')) continue
+        const childRel = rel ? `${rel}/${e.name}` : e.name
+        const childAbs = path.join(abs, e.name)
+        if (e.isDirectory()) {
+          out.push({ name: e.name, rel: childRel, type: 'dir', children: walk(childAbs, childRel) })
+        } else if (e.name.endsWith('.md')) {
+          let size = 0
+          const links: string[] = []
+          try {
+            const text = fs.readFileSync(childAbs, 'utf-8')
+            size = text.length
+            for (const m of text.matchAll(/\[\[([^\]]+)\]\]/g)) links.push(m[1].trim())
+          } catch {}
+          out.push({
+            name: e.name, rel: childRel, type: 'file', size, links,
+            loaded: loaded ? loaded.has(childRel) : undefined,
+          })
+        }
+      }
+      return out
+    }
+
+    return { ok: true, root: PATHS.memory, nodes: walk(PATHS.memory, '') }
+  })
+
   ipcMain.handle('memory:getMemoryDir', () => PATHS.memory)
   ipcMain.handle('memory:getMeta', () => loadMeta())
   ipcMain.handle('memory:getTokens', () => lastMemoryTokens)
@@ -164,7 +220,7 @@ export function registerMemoryHandlers() {
   ipcMain.handle('stats:get', async (_, configDir?: string) => {
     try {
       const dir = configDir || path.join(os.homedir(), '.claude')
-      const data = computeStats(dir)
+      const data = await computeStats(dir)
       return data ? { ok: true, data } : { ok: false, data: null }
     } catch (e) {
       console.warn('[stats:get] failed:', e)

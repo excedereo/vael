@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Check } from 'lucide-react'
 import { cn } from '../lib/utils.js'
-import { ModelId, EffortLevel, PermissionMode } from './InputBar.js'
+import type { ModelId, EffortLevel, PermissionMode } from './InputBar.js'
 
 const PERMISSION_LABELS: Record<PermissionMode, string> = {
   bypassPermissions: 'Bypass',

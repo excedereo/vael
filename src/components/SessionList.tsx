@@ -1,4 +1,4 @@
-import { Session } from '../types/index'
+import type { Session } from '../types/index'
 import { cn, formatTime } from '../lib/utils.js'
 import { MessageSquare, Plus } from 'lucide-react'
 

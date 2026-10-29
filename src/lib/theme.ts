@@ -12,7 +12,7 @@ export function applyTheme(vars: Record<string, string>) {
 
 export function clearTheme() {
   const knownVars = [
-    '--bg-base', '--bg-sidebar', '--bg-surface', '--bg-elevated',
+    '--bg-rail', '--bg-base', '--bg-sidebar', '--bg-surface', '--bg-elevated',
     '--text-primary', '--text-secondary', '--text-muted', '--text-faint', '--text-ghost',
     '--border-subtle', '--border-default', '--border-strong',
     '--surface-hover', '--surface-selected', '--surface-active',

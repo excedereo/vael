@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import type { ModuleRegistry } from '../ModuleRegistry.js'
 import { loadQueue, saveQueue, type WakeEntry } from '../modules/heartbeat.js'
 import { listAlivePtySessions } from './pty.js'
+import { listChatSessions } from '../services/ChatService.js'
 
 export function registerModuleHandlers(moduleRegistry: ModuleRegistry) {
   ipcMain.handle('modules:list', () => moduleRegistry.list())
@@ -71,7 +72,7 @@ export function registerModuleHandlers(moduleRegistry: ModuleRegistry) {
     const mod = moduleRegistry.get('heartbeat') as { blockedReason?: () => string | null } | null
     return {
       blocked: mod?.blockedReason?.() ?? null,
-      alive: listAlivePtySessions(),
+      alive: [...listAlivePtySessions(), ...listChatSessions()],
     }
   })
 }

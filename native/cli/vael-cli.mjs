@@ -345,6 +345,88 @@ function cmdStatus() {
   console.log(`телеграм:  ${tg?.botToken && tg?.chatId ? 'настроен' : 'не настроен'}`)
 }
 
+// ─── summary ─────────────────────────────────────────────────────────────────
+
+/** jsonl сессии по uuid или его началу — в общем хранилище и в папках аккаунтов */
+function findSessionFile(idRaw) {
+  const id = resolveSession(idRaw)
+  const roots = [path.join(VAEL_DIR, 'sessions')]
+  try {
+    const acc = path.join(os.homedir(), '.claude-accounts')
+    for (const d of fs.readdirSync(acc)) roots.push(path.join(acc, d, 'projects'))
+  } catch { }
+  roots.push(path.join(os.homedir(), '.claude', 'projects'))
+  const hits = new Set()
+  for (const root of roots) {
+    let projects = []
+    try { projects = fs.readdirSync(root) } catch { continue }
+    for (const p of projects) {
+      let files = []
+      try { files = fs.readdirSync(path.join(root, p)) } catch { continue }
+      for (const f of files) {
+        if (f.endsWith('.jsonl') && f.startsWith(id)) hits.add(fs.realpathSync(path.join(root, p, f)))
+      }
+    }
+  }
+  if (hits.size === 0) die(`сессия «${id}» не найдена`)
+  if (hits.size > 1) die(`по «${id}» нашлось несколько сессий:\n  ${[...hits].join('\n  ')}\nуточни uuid`)
+  return [...hits][0]
+}
+
+function readSummaries(file) {
+  const out = []
+  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+    if (!line.includes('compact_boundary') && !line.includes('"isCompactSummary":true')) continue
+    let e
+    try { e = JSON.parse(line) } catch { continue }
+    if (e.type === 'system' && e.subtype === 'compact_boundary') {
+      const m = e.compactMetadata ?? e.compact_metadata ?? {}
+      out.push({ at: e.timestamp, before: m.preTokens ?? m.pre_tokens, after: m.postTokens ?? m.post_tokens, text: '' })
+    } else if (e.isCompactSummary && out.length && !out.at(-1).text) {
+      const c = e.message?.content
+      out.at(-1).text = typeof c === 'string' ? c : Array.isArray(c) ? c.filter(b => b?.type === 'text').map(b => b.text).join('\n\n') : ''
+    }
+  }
+  return out.filter(s => s.text)
+}
+
+const fmtAt = iso => new Date(iso).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+const kTok = n => n == null ? '?' : n >= 1000 ? Math.round(n / 1000) + 'k' : String(n)
+
+function cmdSummary(args) {
+  if (!args.length || args[0] === 'help') {
+    console.log(`vael summary <uuid|this>            список пересказов сессии
+vael summary <uuid|this> <N|last|all>  текст пересказа (N с единицы)
+
+uuid можно сокращать до начала, «this» — текущая сессия`)
+    return
+  }
+  const file = findSessionFile(args[0])
+  const list = readSummaries(file)
+  if (!list.length) { console.log('сжатий в этом файле не было'); return }
+  const which = args[1]
+  if (!which) {
+    list.forEach((s, i) => {
+      const when = s.at ? fmtAt(s.at) : ''
+      // Шапка «This session is being continued…» у всех одинаковая — превью с самого пересказа
+      const body = s.text.replace(/^This session is being continued[\s\S]*?\nSummary:\s*/, '')
+      const first = body.replace(/\s+/g, ' ').slice(0, 70)
+      console.log(`${i + 1}. ${when}  ${kTok(s.before)} → ${kTok(s.after)}  ${first}…`)
+    })
+    console.log(`\nтекст: vael summary ${args[0]} <номер>`)
+    return
+  }
+  const pick = which === 'all' ? list.map((s, i) => [s, i]) : (() => {
+    const i = which === 'last' ? list.length - 1 : Number(which) - 1
+    if (!list[i]) die(`пересказа №${which} нет, всего ${list.length}`)
+    return [[list[i], i]]
+  })()
+  for (const [s, i] of pick) {
+    console.log(`── Сжатие ${i + 1}${s.at ? ' · ' + fmtAt(s.at) : ''} · ${kTok(s.before)} → ${kTok(s.after)} ──\n`)
+    console.log(s.text + '\n')
+  }
+}
+
 // ─── main ────────────────────────────────────────────────────────────────────
 
 function help() {
@@ -353,6 +435,7 @@ function help() {
   vael wake ...        побудки (vael wake help)
   vael hb ...          включить/выключить heartbeat, сессия, шаблон (vael hb help)
   vael tg "текст"      написать Стралитзу в телеграм
+  vael summary ...     пересказы сжатий сессии (vael summary help)
   vael status          что сейчас включено`)
 }
 
@@ -363,6 +446,7 @@ switch (cmd) {
   case 'hb':
   case 'heartbeat': cmdHb(rest); break
   case 'tg': await cmdTg(rest); break
+  case 'summary': cmdSummary(rest); break
   case 'status': cmdStatus(); break
   case undefined:
   case 'help':

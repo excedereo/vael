@@ -1,7 +1,7 @@
 import { api } from '../lib/api.js'
 import { TgPanel } from './TgPanel.js'
 import { HeartbeatPanel } from './HeartbeatPanel.js'
-import { Session } from '../types/index.js'
+import type { Session } from '../types/index.js'
 
 interface ModuleInfo {
   id: string

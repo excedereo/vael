@@ -1,111 +1,130 @@
-import { useState, useEffect, useRef } from 'react'
-import { Plus } from 'lucide-react'
-import { Account } from '../types/index'
+import { useState, useEffect } from 'react'
+import { LogIn, Plus } from 'lucide-react'
+import type { Account } from '../types/index'
 import { api } from '../lib/api.js'
-import { cn } from '../lib/utils.js'
-import authLogo from '../assets/auth-logo.png'
+import { cleanAccountName } from '../lib/accountName.js'
+import { WindowControls } from './WindowControls.js'
+import logo from '../assets/logo.svg'
 
 interface Props {
-  onCreated: () => void
+  /** Вход завершён: передаём аккаунт, в который вошли */
+  onCreated: (acc: Account) => void
+  /** Аккаунты есть, но ни в одном нет входа — предлагаем войти снова */
+  relogin?: Account[]
 }
 
-export function FirstLaunch({ onCreated }: Props) {
+/**
+ * Стартовый экран: когда аккаунтов нет или из всех вышли.
+ * Сам вход идёт в отдельном окне терминала (claude /login), здесь только ждём его.
+ */
+export function FirstLaunch({ onCreated, relogin }: Props) {
+  const hasAccounts = !!relogin?.length
+  const [adding, setAdding] = useState(!hasAccounts)
   const [name, setName] = useState('')
   const [creating, setCreating] = useState(false)
+  const [error, setError] = useState('')
   const [pending, setPending] = useState<Account | null>(null)
-  const [addHov, setAddHov] = useState(false)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // Ждём, пока в папке аккаунта появится вход
   useEffect(() => {
     if (!pending) return
-    pollRef.current = setInterval(async () => {
-      const ok = await api.checkCredentials(pending.configDir)
-      if (ok) {
-        clearInterval(pollRef.current!)
-        onCreated()
+    const t = setInterval(async () => {
+      if (await api.checkCredentials(pending.configDir)) {
+        clearInterval(t)
+        onCreated(pending)
       }
     }, 1500)
-    return () => { if (pollRef.current) clearInterval(pollRef.current) }
-  }, [pending])
+    return () => clearInterval(t)
+  }, [pending, onCreated])
 
-  const handleCreate = async () => {
+  const login = (acc: Account) => {
+    setPending(acc)
+    api.openAuth(acc.configDir)
+  }
+
+  const create = async () => {
     const id = name.trim()
     if (!id || creating) return
     setCreating(true)
+    setError('')
     try {
-      const acc: Account = await api.createAccount(id)
-      setPending(acc)
-      api.openAuth(acc.configDir)
+      login(await api.createAccount(id))
     } catch (e) {
-      console.error('create account failed', e)
+      const msg = e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : ''
+      // EPERM на mkdir — Windows ещё удаляет одноимённую папку, пока её держит запущенный claude
+      setError(/EPERM|EBUSY/.test(msg)
+        ? 'Папка с таким именем ещё занята — скорее всего, её держит запущенный claude после удаления аккаунта. Подождите немного или выберите другое имя'
+        : msg || 'Не получилось создать аккаунт')
     } finally {
       setCreating(false)
     }
   }
 
   return (
-    <div className="fixed inset-0 bg-bg-base flex flex-col text-white">
-      {/* Drag region / titlebar */}
-      <div className="h-8 shrink-0 app-drag-region w-full" />
+    <div className="fixed inset-0 bg-bg-base flex flex-col">
+      <div className="h-11 shrink-0 flex items-stretch">
+        <div className="flex-1 app-drag-region" />
+        <WindowControls />
+      </div>
 
-      {/* Content */}
-      <div className="flex-1 flex flex-col items-center justify-center">
-        <div className="w-72 flex flex-col items-center text-center space-y-6">
+      <div className="flex-1 flex items-center justify-center px-6 pb-11">
+        <div className="w-[380px] max-w-full flex flex-col items-center text-center">
+          <img src={logo} alt="" width={64} height={64} draggable={false} className="select-none" />
 
-          <img src={authLogo} alt="logo" className="w-12 h-12 rounded-xl" />
-
-          {!pending ? (
+          {pending ? (
             <>
-              <div className="space-y-1.5">
-                <h1 className="text-[20px] font-semibold text-text-primary">Add your account</h1>
-                <p className="text-[13px] text-text-faint">Give it a name to get started</p>
+              <h1 className="mt-5 text-[22px] font-medium text-text-primary">Почти готово</h1>
+              <p className="mt-1.5 text-[13.5px] text-text-muted">
+                Войдите в <span className="text-text-secondary">{pending.name}</span> в открывшемся окне терминала
+              </p>
+              <div className="acc-pending mt-6 w-full justify-center">
+                <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+                Жду вход…
               </div>
-
-              <div className="w-full flex gap-2">
-                <input
-                  autoFocus
-                  value={name}
-                  onChange={e => setName(e.target.value.replace(/[^a-zA-Zа-яА-ЯёЁ0-9 \-_.]/g, ''))}
-                  onKeyDown={e => e.key === 'Enter' && handleCreate()}
-                  placeholder="e.g. main, work..."
-                  className="flex-1 bg-surface-hover border border-border-default rounded-xl px-3 py-2.5 text-[13px] text-text-primary placeholder:text-text-ghost outline-none transition-colors text-left"
-                  onFocus={e => (e.target.style.borderColor = 'color-mix(in srgb, var(--accent) 40%, transparent)')}
-                  onBlur={e => (e.target.style.borderColor = '')}
-                />
-                <button
-                  onClick={handleCreate}
-                  disabled={!name.trim() || creating}
-                  className={cn(
-                    'flex items-center gap-1 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-colors shrink-0',
-                    name.trim() && !creating
-                      ? 'text-white'
-                      : 'bg-surface-hover text-text-ghost cursor-not-allowed',
-                  )}
-                  style={name.trim() && !creating ? {
-                    backgroundColor: `color-mix(in srgb, var(--accent) ${addHov ? 90 : 70}%, transparent)`,
-                  } : undefined}
-                  onMouseEnter={() => setAddHov(true)}
-                  onMouseLeave={() => setAddHov(false)}
-                >
-                  <Plus size={14} />
-                  Add
-                </button>
-
+              <div className="mt-4 flex gap-2">
+                <button className="acc-btn" onClick={() => api.openAuth(pending.configDir)}>Открыть терминал ещё раз</button>
+                <button className="acc-btn" onClick={() => setPending(null)}>Назад</button>
               </div>
+            </>
+          ) : hasAccounts && !adding ? (
+            <>
+              <h1 className="mt-5 text-[22px] font-medium text-text-primary">Войдите снова</h1>
+              <p className="mt-1.5 text-[13.5px] text-text-muted">Вы вышли из всех аккаунтов. Сессии на месте — они вернутся после входа</p>
+              <div className="mt-6 w-full flex flex-col gap-2">
+                {relogin!.map(acc => (
+                  <div key={acc.id} className="acc-card !flex-row items-center !py-3 !px-4 text-left">
+                    <div className="acc-av is-off !w-8 !h-8 !text-[14px]">{acc.name.slice(0, 1).toUpperCase()}</div>
+                    <div className="acc-name flex-1 truncate">{acc.name}</div>
+                    <button className="acc-btn is-primary" onClick={() => login(acc)}><LogIn size={14} />Войти</button>
+                  </div>
+                ))}
+              </div>
+              <button className="mt-4 text-[13px] text-text-muted hover:text-text-primary transition-colors" onClick={() => setAdding(true)}>
+                или добавить другой аккаунт
+              </button>
             </>
           ) : (
             <>
-              <div className="space-y-1.5">
-                <h1 className="text-[20px] font-semibold text-text-primary">Almost there</h1>
-                <p className="text-[13px] text-text-faint">
-                  Log in to <span className="text-text-secondary">{pending.name}</span> in the terminal
-                </p>
+              <h1 className="mt-5 text-[22px] font-medium text-text-primary">{hasAccounts ? 'Новый аккаунт' : 'Добро пожаловать в Vael'}</h1>
+              <p className="mt-1.5 text-[13.5px] text-text-muted">Назовите аккаунт Claude — имя видно только вам, например main или work</p>
+              <div className="acc-add is-open mt-6">
+                <input
+                  autoFocus
+                  value={name}
+                  onChange={e => setName(cleanAccountName(e.target.value))}
+                  onKeyDown={e => { if (e.key === 'Enter') create(); if (e.key === 'Escape' && hasAccounts) setAdding(false) }}
+                  placeholder="Название аккаунта"
+                />
+                <button onClick={create} disabled={!name.trim() || creating} className="acc-btn is-primary disabled:opacity-40">
+                  <Plus size={14} />{creating ? 'Создаю…' : 'Создать и войти'}
+                </button>
               </div>
-
-              <div className="flex items-center gap-2 text-[12px] text-text-faint">
-                <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: 'color-mix(in srgb, var(--accent) 60%, transparent)' }} />
-                Waiting for login...
-              </div>
+              {error && <div className="acc-warn mt-3 w-full">{error}</div>}
+              {hasAccounts && (
+                <button className="mt-4 text-[13px] text-text-muted hover:text-text-primary transition-colors" onClick={() => setAdding(false)}>
+                  назад к аккаунтам
+                </button>
+              )}
             </>
           )}
         </div>

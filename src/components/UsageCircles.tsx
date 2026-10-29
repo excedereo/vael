@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { RefreshCw, ChevronDown, ChevronRight, Check, X } from 'lucide-react'
-import { UsageData, ContextData } from '../types/index'
+import type { UsageData, ContextData } from '../types/index'
 import { api } from '../lib/api.js'
 import { cn } from '../lib/utils.js'
 

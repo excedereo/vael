@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { File, Folder, Pin, Trash2, X, Eye, Code2, Pencil } from 'lucide-react'
-import { api, FsEntry } from '../lib/api.js'
+import { Pin, Trash2, X, Eye, Code2, Pencil } from 'lucide-react'
+// Иконки файлов/папок — iconsax, как во всём остальном интерфейсе
+import { Folder2 as Folder, Document as File } from 'iconsax-reactjs'
+import { api, type FsEntry } from '../lib/api.js'
 import authLogo from '../assets/auth-logo.png'
 
 interface Props {
@@ -81,8 +83,8 @@ function GhostItem({ type, initialName, onCommit, onCancel }: {
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, width: 108, padding: '12px 8px' }}>
       <div style={{ width: 64, height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 12, background: 'rgba(255,255,255,0.04)', border: '1px dashed rgba(255,255,255,0.15)' }}>
         {type === 'dir'
-          ? <Folder size={40} style={{ color: 'rgba(251,191,36,0.5)' }} />
-          : <File size={34} style={{ color: 'rgba(255,255,255,0.25)' }} />}
+          ? <Folder size={40} variant="Bold" color="rgba(251,191,36,0.5)" />
+          : <File size={34} variant="Linear" color="rgba(255,255,255,0.25)" />}
       </div>
       <input
         ref={inputRef}
@@ -327,14 +329,14 @@ export function MemoryPage({ onBack }: Props) {
           onClick={() => setActiveTab(null)}
           style={tabBtnStyle(activeTab === null)}
         >
-          <Folder size={12} />
+          <Folder size={12} variant="Bold" color="currentColor" />
           memory
         </button>
 
         <div style={{ display: 'flex', gap: 2, flex: 1, overflow: 'hidden' }}>
           {tabs.map(tab => (
             <div key={tab.path} onClick={() => setActiveTab(tab.path)} style={tabStyle(activeTab === tab.path)}>
-              {tab.pinned ? <Pin size={11} style={{ color: 'var(--accent)', flexShrink: 0 }} /> : <File size={11} style={{ flexShrink: 0 }} />}
+              {tab.pinned ? <Pin size={11} style={{ color: 'var(--accent)', flexShrink: 0 }} /> : <File size={11} variant="Linear" color="currentColor" style={{ flexShrink: 0 }} />}
               <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tab.name}</span>
               {!tab.pinned && (
                 <button onClick={e => closeTab(tab.path, e)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'rgba(255,255,255,0.3)', display: 'flex', alignItems: 'center' }}>
@@ -373,7 +375,7 @@ export function MemoryPage({ onBack }: Props) {
             {/* .. back */}
             {dirStack.length > 0 && (
               <button onDoubleClick={goUp} style={itemStyle(false)}>
-                <div style={iconWrap}><Folder size={52} style={{ color: 'rgba(255,255,255,0.15)' }} /></div>
+                <div style={iconWrap}><Folder size={52} variant="Bold" color="rgba(255,255,255,0.15)" /></div>
                 <span style={labelStyle}>..</span>
               </button>
             )}
@@ -412,8 +414,8 @@ export function MemoryPage({ onBack }: Props) {
                 >
                   <div style={{ ...iconWrap, position: 'relative' }}>
                     {entry.type === 'dir'
-                      ? <Folder size={52} style={{ color: 'rgba(251,191,36,0.75)' }} />
-                      : <File size={42} style={{ color: 'rgba(255,255,255,0.35)' }} />}
+                      ? <Folder size={52} variant="Bold" color="rgba(251,191,36,0.75)" />
+                      : <File size={42} variant="Linear" color="rgba(255,255,255,0.35)" />}
                     {entry.auto && (
                       <span style={{ position: 'absolute', bottom: -2, right: -2, fontSize: 9, fontWeight: 700, background: 'var(--accent)', color: '#fff', borderRadius: 4, padding: '1px 4px', lineHeight: 1.4 }}>auto</span>
                     )}
@@ -439,7 +441,7 @@ export function MemoryPage({ onBack }: Props) {
               style={{ position: 'fixed', left: ctxMenu.x, top: ctxMenu.y, zIndex: 9999, background: 'rgba(28,28,28,0.98)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '4px 0', minWidth: 160, boxShadow: '0 8px 32px rgba(0,0,0,0.6)' }}
             >
               {ctxMenu.entry ? (<>
-                <CtxItem icon={ctxMenu.entry.type === 'dir' ? <Folder size={13} /> : <File size={13} />} label="Открыть" onClick={() => {
+                <CtxItem icon={ctxMenu.entry.type === 'dir' ? <Folder size={13} variant="Bold" color="currentColor" /> : <File size={13} variant="Linear" color="currentColor" />} label="Открыть" onClick={() => {
                   if (ctxMenu.entry!.type === 'dir') enterDir(ctxMenu.entry!.path)
                   else openFile(ctxMenu.entry!.path, ctxMenu.entry!.name)
                   setCtxMenu(null)
@@ -450,8 +452,8 @@ export function MemoryPage({ onBack }: Props) {
                   <CtxItem icon={<Trash2 size={13} />} label="Удалить" danger onClick={() => handleDelete(ctxMenu.entry!)} />
                 </>}
               </>) : (<>
-                <CtxItem icon={<File size={13} />} label="Новый файл" onClick={() => { setShowNew('file'); setCtxMenu(null) }} />
-                <CtxItem icon={<Folder size={13} />} label="Новая папка" onClick={() => { setShowNew('dir'); setCtxMenu(null) }} />
+                <CtxItem icon={<File size={13} variant="Linear" color="currentColor" />} label="Новый файл" onClick={() => { setShowNew('file'); setCtxMenu(null) }} />
+                <CtxItem icon={<Folder size={13} variant="Bold" color="currentColor" />} label="Новая папка" onClick={() => { setShowNew('dir'); setCtxMenu(null) }} />
               </>)}
             </div>
           )}

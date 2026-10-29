@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
 import { Zap } from 'lucide-react'
 import { PyrePage } from '../components/PyrePage.js'
-import { VaeliPanel } from '../types/panel.js'
+import type { VaeliPanel } from '../types/panel.js'
 import { useActiveModule } from '../lib/activeModule.js'
 import { api } from '../lib/api.js'
-import { Session } from '../types/index.js'
+import type { Session } from '../types/index.js'
 
 interface ModuleInfo {
   id: string

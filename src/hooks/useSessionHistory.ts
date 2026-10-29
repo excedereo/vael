@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { JsonlEntry, Session } from '../types/index'
+import type { JsonlEntry, Session } from '../types/index'
 import { api } from '../lib/api.js'
 
 function getEntryText(entry: JsonlEntry): string {

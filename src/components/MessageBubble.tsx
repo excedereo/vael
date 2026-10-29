@@ -1,4 +1,4 @@
-import { JsonlEntry, ContentBlock } from '../types/index'
+import type { JsonlEntry, ContentBlock } from '../types/index'
 import { cn } from '../lib/utils.js'
 import { toolHeading } from '../lib/toolLabel.js'
 import { ChevronDown, ChevronRight, Copy, Check, Bot } from 'lucide-react'

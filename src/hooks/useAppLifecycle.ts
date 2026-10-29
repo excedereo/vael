@@ -1,9 +1,9 @@
 import { useEffect } from 'react'
-import { DepsState, useDependencies } from './useDependencies.js'
-import { UpdateState, useUpdateManager } from './useUpdateManager.js'
+import { type DepsState, useDependencies } from './useDependencies.js'
+import { type UpdateState, useUpdateManager } from './useUpdateManager.js'
 import { useAppState } from './useAppState.js'
 import { api } from '../lib/api.js'
-import { Account, Session, SyncStatus } from '../types/index'
+import type { Account, Session, SyncStatus } from '../types/index'
 
 export type AppPhase = 'splash' | 'no-deps' | 'no-accounts' | 'ready'
 

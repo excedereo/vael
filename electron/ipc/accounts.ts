@@ -5,6 +5,7 @@ import fs from 'fs'
 import os from 'os'
 import type { AccountManager } from '../AccountManager.js'
 import { linkAccountSessions } from '../services/SessionStoreService.js'
+import { claudeExe } from '../services/ClaudeBin.js'
 import { fetchNetworkInfo } from '../services/NetworkCheckService.js'
 
 export function registerAccountHandlers(accountManager: AccountManager, getWindow: () => BrowserWindow | null) {
@@ -96,7 +97,7 @@ export function registerAccountHandlers(accountManager: AccountManager, getWindo
     const winTitle = `VaeliAuth-${Date.now()}`
     const batPath = path.join(configDir, '_auth.bat')
     fs.writeFileSync(batPath,
-      `@echo off\ntitle ${winTitle}\ncd /d "${homedir}"\nset CLAUDE_CONFIG_DIR=${configDir}\nclaude auth login --claudeai\nexit\n`)
+      `@echo off\ntitle ${winTitle}\ncd /d "${homedir}"\nset CLAUDE_CONFIG_DIR=${configDir}\n"${claudeExe()}" auth login --claudeai\nexit\n`)
 
     const pidFile = path.join(configDir, '_auth.pid')
     const psOpen = [

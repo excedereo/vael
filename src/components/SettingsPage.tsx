@@ -3,19 +3,20 @@ import { ExternalLink, Trash2, HardDrive, Loader2, X, Plus, FolderOpen } from 'l
 import { api } from '../lib/api.js'
 import { cn } from '../lib/utils.js'
 import { loadActiveThemeFile, applyTheme } from '../lib/theme.js'
+import { loadCliModels } from '../lib/cliModels.js'
 import { BUILTIN_THEMES } from '../lib/builtinThemes.js'
 import {
   Section, ToggleRow, Toggle, ThemePicker, Dropdown,
   PageHeader, Row,
 } from './SettingsComponents.js'
-import { Brush, Size, Message, Cpu, Flash, ShieldTick, Monitor, Folder2, Broom, InfoCircle, Refresh2, Global } from 'iconsax-reactjs'
+import { Brush, Size, Message, Cpu, Flash, ShieldTick, Monitor, Folder2, Broom, InfoCircle, Refresh2, Global, Data } from 'iconsax-reactjs'
 import { NotificationSettingsSection } from './NotificationSettings.js'
 import { NotificationPreview } from './NotificationPreview.js'
 import { InterfacePreview, SessionsPreview, SystemPreview } from './SettingsPreviews.js'
 import { useSettingsTab } from '../lib/sectionTabs.js'
 import {
   loadCustomOptions, saveCustomOptions,
-  CustomOption, OptionCategory,
+  type CustomOption, type OptionCategory,
 } from '../lib/customOptions.js'
 import { useSettings, loadVpnCheck, saveVpnCheck, DEFAULT_CONTENT_PADDING as SETTINGS_DEFAULT_CONTENT_PADDING } from '../hooks/useSettings.js'
 import { NetworkStatusRow } from './NetworkBanner.js'
@@ -62,19 +63,20 @@ export interface DefaultSessionConfig {
 }
 
 export const DEFAULT_SESSION_CONFIG: DefaultSessionConfig = {
-  model: 'claude-sonnet-5',
+  model: 'sonnet',
   effort: 'high',
   permissionMode: 'bypassPermissions',
 }
 
+// Дефолт для новых сессий — алиас: он всегда указывает на свежую версию,
+// а конкретный id из старых настроек застревал на прошлом поколении
 const MODEL_MIGRATION: Record<string, string> = {
-  'sonnet':  'claude-sonnet-5',
-  'opus':    'claude-opus-5',
-  'haiku':   'claude-haiku-4-5-20251001',
-  'fable':   'claude-fable-5',
-  // Поколение 4.x осталось в сохранённых настройках с прошлых версий Vael
-  'claude-sonnet-4-6': 'claude-sonnet-5',
-  'claude-opus-4-8':   'claude-opus-5',
+  'claude-sonnet-5':           'sonnet',
+  'claude-opus-5':             'opus',
+  'claude-fable-5':            'fable',
+  'claude-haiku-4-5-20251001': 'haiku',
+  'claude-sonnet-4-6':         'sonnet',
+  'claude-opus-4-8':           'opus',
 }
 
 export function loadDefaultSessionConfig(): DefaultSessionConfig {
@@ -96,12 +98,16 @@ function saveDefaultSessionConfig(c: DefaultSessionConfig) {
   localStorage.setItem('vaeli:default-session-config', JSON.stringify(c))
 }
 
-const MODEL_OPTIONS = [
-  { value: 'claude-sonnet-5',          label: 'Sonnet 5', sub: 'claude-sonnet-5' },
-  { value: 'claude-opus-5',            label: 'Opus 5',   sub: 'claude-opus-5' },
-  { value: 'claude-fable-5',             label: 'Fable 5',    sub: 'claude-fable-5' },
-  { value: 'claude-haiku-4-5-20251001',  label: 'Haiku 4.5',  sub: 'claude-haiku-4-5' },
-]
+// Модели — из списка CLI (кэшируется при запуске чата); до первого чата — алиасы
+function modelOptions() {
+  const list = loadCliModels().filter(m => m.value !== 'default')
+  if (!list.length) return [
+    { value: 'opus',   label: 'Opus',   sub: 'последняя Opus' },
+    { value: 'sonnet', label: 'Sonnet', sub: 'последняя Sonnet' },
+    { value: 'haiku',  label: 'Haiku',  sub: 'последняя Haiku' },
+  ]
+  return list.map(m => ({ value: m.value, label: m.displayName, sub: m.description ?? '' }))
+}
 const EFFORT_OPTIONS_DEF = [
   { value: 'low',    label: 'Low',    sub: 'быстро, экономно' },
   { value: 'medium', label: 'Medium', sub: 'баланс' },
@@ -373,6 +379,9 @@ export function SettingsPage(_props: Props) {
   const [showDev, setShowDev] = useState<boolean>(() => {
     try { return JSON.parse(localStorage.getItem('vaeliShowDev') ?? 'false') } catch { return false }
   })
+  const [showMemory, setShowMemory] = useState(
+    () => localStorage.getItem('vaeli:showMemory') !== '0',
+  )
   const [autoDownload, setAutoDownload] = useState(() => {
     try { return JSON.parse(localStorage.getItem('vaeliAutoDownload') || 'false') } catch { return false }
   })
@@ -472,6 +481,20 @@ export function SettingsPage(_props: Props) {
                     <span className="text-[12px] text-text-muted">px</span>
                   </div>
                 </Row>
+
+                <ToggleRow
+                  icon={Data}
+                  label="Раздел Память"
+                  desc="Иконка памяти в боковой панели — файлы и граф"
+                  value={showMemory}
+                  onChange={v => {
+                    setShowMemory(v)
+                    // '0' при выключении: по умолчанию раздел включён, и
+                    // отсутствие ключа должно означать «показывать»
+                    localStorage.setItem('vaeli:showMemory', v ? '1' : '0')
+                    window.dispatchEvent(new Event('vaeli:showMemoryChanged'))
+                  }}
+                />
               </Section>
             </>)}
 
@@ -488,7 +511,7 @@ export function SettingsPage(_props: Props) {
 
               <Section label="По умолчанию" icon={Message} desc="применяется к новым сессиям">
                 {([
-                  { label: 'Модель',   key: 'model' as const,           icon: Cpu,      desc: 'Чем отвечает Claude',            options: [...MODEL_OPTIONS,          ...customModels]  },
+                  { label: 'Модель',   key: 'model' as const,           icon: Cpu,      desc: 'Чем отвечает Claude',            options: [...modelOptions(),         ...customModels]  },
                   { label: 'Мышление', key: 'effort' as const,          icon: Flash,    desc: 'Глубина рассуждений',            options: [...EFFORT_OPTIONS_DEF,     ...customEfforts] },
                   { label: 'Доступ',   key: 'permissionMode' as const,  icon: ShieldTick, desc: 'Что можно делать без спроса',  options: [...PERMISSION_OPTIONS_DEF, ...customPerms] },
                 ] as const).map(({ label, key, icon, desc, options }) => (
@@ -636,7 +659,7 @@ export function SettingsPage(_props: Props) {
                 )}
               </Section>
 
-              <Section label="Developer" icon={Flash} desc="служебное">
+              <Section label="Для разработчика" icon={Flash} desc="служебное">
                 <ToggleRow
                   label="Включить Dev-настройки"
                   desc="Показать расширенные настройки для разработчиков"

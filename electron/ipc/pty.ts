@@ -3,10 +3,8 @@ import * as pty from 'node-pty'
 import os from 'os'
 import fs from 'fs'
 import path from 'path'
-import { findClaudeBin, findClaudeExe } from '../services/ClaudeBin.js'
+import { claudeExe } from '../services/ClaudeBin.js'
 
-const CLAUDE_BIN = findClaudeBin()
-const CLAUDE_EXE = findClaudeExe(CLAUDE_BIN)
 
 interface PtyEntry {
   proc: pty.IPty
@@ -421,7 +419,7 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null) {
 
     console.log(`[pty:spawn] args:`, args.join(' '))
 
-    const proc = pty.spawn(CLAUDE_EXE, args, {
+    const proc = pty.spawn(claudeExe(), args, {
       name: 'xterm-256color',
       cols: cols || 120,
       rows: rows || 30,

@@ -51,6 +51,44 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('pty:exit', handler)
   },
 
+  // Chat mode (stream-json)
+  chatStart: (opts: unknown) => ipcRenderer.invoke('chat:start', opts),
+  chatSend: (sessionId: string, content: unknown) => ipcRenderer.invoke('chat:send', sessionId, content),
+  chatInit: (sessionId: string) => ipcRenderer.invoke('chat:init', sessionId),
+  limitsGet: (configDir: string | null) => ipcRenderer.invoke('limits:get', configDir),
+  onLimitsUpdate: (cb: (configDir: string, value: unknown) => void) => {
+    const handler = (_: unknown, configDir: string, value: unknown) => cb(configDir, value)
+    ipcRenderer.on('limits:update', handler)
+    return () => ipcRenderer.removeListener('limits:update', handler)
+  },
+  chatContextUsage: (sessionId: string) => ipcRenderer.invoke('chat:contextUsage', sessionId),
+  chatReadAttachments: (paths: string[]) => ipcRenderer.invoke('chat:readAttachments', paths),
+  chatPickFiles: () => ipcRenderer.invoke('chat:pickFiles'),
+  chatInterrupt: (sessionId: string) => ipcRenderer.invoke('chat:interrupt', sessionId),
+  chatSetModel: (sessionId: string, model: string) => ipcRenderer.invoke('chat:setModel', sessionId, model),
+  chatSetPermissionMode: (sessionId: string, mode: string) => ipcRenderer.invoke('chat:setPermissionMode', sessionId, mode),
+  chatKill: (sessionId: string) => ipcRenderer.invoke('chat:kill', sessionId),
+  chatAlive: (sessionId: string) => ipcRenderer.invoke('chat:alive', sessionId),
+  chatList: () => ipcRenderer.invoke('chat:list'),
+  chatHistory: (jsonlPath: string) => ipcRenderer.invoke('chat:history', jsonlPath),
+  chatCompactTail: (jsonlPath: string, pre?: number) => ipcRenderer.invoke('chat:compactFiles', jsonlPath, pre),
+  chatSummaries: (jsonlPath: string) => ipcRenderer.invoke('chat:summaries', jsonlPath),
+  onChatEvent: (cb: (sessionId: string, ev: unknown) => void) => {
+    const handler = (_: unknown, sessionId: string, ev: unknown) => cb(sessionId, ev)
+    ipcRenderer.on('chat:event', handler)
+    return () => ipcRenderer.removeListener('chat:event', handler)
+  },
+  onChatExit: (cb: (sessionId: string, code: number | null) => void) => {
+    const handler = (_: unknown, sessionId: string, code: number | null) => cb(sessionId, code)
+    ipcRenderer.on('chat:exit', handler)
+    return () => ipcRenderer.removeListener('chat:exit', handler)
+  },
+  onChatCreated: (cb: (sessionId: string) => void) => {
+    const handler = (_: unknown, sessionId: string) => cb(sessionId)
+    ipcRenderer.on('chat:created', handler)
+    return () => ipcRenderer.removeListener('chat:created', handler)
+  },
+
   // Native console window (Win32 SetParent embedding)
   nconSpawn: (sessionPath: string, x: number, y: number, w: number, h: number) =>
     ipcRenderer.invoke('ncon:spawn', sessionPath, x, y, w, h),
@@ -135,6 +173,7 @@ contextBridge.exposeInMainWorld('api', {
   memoryCreateDir: (name: string, dirPath?: string) => ipcRenderer.invoke('memory:createDir', name, dirPath),
   memoryDeleteFile: (filePath: string) => ipcRenderer.invoke('memory:deleteFile', filePath),
   memoryGetClaudeMd: () => ipcRenderer.invoke('memory:getClaudeMd'),
+  memoryTree: () => ipcRenderer.invoke('memory:tree'),
   memoryGetDir: () => ipcRenderer.invoke('memory:getMemoryDir'),
   memoryRename: (oldPath: string, newName: string) => ipcRenderer.invoke('memory:rename', oldPath, newName),
   memoryGetMeta: () => ipcRenderer.invoke('memory:getMeta'),

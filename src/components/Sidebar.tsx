@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { createPortal } from 'react-dom'
-import { Session, Account } from '../types/index'
+import type { Session, Account } from '../types/index'
 import { cn } from '../lib/utils.js'
-import { Plus, Zap, Trash2, Pencil, ArrowDownUp, Archive, ArchiveRestore, ChevronRight, ChevronLeft } from 'lucide-react'
+import { Zap, Trash2, Pencil, ArrowDownUp, Archive, ArchiveRestore, ChevronRight, Search, SquarePen, X, ScrollText } from 'lucide-react'
 import type { Section } from './NavRail.js'
 import { Brush, Message, Notification, Monitor, Profile, Chart2 } from 'iconsax-reactjs'
 import type { Icon as IconType } from 'iconsax-reactjs'
@@ -31,9 +31,13 @@ interface Props {
   activeSessionId: string | null
   newSessionId?: string | null
   runningSessionIds?: string[]
+  /** из живых — какие открыты в чат-режиме (остальные — TUI) */
+  chatSessionIds?: string[]
   onSelect: (session: Session) => void
   onNew: () => void
   onDelete: (session: Session) => void
+  /** Окно со всеми пересказами сессии */
+  onSummaries?: (session: Session) => void
   isLocked: boolean
   memoryTokens?: { auto: number; total: number }
   modules?: ModuleInfo[]
@@ -45,29 +49,27 @@ interface Props {
   onSwitchAccount?: (id: string) => void
   /** вызвать после записи .meta.json — App перечитает список сессий */
   onMetaChange?: () => void
-  /** свернуть сайдбар — стрелка живёт в его собственной шапке */
-  onCollapse?: () => void
 }
 
 // Человеко-читаемый заголовок раздела для шапки сайдбара
 const SECTION_LABEL: Record<Section, string> = {
-  sessions: 'Sessions',
-  memory:   'Memory',
+  sessions: 'Сессии',
+  memory:   'Память',
   pyre:     'Pyre',
   dev:      'Dev',
-  accounts: 'Accounts',
-  settings: 'Settings',
+  accounts: 'Аккаунты',
+  settings: 'Настройки',
 }
 
 const SETTINGS_TAB_LABEL: Record<SettingsTab, string> = {
-  interface: 'Interface',
-  sessions: 'Sessions',
-  notifications: 'Notifications',
-  system: 'System',
+  interface: 'Интерфейс',
+  sessions: 'Сессии',
+  notifications: 'Уведомления',
+  system: 'Система',
 }
 const ACCOUNTS_TAB_LABEL: Record<AccountsTab, string> = {
-  accounts: 'Accounts',
-  stats: 'Statistics',
+  accounts: 'Аккаунты',
+  stats: 'Статистика',
 }
 
 // Иконки под-вкладок — те же, что в шапках соответствующих страниц
@@ -91,16 +93,12 @@ function TabRow({ label, active, onClick, icon: Icon }: {
   return (
     <button
       onClick={onClick}
-      className={cn(
-        'relative flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13.5px] transition-colors text-left w-full',
-        active ? 'bg-accent-wash text-text-primary' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
-      )}
+      className={cn('session-row w-full text-left gap-2.5', active && 'is-active')}
     >
-      {active && <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-accent" />}
       {Icon && (
         <Icon
           size={16}
-          variant={active ? 'Bold' : 'Linear'}
+          variant="Linear"
           color={active ? 'var(--accent)' : 'currentColor'}
           className="shrink-0"
         />
@@ -111,6 +109,17 @@ function TabRow({ label, active, onClick, icon: Icon }: {
 }
 
 type SortMode = 'recent' | 'created' | 'name' | 'custom'
+
+// Группы по дате последнего ответа — как в истории claude.ai
+function dateGroup(ts: number): string {
+  const day = new Date(); day.setHours(0, 0, 0, 0)
+  const t = day.getTime()
+  if (ts >= t) return 'Сегодня'
+  if (ts >= t - 86_400_000) return 'Вчера'
+  if (ts >= t - 6 * 86_400_000) return 'На этой неделе'
+  if (ts >= t - 30 * 86_400_000) return 'В этом месяце'
+  return 'Раньше'
+}
 const SORT_LABEL: Record<SortMode, string> = {
   recent:  'Последний ответ',
   created: 'Дате создания',
@@ -136,7 +145,7 @@ function sortSessions(list: Session[], mode: SortMode): Session[] {
   }
 }
 
-function SessionItem({ session, active, onClick, onContextMenu, isRenaming, renameValue, onRenameChange, onRenameCommit, displayTitle, isRunning }: {
+function SessionItem({ session, active, onClick, onContextMenu, isRenaming, renameValue, onRenameChange, onRenameCommit, displayTitle, isRunning, mode }: {
   session: Session
   active: boolean
   onClick: () => void
@@ -147,6 +156,7 @@ function SessionItem({ session, active, onClick, onContextMenu, isRenaming, rena
   onRenameCommit?: () => void
   displayTitle: string
   isRunning?: boolean
+  mode?: 'chat' | 'tui'
 }) {
   const [glinting, setGlinting] = useState(false)
 
@@ -163,11 +173,8 @@ function SessionItem({ session, active, onClick, onContextMenu, isRenaming, rena
   return (
     <div
       onContextMenu={onContextMenu}
-      className={cn(
-        'relative flex items-center gap-1 px-2.5 py-2 rounded-lg transition-colors group cursor-pointer overflow-hidden',
-        active ? 'bg-surface-selected' : 'hover:bg-surface-hover',
-        isRunning && 'border-l-2 border-[var(--color-success)] pl-[8px]',
-      )}
+      className={cn('session-row relative overflow-hidden', active && 'is-active')}
+      title={session.title || undefined}
       onClick={handleClick}
     >
 
@@ -200,6 +207,8 @@ function SessionItem({ session, active, onClick, onContextMenu, isRenaming, rena
         </motion.div>
       )}
 
+      <span className={cn('session-dot', isRunning ? 'is-live' : 'is-off')} title={isRunning ? 'Процесс запущен' : undefined} />
+
       {/* Title with fade-out mask */}
       <div className="flex-1 min-w-0 relative overflow-hidden">
         {isRenaming ? (
@@ -217,23 +226,32 @@ function SessionItem({ session, active, onClick, onContextMenu, isRenaming, rena
           />
         ) : (
           <p
-            className={cn(
-              'text-[14px] leading-snug whitespace-nowrap',
-              active ? 'text-text-primary' : 'text-text-secondary group-hover:text-text-primary transition-colors',
-            )}
-            style={{ maskImage: 'linear-gradient(to right, black 70%, transparent 100%)' }}
+            className="leading-snug whitespace-nowrap overflow-hidden text-ellipsis"
           >
             {displayTitle}
           </p>
         )}
       </div>
-
+      {isRunning && mode && <span className="session-mode">{mode === 'chat' ? 'чат' : 'tui'}</span>}
     </div>
   )
 }
 
 
-export function Sidebar({ section, sessions, activeSessionId, newSessionId, runningSessionIds = [], onSelect, onNew, onDelete, isLocked, memoryTokens, modules = [], activeModuleId, onSelectModule, onMetaChange, onCollapse }: Props) {
+export function Sidebar({ section, sessions, activeSessionId, newSessionId, runningSessionIds = [], chatSessionIds = [], onSelect, onNew, onDelete, onSummaries, isLocked, memoryTokens, modules = [], activeModuleId, onSelectModule, onMetaChange }: Props) {
+  const [query, setQuery] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
+
+  // Ctrl+K — к поиску сессий
+  useEffect(() => {
+    if (section !== 'sessions') return
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyK') { e.preventDefault(); searchRef.current?.focus(); searchRef.current?.select() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [section])
+
   const [ctxMenu, setCtxMenu] = useState<ContextMenu | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const settingsTab = useSettingsTab()
@@ -273,9 +291,13 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
   const { liveSessions, archivedSessions } = useMemo(() => {
     const live: Session[] = []
     const arch: Session[] = []
-    for (const s of sessions) (s.archived ? arch : live).push(s)
+    const q = query.trim().toLowerCase()
+    for (const s of sessions) {
+      if (q && !(s.title || '').toLowerCase().includes(q)) continue
+      ;(s.archived ? arch : live).push(s)
+    }
     return { liveSessions: sortSessions(live, sortMode), archivedSessions: sortSessions(arch, 'recent') }
-  }, [sessions, sortMode])
+  }, [sessions, sortMode, query])
 
   const toggleArchive = async (s: Session) => {
     await api.writeSessionMeta(jsonlPathFor(s), { archived: !s.archived })
@@ -353,8 +375,6 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, ease: 'easeOut' }}
         className="relative"
-        whileHover={{ scale: 1.025 }}
-        style={{ originX: 0.5, originY: 0.5 }}
       >
         {/* Пульс акцента — только для новой сессии */}
         {isNew && (
@@ -394,6 +414,7 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
           onRenameCommit={commitRename}
           displayTitle={title}
           isRunning={runningSessionIds.includes(session.id)}
+          mode={chatSessionIds.includes(session.id) ? 'chat' : 'tui'}
         />
       </motion.div>
     )
@@ -401,58 +422,47 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
 
   return (
     <div className="flex flex-col h-full">
-      {/* Заголовок раздела + сворачивание */}
-      <div className="flex items-center justify-between pl-3.5 pr-1.5 pt-3 pb-2.5">
-        <span className="text-[13.5px] font-medium text-text-primary">{SECTION_LABEL[section]}</span>
-        {onCollapse && (
-          <button
-            onClick={onCollapse}
-            title="Свернуть панель"
-            aria-label="Свернуть панель"
-            className="w-6 h-6 rounded-md flex items-center justify-center text-text-ghost hover:text-text-secondary hover:bg-surface-hover transition-colors"
-          >
-            <ChevronLeft size={16} />
-          </button>
+      {/* Верхняя линия окна: та же высота и граница, что у шапки справа */}
+      <div ref={sortRef} className="relative h-11 shrink-0 flex items-center gap-1.5 px-2 border-b border-border-subtle app-drag-region">
+        {section === 'sessions' ? (
+          <>
+            <label className="sidebar-search no-drag">
+              <Search size={14} className="shrink-0" />
+              <input
+                ref={searchRef}
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Escape') { setQuery(''); e.currentTarget.blur() } }}
+                placeholder="Поиск"
+                spellCheck={false}
+              />
+              {query ? (
+                <button onClick={() => setQuery('')} className="text-text-faint hover:text-text-secondary" title="Очистить"><X size={13} /></button>
+              ) : <kbd>Ctrl K</kbd>}
+            </label>
+            <button
+              onClick={() => setSortOpen(v => !v)}
+              className={cn('no-drag w-7 h-7 shrink-0 rounded-md flex items-center justify-center transition-colors', sortOpen ? 'text-accent bg-accent-wash' : 'text-text-faint hover:text-text-secondary hover:bg-surface-hover')}
+              title={'Сортировка: ' + SORT_LABEL[sortMode].toLowerCase()}
+            >
+              <ArrowDownUp size={14} />
+            </button>
+            <button
+              onClick={onNew}
+              disabled={isLocked}
+              className="no-drag w-7 h-7 shrink-0 rounded-md flex items-center justify-center text-text-faint hover:text-text-primary hover:bg-surface-hover transition-colors disabled:opacity-30"
+              title="Новая сессия"
+            >
+              <SquarePen size={15} />
+            </button>
+          </>
+        ) : (
+          <span className="px-1.5 text-[13.5px] font-medium text-text-primary select-none">{SECTION_LABEL[section]}</span>
         )}
-      </div>
-
-      {/* Memory token stats */}
-      {section === 'memory' && memoryTokens && (
-        <div style={{ padding: '0 12px 8px', textAlign: 'center' }}>
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>
-            {memoryTokens.auto >= 1000 ? (Math.round(memoryTokens.auto / 100) / 10) + 'k' : memoryTokens.auto} auto / {memoryTokens.total >= 1000 ? (Math.round(memoryTokens.total / 100) / 10) + 'k' : memoryTokens.total} total tok
-          </span>
-        </div>
-      )}
-
-      {/* Sessions */}
-      {section === 'sessions' && (
-        <div className="flex flex-col flex-1 min-h-0">
-          <div ref={sortRef} className="relative flex items-center justify-between px-3 pb-1.5">
-            <span className="text-[11px] text-text-faint uppercase tracking-widest">
-              Recents{sortMode !== 'recent' && <span className="normal-case tracking-normal text-text-ghost"> · {SORT_LABEL[sortMode].toLowerCase()}</span>}
-            </span>
-            <div className="flex items-center gap-0.5">
-              <button
-                onClick={() => setSortOpen(v => !v)}
-                className={cn('p-1 rounded transition-colors', sortOpen ? 'text-accent bg-accent-wash' : 'text-text-faint hover:text-text-secondary')}
-                title="Sort"
-              >
-                <ArrowDownUp size={14} />
-              </button>
-              <button
-                onClick={onNew}
-                disabled={isLocked}
-                className="p-1 rounded text-text-faint hover:text-text-secondary transition-colors disabled:opacity-30"
-                title="New session"
-              >
-                <Plus size={15} />
-              </button>
-            </div>
 
             {/* Поповер сортировки */}
-            {sortOpen && (
-              <div className="absolute top-7 right-2 z-30 w-[204px] rounded-[11px] border border-border-strong bg-bg-elevated p-1.5 shadow-[0_20px_44px_-14px_rgba(0,0,0,0.9)]">
+            {section === 'sessions' && sortOpen && (
+              <div className="absolute top-9 right-2 z-30 no-drag w-[204px] rounded-[11px] border border-border-strong bg-bg-elevated p-1.5 shadow-[0_20px_44px_-14px_rgba(0,0,0,0.9)]">
                 <div className="px-2.5 pt-1.5 pb-1 text-[9.5px] uppercase tracking-[0.15em] text-text-faint">Сортировать по</div>
                 {(['recent', 'created', 'name', 'custom'] as SortMode[]).map(m => (
                   <button
@@ -482,15 +492,33 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
                 </>}
               </div>
             )}
-          </div>
+      </div>
 
-          <div className="flex-1 overflow-y-auto px-2 space-y-1">
+      {/* Memory token stats */}
+      {section === 'memory' && memoryTokens && (
+        <div style={{ padding: '0 12px 8px', textAlign: 'center' }}>
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>
+            {memoryTokens.auto >= 1000 ? (Math.round(memoryTokens.auto / 100) / 10) + 'k' : memoryTokens.auto} auto / {memoryTokens.total >= 1000 ? (Math.round(memoryTokens.total / 100) / 10) + 'k' : memoryTokens.total} total tok
+          </span>
+        </div>
+      )}
+
+      {/* Sessions */}
+      {section === 'sessions' && (
+        <div className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 overflow-y-auto px-1.5 pt-1 thin-scroll">
             {liveSessions.length === 0 && (
               <p className="px-2 py-6 text-center text-[13px] text-text-ghost">
-                No sessions yet
+                {query ? 'Ничего не нашлось' : 'Сессий пока нет'}
               </p>
             )}
-            {liveSessions.map(session => renderSessionRow(session))}
+            {sortMode === 'recent' && !query
+              ? liveSessions.map((session, i) => {
+                  const g = dateGroup(session.lastModified)
+                  const head = i === 0 || dateGroup(liveSessions[i - 1].lastModified) !== g
+                  return [head && <div key={'g:' + g} className="session-group">{g}</div>, renderSessionRow(session)]
+                })
+              : liveSessions.map(session => renderSessionRow(session))}
 
             {/* Архив — свёрнут по умолчанию */}
             {showArchived && archivedSessions.length > 0 && (
@@ -519,13 +547,13 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
       {section === 'pyre' && (
         <div className="flex flex-col flex-1 min-h-0 overflow-y-auto">
           <div className="flex items-center justify-between px-3 pb-1.5">
-            <span className="text-[11px] text-text-faint uppercase tracking-widest">Modules</span>
+            <span className="text-[11px] text-text-faint uppercase tracking-widest">Модули</span>
           </div>
           <div className="flex flex-col gap-0.5 px-2">
             {modules.length === 0 && (
               <div className="flex items-center justify-center gap-2 py-8 text-text-ghost">
                 <Zap size={16} strokeWidth={1.5} />
-                <span className="text-[13px]">No modules</span>
+                <span className="text-[13px]">Модулей нет</span>
               </div>
             )}
             {modules.map(m => {
@@ -575,7 +603,7 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
 
       {/* Settings — под-вкладки раздела */}
       {section === 'settings' && (
-        <div className="flex flex-col flex-1 min-h-0 overflow-y-auto px-2">
+        <div className="flex flex-col flex-1 min-h-0 overflow-y-auto px-1.5 pt-2 gap-px">
           {(['interface', 'sessions', 'notifications', 'system'] as SettingsTab[]).map(t => (
             <TabRow key={t} label={SETTINGS_TAB_LABEL[t]} icon={SETTINGS_TAB_ICON[t]} active={settingsTab === t} onClick={() => setSettingsTab(t)} />
           ))}
@@ -584,7 +612,7 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
 
       {/* Accounts — под-вкладки раздела */}
       {section === 'accounts' && (
-        <div className="flex flex-col flex-1 min-h-0 overflow-y-auto px-2">
+        <div className="flex flex-col flex-1 min-h-0 overflow-y-auto px-1.5 pt-2 gap-px">
           {(['accounts', 'stats'] as AccountsTab[]).map(t => (
             <TabRow key={t} label={ACCOUNTS_TAB_LABEL[t]} icon={ACCOUNTS_TAB_ICON[t]} active={accountsTab === t} onClick={() => setAccountsTab(t)} />
           ))}
@@ -606,6 +634,15 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
               <span className="text-[11px] font-mono text-text-faint">ID</span>
               Копировать ID
             </button>
+            {onSummaries && (
+              <button
+                onClick={() => { onSummaries(ctxMenu.session); setCtxMenu(null) }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[14px] text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
+              >
+                <ScrollText size={13} />
+                Пересказы
+              </button>
+            )}
             <button
               onClick={() => startRename(ctxMenu.session)}
               className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[14px] text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
