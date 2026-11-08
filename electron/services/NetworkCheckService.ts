@@ -10,7 +10,7 @@ import { net } from 'electron'
  * ровно для того хоста, куда ходит CLI. Проверка получается честной.
  *
  * Ответ — plain text вида:
- *   ip=95.85.227.59
+ *   ip=203.0.113.7
  *   loc=PL
  *   colo=WAW
  *   warp=off

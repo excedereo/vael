@@ -616,7 +616,7 @@ export function SettingsPage(_props: Props) {
                       style={{ color: 'color-mix(in srgb, var(--accent) 70%, transparent)' }}
                       onMouseEnter={e => ((e.currentTarget as HTMLElement).style.color = 'var(--accent)')}
                       onMouseLeave={e => ((e.currentTarget as HTMLElement).style.color = 'color-mix(in srgb, var(--accent) 70%, transparent)')}
-                      onClick={e => { e.preventDefault(); api.openExternal('https://github.com/stralitz/vael/releases') }}
+                      onClick={e => { e.preventDefault(); api.openExternal('https://github.com/excedereo/vael/releases') }}
                     >
                       v{vaelVersion}
                       <ExternalLink size={10} />

@@ -51,3 +51,6 @@ launch.vbs
 # Internal
 .claude/
 shots/capture.log
+
+# Native addon build output (node-gyp)
+native/build/

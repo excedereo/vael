@@ -8,7 +8,6 @@
     "dev": "vite",
     "electron:build": "node electron-build.mjs",
     "electron:dev": "node dev.mjs",
-    "electron:dev:win": "powershell -ExecutionPolicy Bypass -File start-dev.ps1",
     "build": "vite build && node electron-build.mjs",
     "dist": "npm run build && electron-builder"
   },

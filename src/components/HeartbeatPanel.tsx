@@ -129,7 +129,7 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
     return () => { offQueue(); offFired(); offSettings() }
   }, [])
 
-  // Очередь меняется и снаружи (`vael wake` из сессии Ваели) — fs.watch ловит
+  // Очередь меняется и снаружи (`vael wake` из сессии) — fs.watch ловит
   // не каждое событие, поэтому пока панель открыта, подстраховываемся опросом.
   useEffect(() => {
     const t = setInterval(() => {
@@ -214,7 +214,7 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
         <PageHeader
           icon={Heart}
           title="Heartbeat"
-          desc={t("Будит Ваели, когда её никто не зовёт — фришка приходит в сессию как обычное сообщение", "Wakes the session when nobody calls it — the message arrives as a normal message")}
+          desc={t("Будит сессию, когда к ней никто не обращается: сообщение приходит как обычное", "Wakes the session when nobody calls it — the message arrives as a normal message")}
         />
 
         {/* Сохранение закреплено сверху: настройки разбросаны по всей странице,
@@ -435,7 +435,7 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
               <Timer1 size={26} variant="Linear" color="var(--text-ghost)" />
               <div className="text-[13px] text-text-faint">{t("Ничего не запланировано", "Nothing scheduled")}</div>
               <div className="text-[11px] text-text-ghost max-w-[300px]">
-                {t("Ваели ставит себе побудки сама командой", "The model can schedule its own wake-ups with")}{' '}<code className="text-accent">vael wake 5min</code> {t("— они появятся здесь", "— they show up here")}
+                {t("Модель может сама ставить себе побудки командой", "The model can schedule its own wake-ups with")}{' '}<code className="text-accent">vael wake 5min</code> {t("— они появятся здесь", "— they show up here")}
               </div>
             </div>
           ) : (
@@ -490,7 +490,7 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
                           ? 'bg-accent-wash text-accent'
                           : 'bg-surface-active text-text-faint',
                       )}>
-                        {e.source === 'vaeli' ? t("Ваели", "model") : t("ты", "you")}
+                        {e.source === 'vaeli' ? t("модель", "model") : t("ты", "you")}
                       </span>
 
                       <button
