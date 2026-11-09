@@ -243,7 +243,7 @@ const MD_COMPONENTS: Components = {
   },
   // rest — чтобы не терять className пунктов-галочек из GFM
   li: ({ node, children, ...rest }) => onlyOf(node as HastNode | undefined, 'a')
-    ? <li {...rest}><FileModeContext.Provider value="card">{children}</FileModeContext.Provider></li>
+    ? <li {...rest} className={cn(rest.className, 'chat-file-li')}><FileModeContext.Provider value="card">{children}</FileModeContext.Provider></li>
     : <li {...rest}>{children}</li>,
   img: ({ src, alt }) => typeof src === 'string' && src ? <ImageGallery images={[{ src, alt }]} /> : null,
   pre: ({ node: _n, ...p }) => <CodeBlock {...p} />,

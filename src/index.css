@@ -528,6 +528,12 @@ body {
 .chat-file-card.is-missing:hover { background: var(--bg-elevated); border-color: var(--border-default); }
 .chat-file-card-tile { flex: none; display: flex; align-items: center; justify-content: center; width: 46px; height: 54px; border-radius: 9px; overflow: hidden; background: linear-gradient(180deg, color-mix(in srgb, var(--tile) 26%, #0d0f10), color-mix(in srgb, var(--tile) 12%, #0d0f10)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tile) 22%, transparent); }
 .chat-file-card-tile img { width: 100%; height: 100%; object-fit: cover; object-position: top; background: #fff; }
+/* С превью подложки нет: иначе у скруглённых краёв она просвечивает каймой */
+.chat-file-card-tile.has-thumb { background: none; box-shadow: none; }
+/* Пункт списка из одной карточки — без маркера, карточки идут колонкой */
+.chat-md ul:has(> li.chat-file-li) { padding-left: 0; }
+.chat-md li.chat-file-li { list-style: none; margin: 0; }
+.chat-md li.chat-file-li > .chat-file-card { margin: 0 0 8px; }
 .chat-file-card-text { display: flex; flex-direction: column; min-width: 0; gap: 2px; line-height: 1.3; }
 .chat-file-card-name { font-size: 14.5px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-file-card-meta { font-size: 12.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

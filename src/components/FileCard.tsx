@@ -104,7 +104,7 @@ export function FileCard({ href, variant = 'card' }: { href: string; variant?: '
   return (
     <span {...act} className={'chat-file-card' + (missing ? ' is-missing' : '')}>
       <span
-        className="chat-file-card-tile"
+        className={'chat-file-card-tile' + (state?.thumb ? ' has-thumb' : '')}
         style={{ '--tile': kind.color } as CSSProperties}
       >
         {state?.thumb
