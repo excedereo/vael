@@ -113,6 +113,7 @@ contextBridge.exposeInMainWorld('api', {
   fileInfo: (url: string) => ipcRenderer.invoke('file:info', url),
   fileThumb: (url: string, size: number) => ipcRenderer.invoke('file:thumb', url, size),
   fileReveal: (url: string) => ipcRenderer.invoke('file:reveal', url),
+  fileImage: (url: string, maxSide: number) => ipcRenderer.invoke('file:image', url, maxSide),
 
   pickAvatar: () => ipcRenderer.invoke('avatar:pick'),
 

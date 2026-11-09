@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import {
   Document, DocumentText, DocumentCode, TableDocument, PresentionChart, Gallery,
   Music, VideoPlay, Archive, Folder2,
@@ -49,7 +49,8 @@ type Info = Awaited<ReturnType<typeof api.fileInfo>>
 // Превью и размеры живут дольше одной карточки: при перерисовке ленты не дёргаем Windows заново
 const cache = new Map<string, { info: Info; thumb: string | null }>()
 
-export function FileCard({ href }: { href: string }) {
+/** card — отдельной строкой; chip — плашка внутри фразы, чтобы не рвать текст */
+export function FileCard({ href, variant = 'card' }: { href: string; variant?: 'card' | 'chip' }) {
   const [state, setState] = useState(() => cache.get(href) ?? null)
 
   useEffect(() => {
@@ -81,15 +82,27 @@ export function FileCard({ href }: { href: string }) {
     : [kind.label, ext.toUpperCase(), state?.info && !isDir ? fmtSize(state.info.size) : '']
         .filter(Boolean).join(' · ')
 
+  const act = {
+    role: 'button',
+    tabIndex: 0,
+    title: missing ? state?.info?.path : t('Показать в проводнике', 'Show in Explorer'),
+    onClick: () => { if (!missing) void api.fileReveal(href) },
+    onKeyDown: (e: KeyboardEvent) => {
+      if (!missing && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); void api.fileReveal(href) }
+    },
+  } as const
+
+  if (variant === 'chip') {
+    return (
+      <span {...act} className={'chat-file-chip' + (missing ? ' is-missing' : '')} style={{ '--tile': kind.color } as CSSProperties}>
+        <kind.Icon size={14} variant="Linear" color="var(--tile)" />
+        <span>{full}</span>
+      </span>
+    )
+  }
+
   return (
-    <span
-      role="button"
-      tabIndex={0}
-      className={'chat-file-card' + (missing ? ' is-missing' : '')}
-      title={missing ? state?.info?.path : t('Показать в проводнике', 'Show in Explorer')}
-      onClick={() => { if (!missing) void api.fileReveal(href) }}
-      onKeyDown={e => { if (!missing && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); void api.fileReveal(href) } }}
-    >
+    <span {...act} className={'chat-file-card' + (missing ? ' is-missing' : '')}>
       <span
         className="chat-file-card-tile"
         style={{ '--tile': kind.color } as CSSProperties}

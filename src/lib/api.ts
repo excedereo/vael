@@ -157,6 +157,8 @@ export interface ElectronAPI {
   fileInfo: (url: string) => Promise<{ path: string; exists: boolean; size: number; isDir: boolean; mtime: number } | null>
   fileThumb: (url: string, size: number) => Promise<string | null>
   fileReveal: (url: string) => Promise<void>
+  /** Картинка для галереи: data URL, длинная сторона не больше maxSide */
+  fileImage: (url: string, maxSide: number) => Promise<string | null>
 
   abortRun: () => Promise<{ ok: boolean }>
 

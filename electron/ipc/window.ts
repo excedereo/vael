@@ -38,6 +38,25 @@ export function registerWindowHandlers(getWindow: () => BrowserWindow | null) {
       return img.isEmpty() ? null : img.toDataURL()
     } catch { return null }
   })
+  // Картинка для галереи в чате: окно в dev открыто с http://, и file:// оттуда
+  // не грузится — отдаём data URL, уменьшенный до maxSide по длинной стороне
+  ipcMain.handle('file:image', async (_, url: string, maxSide: number) => {
+    const p = filePathFromUrl(url)
+    if (!p) return null
+    const side = Math.min(Math.max(Math.round(maxSide) || 800, 64), 2400)
+    try {
+      let img = nativeImage.createFromPath(p)
+      // Форматы, которые nativeImage не читает (webp, svg…) — через превью Windows
+      if (img.isEmpty()) img = await nativeImage.createThumbnailFromPath(p, { width: side, height: side })
+      if (img.isEmpty()) return null
+      const { width, height } = img.getSize()
+      if (Math.max(width, height) > side) {
+        img = width >= height ? img.resize({ width: side, quality: 'good' }) : img.resize({ height: side, quality: 'good' })
+      }
+      // Прозрачность держит только PNG; остальное в JPEG — в разы легче
+      return /\.(png|gif|webp|svg|ico)$/i.test(p) ? img.toDataURL() : 'data:image/jpeg;base64,' + img.toJPEG(88).toString('base64')
+    } catch { return null }
+  })
   ipcMain.handle('file:reveal', (_, url: string) => {
     const p = filePathFromUrl(url)
     if (p && fs.existsSync(p)) shell.showItemInFolder(p)

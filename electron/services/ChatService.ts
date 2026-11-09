@@ -8,6 +8,14 @@ import type { ChatStartOptions } from '../../shared/types.js'
 import { claudeExe } from './ClaudeBin.js'
 import { isSafeArg } from './Guard.js'
 
+/** Что умеет рисовать чат Vael — добавляется к системному промпту чат-процесса */
+const CHAT_RENDER_HINT = [
+  'This chat is shown in the Vael desktop app, which renders local files from Markdown:',
+  '- To hand the user a file, put a link on its own line: [name](file:///C:/path/to/report.pdf). It becomes a file card; clicking it reveals the file in Explorer. A file link inside a sentence becomes a small inline chip.',
+  '- To show an image, use ![caption](file:///C:/path/to/image.png). Several image lines in a row become a gallery.',
+  '- In file URLs encode spaces as %20 and parentheses as %28 %29.',
+].join('\n')
+
 // Жизнь чат-процессов в файле: консоль main видна только в dev-панели окна,
 // а «процесс тихо умер посреди ответа» иначе не разобрать
 const LOG_FILE = path.join(os.homedir(), '.vael', 'logs', 'chat.log')
@@ -147,10 +155,13 @@ export async function startChat(opts: ChatStartOptions): Promise<string> {
   // через cmd кириллица в аргументах ломается
   // .cmd-обёртку без shell Node на Windows запускать отказывается — это запасной путь
   const exe = claudeExe()
+  // Подсказка модели, как в чате показать файл и картинки. Только здесь: в терминале
+  // это не рисуется. Через cmd (shell) текст с пробелами развалился бы на аргументы
+  if (!exe.endsWith('.cmd')) args.push('--append-system-prompt', CHAT_RENDER_HINT)
   const child = spawn(exe, args, { cwd: os.homedir(), env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], shell: exe.endsWith('.cmd') })
   const entry: ChatEntry = { child, sessionId, buf: '', pendingInput: '', pending: new Map(), announced: false, isNew: !opts.sessionId, init: undefined, configDir: opts.configDir }
   chats.set(sessionId, entry)
-  chatLog(sessionId, `start pid=${child.pid} ${args.filter(a => a !== sessionId).join(' ')}`)
+  chatLog(sessionId, `start pid=${child.pid} ${args.filter(a => a !== sessionId && a !== CHAT_RENDER_HINT).join(' ')}`)
 
   child.stdout?.on('data', (chunk: Buffer) => {
     entry.buf += chunk.toString('utf8')

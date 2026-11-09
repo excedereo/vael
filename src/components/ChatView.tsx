@@ -1,5 +1,5 @@
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
+import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import { ArrowUp, Square, ChevronDown, ChevronRight, ChevronLeft, Check, Plus, Paperclip, Copy, ArrowDown } from 'lucide-react'
@@ -12,6 +12,7 @@ import { api, type ChatModelInfo } from '../lib/api.js'
 import type { ChatItem, ChatAttachment, TurnStats } from '../types/index'
 import { cn } from '../lib/utils.js'
 import { FileCard } from './FileCard.js'
+import { ImageGallery } from './ChatImages.js'
 import logo from '../assets/logo.svg'
 import logoSmall from '../assets/logo-small.svg'
 import { t, LOCALE } from '../lib/i18n.js'
@@ -202,6 +203,51 @@ function CodeBlock({ children, ...rest }: React.HTMLAttributes<HTMLPreElement>) 
 // Ссылки file:///… пропускаем (по умолчанию react-markdown их вырезает) —
 // вместо них рисуется карточка файла. Остальное — как обычно
 const urlTransform = (url: string) => /^file:/i.test(url) ? url : defaultUrlTransform(url)
+const isFileHref = (h: unknown): h is string => typeof h === 'string' && /^file:/i.test(h)
+
+// Ссылка на файл одна в абзаце (или пункте списка) — карточка, посреди фразы —
+// плашка в строке, чтобы не рвать текст
+const FileModeContext = createContext<'card' | 'chip'>('chip')
+
+/** Блок состоит только из тегов tag (ссылок на файлы / картинок), пробелов и переносов */
+function onlyOf(node: HastNode | undefined, tag: 'a' | 'img'): boolean {
+  let n = 0
+  for (const ch of node?.children ?? []) {
+    if (ch.type === 'text' && /^\s*$/.test(ch.value ?? '')) continue
+    if (ch.type === 'element' && ch.tagName === 'br') continue
+    if (ch.type === 'element' && ch.tagName === tag && (tag === 'img' || isFileHref(ch.properties?.href))) { n++; continue }
+    return false
+  }
+  return n > 0
+}
+
+function FileLink({ href }: { href: string }) {
+  return <FileCard href={href} variant={useContext(FileModeContext)} />
+}
+
+const MD_COMPONENTS: Components = {
+  a: ({ href, children }) => isFileHref(href)
+    ? <FileLink href={href} />
+    : <a href={href} target="_blank" rel="noreferrer">{children}</a>,
+  // Картинки подряд в одном абзаце — галерея
+  p: ({ node, children }) => {
+    const n = node as HastNode | undefined
+    if (onlyOf(n, 'img')) {
+      const imgs = (n?.children ?? []).filter(c => c.tagName === 'img')
+        .map(c => ({ src: urlTransform(String(c.properties?.src ?? '')), alt: c.properties?.alt ? String(c.properties.alt) : undefined }))
+        .filter(i => i.src)
+      return <ImageGallery images={imgs} />
+    }
+    if (onlyOf(n, 'a')) return <FileModeContext.Provider value="card"><span className="chat-file-list">{children}</span></FileModeContext.Provider>
+    return <p>{children}</p>
+  },
+  // rest — чтобы не терять className пунктов-галочек из GFM
+  li: ({ node, children, ...rest }) => onlyOf(node as HastNode | undefined, 'a')
+    ? <li {...rest}><FileModeContext.Provider value="card">{children}</FileModeContext.Provider></li>
+    : <li {...rest}>{children}</li>,
+  img: ({ src, alt }) => typeof src === 'string' && src ? <ImageGallery images={[{ src, alt }]} /> : null,
+  pre: ({ node: _n, ...p }) => <CodeBlock {...p} />,
+}
 
 export const MdBlock = memo(function MdBlock({ text, typing = false }: { text: string; typing?: boolean }) {
   return (
@@ -209,12 +255,7 @@ export const MdBlock = memo(function MdBlock({ text, typing = false }: { text: s
       remarkPlugins={[remarkGfm]}
       rehypePlugins={typing ? [[rehypeHighlight, { ignoreMissing: true }], rehypeTypeChars] : [[rehypeHighlight, { ignoreMissing: true }]]}
       urlTransform={urlTransform}
-      components={{
-        a: ({ href, children }) => href && /^file:/i.test(href)
-          ? <FileCard href={href} />
-          : <a href={href} target="_blank" rel="noreferrer">{children}</a>,
-        pre: ({ node: _n, ...p }) => <CodeBlock {...p} />,
-      }}
+      components={MD_COMPONENTS}
     >
       {text}
     </ReactMarkdown>
