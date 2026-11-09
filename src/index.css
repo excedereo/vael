@@ -527,7 +527,9 @@ body {
 .chat-file-card.is-missing { cursor: default; opacity: 0.55; }
 .chat-file-card.is-missing:hover { background: var(--bg-elevated); border-color: var(--border-default); }
 .chat-file-card-tile { flex: none; display: flex; align-items: center; justify-content: center; width: 46px; height: 54px; border-radius: 9px; overflow: hidden; background: linear-gradient(180deg, color-mix(in srgb, var(--tile) 26%, #0d0f10), color-mix(in srgb, var(--tile) 12%, #0d0f10)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tile) 22%, transparent); }
-.chat-file-card-tile img { width: 100%; height: 100%; object-fit: cover; object-position: top; background: #fff; }
+/* Без фона у картинки: при масштабировании её крайние пиксели полупрозрачные, и
+   любой фон под ней просвечивает рамкой. scale уводит этот край под обрезку плитки */
+.chat-file-card-tile img { width: 100%; height: 100%; object-fit: cover; object-position: top; transform: scale(1.06); }
 /* С превью подложки нет: иначе у скруглённых краёв она просвечивает каймой */
 .chat-file-card-tile.has-thumb { background: none; box-shadow: none; }
 /* Пункт списка из одной карточки — без маркера, карточки идут колонкой */
