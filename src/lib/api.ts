@@ -153,6 +153,10 @@ export interface ElectronAPI {
   saveSettings: (data: unknown) => Promise<{ ok: boolean }>
   getClaudeVersion: () => Promise<string>
   openExternal: (url: string) => Promise<void>
+  /** Карточка файла в чате: url — ссылка file:///… */
+  fileInfo: (url: string) => Promise<{ path: string; exists: boolean; size: number; isDir: boolean; mtime: number } | null>
+  fileThumb: (url: string, size: number) => Promise<string | null>
+  fileReveal: (url: string) => Promise<void>
 
   abortRun: () => Promise<{ ok: boolean }>
 

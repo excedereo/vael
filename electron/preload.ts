@@ -110,6 +110,9 @@ contextBridge.exposeInMainWorld('api', {
   saveSettings: (data: unknown) => ipcRenderer.invoke('settings:save', data),
   getClaudeVersion: () => ipcRenderer.invoke('settings:getVersion'),
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
+  fileInfo: (url: string) => ipcRenderer.invoke('file:info', url),
+  fileThumb: (url: string, size: number) => ipcRenderer.invoke('file:thumb', url, size),
+  fileReveal: (url: string) => ipcRenderer.invoke('file:reveal', url),
 
   pickAvatar: () => ipcRenderer.invoke('avatar:pick'),
 

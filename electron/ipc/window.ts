@@ -1,10 +1,48 @@
-import { ipcMain, BrowserWindow, shell, dialog } from 'electron'
+import { ipcMain, BrowserWindow, shell, dialog, nativeImage } from 'electron'
 import fs from 'fs'
 import path from 'path'
+import { fileURLToPath } from 'url'
 import { PATHS } from '../services/SettingsService.js'
 import { isExternalUrl } from '../services/Guard.js'
 
+/** Путь из ссылки file:///… или null, если это не локальный файл */
+function filePathFromUrl(url: unknown): string | null {
+  if (typeof url !== 'string' || !/^file:/i.test(url)) return null
+  try {
+    const p = fileURLToPath(url)
+    return path.isAbsolute(p) ? p : null
+  } catch { return null }
+}
+
 export function registerWindowHandlers(getWindow: () => BrowserWindow | null) {
+  // Карточки файлов в чате: модель пишет ссылку file:///…, окно спрашивает
+  // размер и превью, а по клику файл показывается в проводнике. Ничего не
+  // открываем и не запускаем: ссылку пишет модель, и это мог быть .exe
+  ipcMain.handle('file:info', (_, url: string) => {
+    const p = filePathFromUrl(url)
+    if (!p) return null
+    try {
+      const st = fs.statSync(p)
+      return { path: p, exists: true, size: st.size, isDir: st.isDirectory(), mtime: st.mtimeMs }
+    } catch {
+      return { path: p, exists: false, size: 0, isDir: false, mtime: 0 }
+    }
+  })
+  // Превью от самой Windows (то же, что в проводнике); нет превью — null
+  ipcMain.handle('file:thumb', async (_, url: string, size: number) => {
+    const p = filePathFromUrl(url)
+    if (!p) return null
+    try {
+      const side = Math.min(Math.max(Math.round(size) || 128, 32), 512)
+      const img = await nativeImage.createThumbnailFromPath(p, { width: side, height: side })
+      return img.isEmpty() ? null : img.toDataURL()
+    } catch { return null }
+  })
+  ipcMain.handle('file:reveal', (_, url: string) => {
+    const p = filePathFromUrl(url)
+    if (p && fs.existsSync(p)) shell.showItemInFolder(p)
+  })
+
   ipcMain.handle('window:minimize', () => getWindow()?.minimize())
   ipcMain.handle('window:maximize', () => {
     const win = getWindow()

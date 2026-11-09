@@ -1,5 +1,5 @@
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import { ArrowUp, Square, ChevronDown, ChevronRight, ChevronLeft, Check, Plus, Paperclip, Copy, ArrowDown } from 'lucide-react'
@@ -11,6 +11,7 @@ import { loadCustomOptions } from '../lib/customOptions.js'
 import { api, type ChatModelInfo } from '../lib/api.js'
 import type { ChatItem, ChatAttachment, TurnStats } from '../types/index'
 import { cn } from '../lib/utils.js'
+import { FileCard } from './FileCard.js'
 import logo from '../assets/logo.svg'
 import logoSmall from '../assets/logo-small.svg'
 import { t, LOCALE } from '../lib/i18n.js'
@@ -198,12 +199,22 @@ function CodeBlock({ children, ...rest }: React.HTMLAttributes<HTMLPreElement>) 
   )
 }
 
+// Ссылки file:///… пропускаем (по умолчанию react-markdown их вырезает) —
+// вместо них рисуется карточка файла. Остальное — как обычно
+const urlTransform = (url: string) => /^file:/i.test(url) ? url : defaultUrlTransform(url)
+
 export const MdBlock = memo(function MdBlock({ text, typing = false }: { text: string; typing?: boolean }) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       rehypePlugins={typing ? [[rehypeHighlight, { ignoreMissing: true }], rehypeTypeChars] : [[rehypeHighlight, { ignoreMissing: true }]]}
-      components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a>, pre: ({ node: _n, ...p }) => <CodeBlock {...p} /> }}
+      urlTransform={urlTransform}
+      components={{
+        a: ({ href, children }) => href && /^file:/i.test(href)
+          ? <FileCard href={href} />
+          : <a href={href} target="_blank" rel="noreferrer">{children}</a>,
+        pre: ({ node: _n, ...p }) => <CodeBlock {...p} />,
+      }}
     >
       {text}
     </ReactMarkdown>
