@@ -12,7 +12,6 @@ import { AccountManager } from './AccountManager.js'
 import { ModuleRegistry } from './ModuleRegistry.js'
 import { loadVaeliSettings, saveVaeliSettings, migrateFromUserData, PATHS } from './services/SettingsService.js'
 import { linkAllAccounts, linkAccountSessions } from './services/SessionStoreService.js'
-import { rebuildAllIndexes, startMemoryWatcher } from './services/MemoryService.js'
 import { registerAllHandlers } from './ipc/index.js'
 import { watchSessionDirect, unsubscribeSessionReply, subscribeSessionReply, ptyWriteBySessionId, stopAllSessionWatches, killAllPtys, detectStatus, isPtyAlive, listAlivePtySessions } from './ipc/pty.js'
 import { isChatAlive, listChatSessions, chatWriteLikePty, killAllChats } from './services/ChatService.js'
@@ -244,9 +243,6 @@ app.whenReady().then(() => {
   registerNotificationIpc(() => mainWindow)
 
   setupAutoUpdater()
-
-  setTimeout(startMemoryWatcher, 2000)
-  setTimeout(rebuildAllIndexes, 3000)
 
   runStartupTempCleanup(() => mainWindow)
 })

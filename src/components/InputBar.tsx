@@ -397,12 +397,14 @@ export const InputBar = forwardRef<InputBarHandle, Props>(function InputBar({
       white-space: nowrap; cursor: default; user-select: none;
     `
 
+    // Имя файла идёт в innerHTML — экранируем
+    const esc = (v: string) => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
     const ext = filename.includes('.') ? '.' + filename.split('.').pop() : ''
     const base = filename.includes('.') ? filename.slice(0, filename.lastIndexOf('.')) : filename
     const maxBase = 8
     const label = base.length > maxBase
-      ? `<span style="opacity:0.5">${base.slice(0, maxBase)}…</span>${ext}`
-      : filename
+      ? `<span style="opacity:0.5">${esc(base.slice(0, maxBase))}…</span>${esc(ext)}`
+      : esc(filename)
 
     if (loading) {
       chip.innerHTML = `<span style="display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin 0.7s linear infinite;flex-shrink:0;vertical-align:middle;margin-right:3px;"></span>${label}`

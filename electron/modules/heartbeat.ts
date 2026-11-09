@@ -6,8 +6,8 @@ import type { PyreModule, ModuleContext } from './types.js'
 // Heartbeat — отправляет сообщения в сессию по расписанию.
 //
 // Модель отвечает только на входящие сообщения. Heartbeat печатает шаблон
-// (по умолчанию [FREE]) прямо в живую сессию через тот же ptyWrite, что и
-// телеграм, так что для сессии это обычное входящее сообщение.
+// (по умолчанию [FREE]) прямо в живую сессию через ptyWrite, так что для
+// сессии это обычное входящее сообщение.
 //
 // Побудки может ставить и сама модель командой `vael wake ...` из сессии.
 // Поэтому очередь лежит в файле, а не в памяти процесса: у сессии нет доступа
@@ -37,8 +37,6 @@ interface HeartbeatSettings {
   sessionId?: string
   /** шаблон сообщения, плейсхолдеры ниже в renderTemplate */
   template: string
-  /** дублировать фришки в телеграм */
-  mirrorToTelegram?: boolean
 }
 
 const VAEL_DIR = path.join(os.homedir(), '.vael')
@@ -160,11 +158,6 @@ export function renderTemplate(template: string, vars: { lastAt: number | null; 
     .replace(/<date>/g, now.toLocaleDateString('ru-RU'))
     .replace(/<text>/g, text)
     .trim()
-}
-
-interface TelegramLike {
-  sendReply(chatId: string, text: string): Promise<void>
-  getSettings(): Record<string, unknown>
 }
 
 export class HeartbeatModule implements PyreModule {
@@ -429,27 +422,10 @@ export class HeartbeatModule implements PyreModule {
 
     console.log('[HB] wake →', message.slice(0, 80))
 
-    // Как в телеграме: текст и Enter раздельно, иначе CLI считает \r частью вставки
+    // Текст и Enter раздельно, иначе CLI считает \r частью вставки
     this.ctx.ptyWrite(sessionId, message)
     setTimeout(() => this.ctx?.ptyWrite(sessionId, '\r'), 60)
 
     this.ctx.sendToWindow('heartbeat:fired', { entry, message, at: Date.now() })
-
-    if (s.mirrorToTelegram) this.sendToTelegram(`[heartbeat] ${message}`)
-  }
-
-  /** Отправить текст в телеграм через модуль telegram. */
-  async sendToTelegram(text: string): Promise<boolean> {
-    const tg = this.ctx?.getModule('telegram') as TelegramLike | null
-    if (!tg) return false
-    const tgSettings = tg.getSettings() as { chatId?: string; botToken?: string }
-    if (!tgSettings?.chatId || !tgSettings?.botToken) return false
-    try {
-      await tg.sendReply(tgSettings.chatId, text)
-      return true
-    } catch (e) {
-      console.error('[HB] telegram send failed:', e)
-      return false
-    }
   }
 }

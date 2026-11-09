@@ -17,7 +17,7 @@ export interface ModuleContext {
   getSessionStatus: (sessionId: string) => string | null
   /** Путь к <sessionId>.jsonl активного аккаунта, либо null */
   findSessionJsonl: (sessionId: string) => string | null
-  /** Достучаться до другого модуля — например heartbeat → telegram */
+  /** Достучаться до другого модуля — для связи модулей между собой */
   getModule: (id: string) => PyreModule | null
   /** Запущен ли PTY сессии: без него писать в неё бессмысленно */
   isPtyAlive: (sessionId: string) => boolean

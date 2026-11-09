@@ -9,7 +9,7 @@ import {
   Section, ToggleRow, Toggle, ThemePicker, Dropdown,
   PageHeader, Row, SegmentedControl,
 } from './SettingsComponents.js'
-import { Brush, Size, Message, Cpu, Flash, ShieldTick, Monitor, Folder2, Broom, InfoCircle, Refresh2, Global, Data } from 'iconsax-reactjs'
+import { Brush, Size, Message, Cpu, Flash, ShieldTick, Monitor, Folder2, Broom, InfoCircle, Refresh2, Global } from 'iconsax-reactjs'
 import { NotificationSettingsSection } from './NotificationSettings.js'
 import { NotificationPreview } from './NotificationPreview.js'
 import { InterfacePreview, SessionsPreview, SystemPreview } from './SettingsPreviews.js'
@@ -380,9 +380,6 @@ export function SettingsPage(_props: Props) {
   const [showDev, setShowDev] = useState<boolean>(() => {
     try { return JSON.parse(localStorage.getItem('vaeliShowDev') ?? 'false') } catch { return false }
   })
-  const [showMemory, setShowMemory] = useState(
-    () => localStorage.getItem('vaeli:showMemory') !== '0',
-  )
   const [autoDownload, setAutoDownload] = useState(() => {
     try { return JSON.parse(localStorage.getItem('vaeliAutoDownload') || 'false') } catch { return false }
   })
@@ -489,19 +486,6 @@ export function SettingsPage(_props: Props) {
                   </div>
                 </Row>
 
-                <ToggleRow
-                  icon={Data}
-                  label={t("Раздел Память", "Memory section")}
-                  desc={t("Иконка памяти в боковой панели — файлы и граф", "Memory icon in the sidebar — files and graph")}
-                  value={showMemory}
-                  onChange={v => {
-                    setShowMemory(v)
-                    // '0' при выключении: по умолчанию раздел включён, и
-                    // отсутствие ключа должно означать «показывать»
-                    localStorage.setItem('vaeli:showMemory', v ? '1' : '0')
-                    window.dispatchEvent(new Event('vaeli:showMemoryChanged'))
-                  }}
-                />
               </Section>
             </>)}
 

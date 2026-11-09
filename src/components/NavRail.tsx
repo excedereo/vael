@@ -1,10 +1,10 @@
-import { MessagesSquare, GitFork, Zap, SquareTerminal, Settings } from 'lucide-react'
+import { MessagesSquare, Zap, SquareTerminal, Settings } from 'lucide-react'
 import logoSmall from '../assets/logo-small.svg'
 import type { LucideIcon as Icon } from 'lucide-react'
 import { cn } from '../lib/utils.js'
 import { t } from '../lib/i18n.js'
 
-export type Section = 'sessions' | 'memory' | 'pyre' | 'dev' | 'accounts' | 'settings'
+export type Section = 'sessions' | 'pyre' | 'dev' | 'accounts' | 'settings'
 
 interface NavItem {
   id: Section
@@ -17,7 +17,6 @@ const WORK: NavItem[] = [
   { id: 'sessions', label: t("Сессии", "Sessions"), icon: MessagesSquare },
   { id: 'pyre',     label: 'Pyre',     icon: Zap },
 ]
-const MEMORY: NavItem = { id: 'memory', label: t("Память", "Memory"), icon: GitFork }
 const DEV: NavItem = { id: 'dev', label: 'Dev', icon: SquareTerminal }
 // Аккаунты открываются из карточки аккаунта внизу сайдбара — отдельная иконка была дублем
 const CONTEXT: NavItem[] = [
@@ -28,7 +27,6 @@ interface Props {
   active: Section
   onSelect: (s: Section) => void
   showDev: boolean
-  showMemory: boolean
   /** id разделов, где сейчас идёт живая работа (для бейджа на неактивной иконке) */
   busySections?: Section[]
 }
@@ -57,10 +55,9 @@ function RailButton({ item, active, onSelect, busy }: {
   )
 }
 
-export function NavRail({ active, onSelect, showDev, showMemory, busySections = [] }: Props) {
+export function NavRail({ active, onSelect, showDev, busySections = [] }: Props) {
   const top = [
     WORK[0],                          // Sessions
-    ...(showMemory ? [MEMORY] : []),
     WORK[1],                          // Pyre
     ...(showDev ? [DEV] : []),
   ]

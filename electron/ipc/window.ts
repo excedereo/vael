@@ -2,6 +2,7 @@ import { ipcMain, BrowserWindow, shell, dialog } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { PATHS } from '../services/SettingsService.js'
+import { isExternalUrl } from '../services/Guard.js'
 
 export function registerWindowHandlers(getWindow: () => BrowserWindow | null) {
   ipcMain.handle('window:minimize', () => getWindow()?.minimize())
@@ -13,7 +14,7 @@ export function registerWindowHandlers(getWindow: () => BrowserWindow | null) {
   ipcMain.handle('window:close', () => getWindow()?.close())
   ipcMain.handle('window:isMaximized', () => getWindow()?.isMaximized() ?? false)
 
-  ipcMain.handle('shell:openExternal', (_, url: string) => shell.openExternal(url))
+  ipcMain.handle('shell:openExternal', (_, url: string) => isExternalUrl(url) ? shell.openExternal(url) : undefined)
 
   ipcMain.handle('avatar:pick', async () => {
     const result = await dialog.showOpenDialog({

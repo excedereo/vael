@@ -31,6 +31,10 @@ export function registerClaudeHandlers(
   })
 
   ipcMain.handle('claude:installVersion', async (_, version: string) => {
+    // Версия идёт в командную строку через exec: только номер версии или тег
+    if (typeof version !== 'string' || !/^(d+.d+.d+([-.][0-9A-Za-z.]+)?|latest|stable|next)$/.test(version)) {
+      return { ok: false, log: 'bad version' }
+    }
     return new Promise<{ ok: boolean; log: string }>((resolve) => {
       const pkg = `@anthropic-ai/claude-code@${version}`
       exec(`npm install -g ${pkg}`, { timeout: 120000 }, (err, stdout, stderr) => {

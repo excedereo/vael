@@ -2,6 +2,7 @@ import { ipcMain, BrowserWindow } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { PATHS, loadVaeliSettings, patchVaeliSettings } from '../services/SettingsService.js'
+import { isInside } from '../services/Guard.js'
 
 let tempCleanupCancelled = false
 
@@ -35,8 +36,9 @@ export function registerTempHandlers(getWindow: () => BrowserWindow | null) {
 
   ipcMain.handle('temp:delete', async (_, filePath: string) => {
     try {
+      // startsWith пропускал соседние папки вроде temp-old — сравниваем по сегментам
+      if (!isInside(filePath, PATHS.temp)) return { ok: false }
       const resolved = path.resolve(filePath)
-      if (!resolved.startsWith(path.resolve(PATHS.temp))) return { ok: false }
       if (fs.existsSync(resolved)) fs.unlinkSync(resolved)
       return { ok: true }
     } catch { return { ok: false } }

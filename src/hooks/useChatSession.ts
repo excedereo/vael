@@ -284,7 +284,7 @@ export function useChatSession(sessionId: string | null, jsonlPath: string | nul
         const { text, attachments } = splitUserContent(c)
         const out = text.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/)
         if (out) { if (out[1].trim()) push({ kind: 'note', key: nextKey(), text: out[1].trim() }); return }
-        // Эхо отправленного сообщения (--replay-user-messages) — в том числе от Heartbeat и Telegram
+        // Эхо отправленного сообщения (--replay-user-messages) — в том числе от Heartbeat
         if (ev.isReplay && (text.trim() || attachments.length)) {
           const mine = r.outbox.find(o => !o.echoed && o.text === text.trim())
           if (mine) { mine.echoed = true; return }

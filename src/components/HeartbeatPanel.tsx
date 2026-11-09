@@ -20,7 +20,6 @@ interface HbSettings {
   autostart?: boolean
   sessionId?: string
   template: string
-  mirrorToTelegram?: boolean
 }
 
 const DEFAULT_TEMPLATE = '[FREE] прошло <timefromlastmessage> с последнего ответа<text?, >'
@@ -74,7 +73,6 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
   const [template, setTemplate] = useState(DEFAULT_TEMPLATE)
   const [sessionId, setSessionId] = useState('')
   const [autostart, setAutostart] = useState(false)
-  const [mirror, setMirror] = useState(false)
   const [running, setRunning] = useState(false)
   const [queue, setQueue] = useState<WakeEntry[]>([])
   const [lastFired, setLastFired] = useState<{ message: string; at: number } | null>(null)
@@ -94,12 +92,10 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
       const tpl = s.template || DEFAULT_TEMPLATE
       const sid = s.sessionId ?? ''
       const au = s.autostart ?? false
-      const mir = s.mirrorToTelegram ?? false
       setTemplate(tpl)
       setSessionId(sid)
       setAutostart(au)
-      setMirror(mir)
-      setSnapshot(JSON.stringify([tpl, sid, au, mir]))
+      setSnapshot(JSON.stringify([tpl, sid, au]))
       setLoading(false)
     })
     api.modulesList().then(list => {
@@ -116,12 +112,10 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
       const tpl = s.template || DEFAULT_TEMPLATE
       const sid = s.sessionId ?? ''
       const au = s.autostart ?? false
-      const mir = s.mirrorToTelegram ?? false
       setTemplate(tpl)
       setSessionId(sid)
       setAutostart(au)
-      setMirror(mir)
-      setSnapshot(JSON.stringify([tpl, sid, au, mir]))
+      setSnapshot(JSON.stringify([tpl, sid, au]))
       api.modulesList().then(list => {
         setRunning(list.find(m => m.id === 'heartbeat')?.running ?? false)
       })
@@ -150,16 +144,16 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
 
   const save = useCallback(async () => {
     await api.modulesSetSettings('heartbeat', {
-      enabled: true, template, sessionId, autostart, mirrorToTelegram: mirror,
+      enabled: true, template, sessionId, autostart,
     })
-    setSnapshot(JSON.stringify([template, sessionId, autostart, mirror]))
+    setSnapshot(JSON.stringify([template, sessionId, autostart]))
     setSaved(true)
     setRunning(true)
     setTimeout(() => setSaved(false), 1600)
     onStatusChange?.()
-  }, [template, sessionId, autostart, mirror, onStatusChange])
+  }, [template, sessionId, autostart, onStatusChange])
 
-  const dirty = !loading && snapshot !== JSON.stringify([template, sessionId, autostart, mirror])
+  const dirty = !loading && snapshot !== JSON.stringify([template, sessionId, autostart])
 
   const handleStartStop = useCallback(async () => {
     if (running) {
@@ -589,13 +583,6 @@ export function HeartbeatPanel({ sessions, onStatusChange }: Props) {
             desc={t("Запускаться вместе с Vael", "Start together with Vael")}
             value={autostart}
             onChange={setAutostart}
-          />
-          <ToggleRow
-            icon={Send2}
-            label={t("Дублировать в телеграм", "Copy to Telegram")}
-            desc={t("Копия каждой фришки уходит в чат", "A copy of every message goes to the chat")}
-            value={mirror}
-            onChange={setMirror}
           />
         </Section>
 

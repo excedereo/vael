@@ -31,18 +31,6 @@ export interface ChatInit {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ChatStreamEvent = { type: string; subtype?: string; [k: string]: any }
 
-/** Узел дерева памяти для графа. Держать в синхроне с electron/ipc/memory.ts */
-export interface MemoryNode {
-  name: string
-  rel: string
-  type: 'file' | 'dir'
-  size?: number
-  /** попадает ли файл в контекст по текущему конфигу */
-  loaded?: boolean
-  /** цели [[ссылок]] внутри файла */
-  links?: string[]
-  children?: MemoryNode[]
-}
 
 /** Запись в очереди побудок Heartbeat. Держать в синхроне с electron/modules/heartbeat.ts */
 export interface WakeEntry {
@@ -240,29 +228,7 @@ export interface ElectronAPI {
 
   updateDownload: () => Promise<void>
   updateInstall: () => Promise<void>
-  memoryListDir: (dirPath?: string) => Promise<{ ok: boolean; entries: FsEntry[]; rootDir: string }>
-  memoryReadFile: (filePath: string) => Promise<{ ok: boolean; content: string }>
-  memoryWriteFile: (filePath: string, content: string) => Promise<{ ok: boolean }>
-  memoryCreateFile: (name: string, dirPath?: string) => Promise<{ ok: boolean; path?: string; error?: string }>
-  memoryCreateDir: (name: string, dirPath?: string) => Promise<{ ok: boolean; path?: string; error?: string }>
-  memoryDeleteFile: (filePath: string) => Promise<{ ok: boolean }>
-  memoryGetClaudeMd: () => Promise<{ ok: boolean; path: string; content: string }>
-  memoryTree: () => Promise<{ ok: boolean; root: string; nodes: MemoryNode[] }>
-  memoryGetDir: () => Promise<string>
-  memoryRename: (oldPath: string, newName: string) => Promise<{ ok: boolean; path?: string; error?: string }>
-  memoryGetMeta: () => Promise<Record<string, { auto: boolean }>>
-  memoryGetTokens: () => Promise<{ auto: number; total: number }>
-  memorySetMeta: (relativePath: string, data: { auto: boolean }) => Promise<{ ok: boolean }>
-  memoryRebuildAll: () => Promise<{ ok: boolean }>
 
-  // Telegram integration
-  tgGetSettings: () => Promise<{ botToken: string; chatId: string; enabled: boolean; sessionId?: string; model?: string; effort?: string }>
-  tgSetSettings: (settings: { botToken: string; chatId: string; enabled: boolean; sessionId?: string; model?: string; effort?: string }) => Promise<{ ok: boolean }>
-  tgDetectChatId: (botToken: string) => Promise<{ ok: boolean; error?: string; chats?: { id: string; name: string }[] }>
-  tgStart: () => Promise<{ ok: boolean }>
-  tgStop: () => Promise<{ ok: boolean }>
-  tgReply: (chatId: string, text: string) => Promise<{ ok: boolean }>
-  onTgMessage: (cb: (chatId: string, text: string, filePath?: string) => void) => () => void
   onSessionReload: (cb: (sessionId: string) => void) => () => void
   onSessionCreated: (cb: (sessionId: string) => void) => () => void
 

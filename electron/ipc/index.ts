@@ -5,7 +5,6 @@ import type { ModuleRegistry } from '../ModuleRegistry.js'
 import { registerAccountHandlers } from './accounts.js'
 import { registerSessionHandlers } from './sessions.js'
 import { registerClaudeHandlers } from './claude.js'
-import { registerMemoryHandlers } from './memory.js'
 import { registerModuleHandlers } from './modules.js'
 import { registerWindowHandlers } from './window.js'
 import { registerSettingsHandlers } from './settings.js'
@@ -27,7 +26,6 @@ export function registerAllHandlers(deps: HandlerDeps) {
   registerAccountHandlers(accountManager, getWindow)
   registerSessionHandlers(accountManager, getWindow)
   registerClaudeHandlers(getWindow)
-  registerMemoryHandlers()
   registerModuleHandlers(moduleRegistry)
   registerWindowHandlers(getWindow)
   registerSettingsHandlers(null, flushLogBuffer)

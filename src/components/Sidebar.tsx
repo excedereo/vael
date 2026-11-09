@@ -41,7 +41,6 @@ interface Props {
   /** Окно со всеми пересказами сессии */
   onSummaries?: (session: Session) => void
   isLocked: boolean
-  memoryTokens?: { auto: number; total: number }
   modules?: ModuleInfo[]
   activeModuleId?: string | null
   onSelectModule?: (id: string) => void
@@ -231,7 +230,7 @@ function SessionItem({ session, active, onClick, onContextMenu, isRenaming, rena
 }
 
 
-export function Sidebar({ section, sessions, activeSessionId, newSessionId, runningSessionIds = [], chatSessionIds = [], onSelect, onNew, onDelete, onSummaries, isLocked, memoryTokens, modules = [], activeModuleId, onSelectModule, onMetaChange }: Props) {
+export function Sidebar({ section, sessions, activeSessionId, newSessionId, runningSessionIds = [], chatSessionIds = [], onSelect, onNew, onDelete, onSummaries, isLocked, modules = [], activeModuleId, onSelectModule, onMetaChange }: Props) {
   const [query, setQuery] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
 
@@ -486,15 +485,6 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
               </div>
             )}
       </div>
-
-      {/* Memory token stats */}
-      {section === 'memory' && memoryTokens && (
-        <div style={{ padding: '0 12px 8px', textAlign: 'center' }}>
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>
-            {memoryTokens.auto >= 1000 ? (Math.round(memoryTokens.auto / 100) / 10) + 'k' : memoryTokens.auto} auto / {memoryTokens.total >= 1000 ? (Math.round(memoryTokens.total / 100) / 10) + 'k' : memoryTokens.total} total tok
-          </span>
-        </div>
-      )}
 
       {/* Sessions */}
       {section === 'sessions' && (

@@ -110,7 +110,7 @@ Summary:
     getVaelVersion: async () => '3.0.0',
     getClaudeVersion: async () => '2.1.310',
   }
-  const LISTS = /^(modulesList|listThemes|heartbeatQueue|getNotificationSounds|memoryListDir|memoryTree|findNewSessions|chatReadAttachments)$/
+  const LISTS = /^(modulesList|listThemes|heartbeatQueue|getNotificationSounds|findNewSessions|chatReadAttachments)$/
 
   window.api = new Proxy(stubs, {
     get(t, k) {

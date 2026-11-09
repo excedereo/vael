@@ -17,9 +17,6 @@ export const PATHS = {
   /** Хранилище сессий: конфиги аккаунтов смотрят сюда junction'ом */
   sessions: path.join(VAEL_ROOT, 'sessions'),
   globalSettings: path.join(os.homedir(), '.claude', 'settings.json'),
-  claudeMd: path.join(os.homedir(), '.claude', 'CLAUDE.md'),
-  memory: path.join(VAEL_ROOT, 'memory'),
-  memoryMeta: path.join(VAEL_ROOT, 'memory-meta.json'),
 }
 
 /**

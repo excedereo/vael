@@ -7,6 +7,7 @@ import type { AccountManager } from '../AccountManager.js'
 import { linkAccountSessions } from '../services/SessionStoreService.js'
 import { claudeExe } from '../services/ClaudeBin.js'
 import { fetchNetworkInfo } from '../services/NetworkCheckService.js'
+import { ACCOUNTS_ROOT, isInside } from '../services/Guard.js'
 
 export function registerAccountHandlers(accountManager: AccountManager, getWindow: () => BrowserWindow | null) {
   ipcMain.handle('accounts:get', () => accountManager.getAccounts())
@@ -99,6 +100,11 @@ export function registerAccountHandlers(accountManager: AccountManager, getWindo
   })
 
   ipcMain.handle('accounts:openAuth', (_, configDir: string) => {
+    // Путь уходит в .bat и в строку PowerShell: только папка аккаунта и без кавычек и спецсимволов cmd
+    if (!isInside(configDir, ACCOUNTS_ROOT) || /["'%&|^<>`$]/.test(configDir)) {
+      console.error('[openAuth] отклонён путь:', configDir)
+      return
+    }
     console.log('[openAuth] launching terminal for:', configDir)
     const claudeJsonPath = path.join(configDir, '.claude.json')
     const homedir = os.homedir()

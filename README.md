@@ -17,7 +17,7 @@
 
 ---
 
-**Vael** is a desktop app for [Claude Code](https://github.com/anthropics/claude-code). It runs the real `claude` CLI underneath, with your own login and your own limits, and gives it a proper window: a chat that reads like claude.ai, a full terminal when you want one, sessions you can find again, several accounts side by side, and a memory that follows you into every session.
+**Vael** is a desktop app for [Claude Code](https://github.com/anthropics/claude-code). It runs the real `claude` CLI underneath, with your own login and your own limits, and gives it a proper window: a chat that reads like claude.ai, a full terminal when you want one, sessions you can find again, and several accounts side by side.
 
 Nothing is proxied and nothing is re-implemented. If it works in Claude Code, it works in Vael.
 
@@ -34,7 +34,6 @@ Nothing is proxied and nothing is re-implemented. If it works in Claude Code, it
 | **Limits at a glance** | Your 5-hour and 7-day usage sit in the sidebar with a countdown to reset: `5h · 50% (4h 30m)`. |
 | **Compaction you can read** | `/compact` turns into a card. The bar shrinks from *before* to *after*, it lists which files came back into context, and the full summary the model now remembers is one click away. |
 | **Accounts without the dance** | Add several Claude logins, switch between them, log out and back in. Sessions live in one shared store and never disappear with an account. |
-| **Memory** | A folder of plain markdown notes that loads into every session. Browse it as a list or as a star map. |
 
 ## Features
 
@@ -60,7 +59,7 @@ Nothing is proxied and nothing is re-implemented. If it works in Claude Code, it
 **Automation**
 - **Heartbeat** sends a message into a session on a schedule: once, at a set time, or on repeat
 - **`vael` CLI** controls it from any terminal: `vael wake 30min`, `vael hb on`, `vael summary this`
-- Telegram bridge and desktop notifications for finished answers
+- Desktop notifications for finished answers
 
 **Setup that takes care of itself**
 - No Claude Code yet? Vael finds that out first and installs it for you

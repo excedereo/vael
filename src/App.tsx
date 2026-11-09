@@ -121,22 +121,8 @@ function AppInner() {
   const [confettiOrigin, setConfettiOrigin] = useState<DOMRect | undefined>(undefined)
 
   // Единая навигация: раздел определяет, что показано в главной области.
-  // Раньше было два стейта — page ('chat'|'accounts'|'settings'|'memory') и
-  // sidebarTab ('sessions'|'pyre'|'dev'|'memory'). Settings/Accounts больше не оверлеи.
   const [section, setSection] = useState<Section>('sessions')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  // Memory скрыта по умолчанию, включается флагом в настройках
-  // Раздел памяти включён по умолчанию: скрывали временно, пока он был пустым
-  const [showMemory, setShowMemory] = useState(() => localStorage.getItem('vaeli:showMemory') !== '0')
-  useEffect(() => {
-    const h = () => setShowMemory(localStorage.getItem('vaeli:showMemory') !== '0')
-    window.addEventListener('vaeli:showMemoryChanged', h)
-    return () => window.removeEventListener('vaeli:showMemoryChanged', h)
-  }, [])
-  // Если Memory скрыта, а раздел на ней — увести на Sessions
-  useEffect(() => {
-    if (!showMemory && section === 'memory') setSection('sessions')
-  }, [showMemory, section])
   const [modules, setModules] = useState<{ id: string; name: string; icon?: string; running: boolean }[]>([])
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null)
   const { push: navPush, goBack, goForward, canGoBack, canGoForward } = useNavHistory()
@@ -164,16 +150,6 @@ function AppInner() {
 
 
 
-  const [memoryTokens, setMemoryTokens] = useState<{ auto: number; total: number } | undefined>()
-  useEffect(() => {
-    const fetchTokens = async () => {
-      const r = await api.memoryGetTokens()
-      if (r) setMemoryTokens(r)
-    }
-    fetchTokens()
-    const interval = setInterval(fetchTokens, 5000)
-    return () => clearInterval(interval)
-  }, [])
 
   const mainAreaRef = useRef<HTMLDivElement>(null)
   const [dragOver, setDragOver] = useState(false)
@@ -477,7 +453,6 @@ function AppInner() {
         active={section}
         onSelect={handleSectionChange}
         showDev={devConsole}
-        showMemory={showMemory}
         busySections={runningSessions.size > 0 ? ['sessions'] : []}
       />
 
@@ -503,7 +478,6 @@ function AppInner() {
             onDelete={handleDeleteSession}
             onSummaries={setSummariesFor}
             isLocked={isLocked}
-            memoryTokens={memoryTokens}
             modules={modules}
             activeModuleId={activeModuleId}
             onSelectModule={id => { setActiveModuleId(id); setActiveModule(id) }}
@@ -787,7 +761,7 @@ function AppInner() {
             <DevPanel />
           </div>
         )}
-        {/* Registered panels (Pyre, Memory) */}
+        {/* Registered panels (Pyre) */}
         {panels.map(panel => (
           <div
             key={panel.id}

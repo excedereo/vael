@@ -6,6 +6,7 @@ import path from 'path'
 import type { BrowserWindow } from 'electron'
 import type { ChatStartOptions } from '../../shared/types.js'
 import { claudeExe } from './ClaudeBin.js'
+import { isSafeArg } from './Guard.js'
 
 // Жизнь чат-процессов в файле: консоль main видна только в dev-панели окна,
 // а «процесс тихо умер посреди ответа» иначе не разобрать
@@ -115,6 +116,11 @@ export function describeChats(): { sessionId: string; hasJsonl: boolean }[] {
 }
 
 export async function startChat(opts: ChatStartOptions): Promise<string> {
+  // Запасной запуск через .cmd идёт с shell: true — в аргументы только проверенное
+  if (opts.sessionId && !isSafeArg(opts.sessionId)) throw new Error('bad sessionId')
+  for (const k of ['model', 'effort', 'permissionMode'] as const) {
+    if (opts[k] && !isSafeArg(opts[k])) opts = { ...opts, [k]: undefined }
+  }
   const sessionId = opts.sessionId ?? randomUUID()
   const prev = chats.get(sessionId)
   if (prev) {

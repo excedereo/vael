@@ -4,6 +4,7 @@ import os from 'os'
 import fs from 'fs'
 import path from 'path'
 import { claudeExe } from '../services/ClaudeBin.js'
+import { isSafeArg } from '../services/Guard.js'
 
 
 interface PtyEntry {
@@ -406,6 +407,12 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null) {
     }
 
     console.log(`[pty:spawn] sessionId=${sessionId} cwd=${cwd} configDir=${configDir || '(default)'}`)
+
+    // Значения из окна в командную строку попадают только проверенными
+    if (permissionMode && !isSafeArg(permissionMode)) permissionMode = undefined
+    if (model && !isSafeArg(model)) model = undefined
+    if (effort && !isSafeArg(effort)) effort = undefined
+    if (sessionId && !isSafeArg(sessionId)) return { ok: false, error: 'bad sessionId' }
 
     const args: string[] = []
     if (!permissionMode || permissionMode === 'bypassPermissions') {

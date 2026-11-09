@@ -6,6 +6,13 @@ import type { AccountManager } from '../AccountManager.js'
 import { readMeta, writeMeta } from '../services/SessionMetaService.js'
 import { readSessionInfo } from '../services/SessionInfoService.js'
 import type { SessionMeta } from '../../shared/types.js'
+import { PATHS } from '../services/SettingsService.js'
+import { ACCOUNTS_ROOT, isInside } from '../services/Guard.js'
+
+/** Файл сессии: jsonl в конфиге аккаунта или в общем хранилище */
+function isSessionFile(p: unknown): p is string {
+  return typeof p === 'string' && p.endsWith('.jsonl') && (isInside(p, ACCOUNTS_ROOT) || isInside(p, PATHS.sessions))
+}
 
 export function registerSessionHandlers(
   accountManager: AccountManager,
@@ -27,6 +34,7 @@ export function registerSessionHandlers(
   // В корзину, а не насовсем: случайное удаление можно вернуть из корзины Windows.
   // Вместе с jsonl уходят .meta.json и папка сессии (результаты инструментов, подагенты)
   ipcMain.handle('sessions:delete', async (_, sessionPath: string) => {
+    if (!isSessionFile(sessionPath)) return { ok: false, error: 'not a session file' }
     try {
       const base = sessionPath.replace(/\.jsonl$/, '')
       for (const p of [sessionPath, base + '.meta.json', base]) {
@@ -45,7 +53,7 @@ export function registerSessionHandlers(
   // Пользовательские метаданные (<id>.meta.json): имя, архив, теги, порядок
   ipcMain.handle('session:readMeta', (_, jsonlPath: string) => readMeta(jsonlPath))
   ipcMain.handle('session:writeMeta', (_, jsonlPath: string, patch: Partial<SessionMeta>) =>
-    writeMeta(jsonlPath, patch)
+    isSessionFile(jsonlPath) ? writeMeta(jsonlPath, patch) : undefined
   )
 
   // Фактические параметры сессии из jsonl (model/effort/permissionMode + последний ответ)
