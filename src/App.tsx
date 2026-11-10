@@ -1,3 +1,4 @@
+import { toAlias } from './lib/modelAlias.js'
 import { useCallback, useState, useEffect, useRef } from 'react'
 import type { Account } from './types/index'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -80,19 +81,14 @@ function AppInner() {
 
   const DEFAULT_CONFIG = { ...loadDefaultSessionConfig(), prompt: '' }
 
-  const SESSION_MODEL_MIGRATION: Record<string, string> = {
-    'claude-sonnet-4-6': 'sonnet',
-    'claude-opus-4-8':   'opus',
-  }
-
   function loadSessionConfig(sessionId: string | null) {
     if (!sessionId) return DEFAULT_CONFIG
     try {
       const raw = localStorage.getItem(`vaeli:session-config:${sessionId}`)
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<typeof DEFAULT_CONFIG>
-        if (parsed.model && SESSION_MODEL_MIGRATION[parsed.model]) {
-          parsed.model = SESSION_MODEL_MIGRATION[parsed.model]
+        if (parsed.model && toAlias(parsed.model) !== parsed.model) {
+          parsed.model = toAlias(parsed.model)
           localStorage.setItem(`vaeli:session-config:${sessionId}`, JSON.stringify({ ...DEFAULT_CONFIG, ...parsed }))
         }
         return { ...DEFAULT_CONFIG, ...parsed }

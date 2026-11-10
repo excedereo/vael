@@ -860,6 +860,31 @@ function findModel(models: ChatModelInfo[], id: string | null): ChatModelInfo | 
     ?? models.find(m => m.value !== 'default' && (m.resolvedModel === b || m.value === b))
 }
 
+/** Семейство и версия модели: claude-fable-5-2 → fable, 502. У алиаса — по тому, во что он разворачивается */
+function modelVersion(m: ChatModelInfo): { fam: string; v: number } | null {
+  const id = baseModel(m.resolvedModel ?? m.value) ?? ''
+  const mm = id.match(/^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/)
+  if (mm) return { fam: mm[1], v: +mm[2] * 100 + (mm[3] ? +mm[3] : 0) }
+  return MAIN_ALIASES.includes(m.value) ? { fam: m.value, v: -1 } : null
+}
+
+/**
+ * Основной выбор — самая новая модель каждого семейства из того, что знает CLI.
+ * Алиас CLI иногда отстаёт (fable → 5.1, когда 5.2 уже в списке отдельно), поэтому
+ * берём максимум по версии; при равенстве — алиас: он сам переедет на следующую
+ */
+function pickNewest(list: ChatModelInfo[]): ChatModelInfo[] {
+  return MAIN_ALIASES.map(fam => {
+    let best: ChatModelInfo | undefined, bestV = -2
+    for (const m of list) {
+      const mv = modelVersion(m)
+      if (!mv || mv.fam !== fam) continue
+      if (mv.v > bestV || (mv.v === bestV && m.value === fam)) { best = m; bestV = mv.v }
+    }
+    return best
+  }).filter(Boolean) as ChatModelInfo[]
+}
+
 /** Выбор модели в духе claude.ai: основные, внутри — Effort и «Ещё модели» */
 function ModelMenu({ models, model, effort, onModel, onEffort }: {
   models: ChatModelInfo[]
@@ -879,9 +904,9 @@ function ModelMenu({ models, model, effort, onModel, onEffort }: {
   }, [open])
 
   const list = models.length ? models : FALLBACK_MODELS
-  const main = MAIN_ALIASES.map(a => list.find(m => m.value === a)).filter(Boolean) as ChatModelInfo[]
+  const main = pickNewest(list)
   const custom = loadCustomOptions('model').map(o => ({ value: o.value, displayName: o.label, description: o.sub }))
-  const more = [...list.filter(m => m.value !== 'default' && !MAIN_ALIASES.includes(m.value)), ...custom]
+  const more = [...list.filter(m => m.value !== 'default' && !main.includes(m)), ...custom]
   const current = findModel(list, model)
   const efforts = current?.supportedEffortLevels ?? ALL_EFFORTS
   const isCurrent = (m: ChatModelInfo) => !!model && (m.resolvedModel === baseModel(model) || m.value === baseModel(model))

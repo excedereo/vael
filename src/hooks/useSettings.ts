@@ -1,3 +1,4 @@
+import { DEFAULT_MODEL, toAlias } from '../lib/modelAlias.js'
 import { useState } from 'react'
 import { api } from '../lib/api.js'
 
@@ -83,18 +84,9 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
 }
 
 export const DEFAULT_SESSION_CONFIG: DefaultSessionConfig = {
-  model: 'claude-sonnet-5',
+  model: DEFAULT_MODEL,
   effort: 'high',
   permissionMode: 'bypassPermissions',
-}
-
-const MODEL_MIGRATION: Record<string, string> = {
-  'sonnet': 'claude-sonnet-5',
-  'opus':   'claude-opus-5',
-  'haiku':  'claude-haiku-4-5-20251001',
-  'fable':  'claude-fable-5',
-  'claude-sonnet-4-6': 'claude-sonnet-5',
-  'claude-opus-4-8':   'claude-opus-5',
 }
 
 export function loadDefaultSessionConfig(): DefaultSessionConfig {
@@ -102,8 +94,8 @@ export function loadDefaultSessionConfig(): DefaultSessionConfig {
     const raw = localStorage.getItem('vaeli:default-session-config')
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<DefaultSessionConfig>
-      if (parsed.model && MODEL_MIGRATION[parsed.model]) {
-        parsed.model = MODEL_MIGRATION[parsed.model]
+      if (parsed.model && toAlias(parsed.model) !== parsed.model) {
+        parsed.model = toAlias(parsed.model)
         localStorage.setItem('vaeli:default-session-config', JSON.stringify({ ...DEFAULT_SESSION_CONFIG, ...parsed }))
       }
       return { ...DEFAULT_SESSION_CONFIG, ...parsed }

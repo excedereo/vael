@@ -1,3 +1,4 @@
+import { DEFAULT_MODEL, toAlias } from '../lib/modelAlias.js'
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import { api } from '../lib/api.js'
 
@@ -16,19 +17,10 @@ export interface SessionConfig {
 }
 
 const DEFAULT_SESSION_CONFIG: SessionConfig = {
-  model: 'claude-sonnet-5',
+  model: DEFAULT_MODEL,
   effort: 'high',
   permissionMode: 'bypassPermissions',
   prompt: '',
-}
-
-const SESSION_MODEL_MIGRATION: Record<string, string> = {
-  'sonnet': 'claude-sonnet-5',
-  'opus':   'claude-opus-5',
-  'haiku':  'claude-haiku-4-5-20251001',
-  'fable':  'claude-fable-5',
-  'claude-sonnet-4-6': 'claude-sonnet-5',
-  'claude-opus-4-8':   'claude-opus-5',
 }
 
 function loadConfig(sessionId: string | null): SessionConfig {
@@ -37,8 +29,8 @@ function loadConfig(sessionId: string | null): SessionConfig {
     const raw = localStorage.getItem(`vaeli:session-config:${sessionId}`)
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<SessionConfig>
-      if (parsed.model && SESSION_MODEL_MIGRATION[parsed.model]) {
-        parsed.model = SESSION_MODEL_MIGRATION[parsed.model]
+      if (parsed.model && toAlias(parsed.model) !== parsed.model) {
+        parsed.model = toAlias(parsed.model)
         localStorage.setItem(`vaeli:session-config:${sessionId}`, JSON.stringify({ ...DEFAULT_SESSION_CONFIG, ...parsed }))
       }
       return { ...DEFAULT_SESSION_CONFIG, ...parsed }

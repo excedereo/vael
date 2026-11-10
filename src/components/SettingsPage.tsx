@@ -1,3 +1,4 @@
+import { toAlias } from '../lib/modelAlias.js'
 import { useState, useEffect, useRef } from 'react'
 import { ExternalLink, Trash2, HardDrive, Loader2, X, Plus, FolderOpen } from 'lucide-react'
 import { api } from '../lib/api.js'
@@ -69,24 +70,14 @@ export const DEFAULT_SESSION_CONFIG: DefaultSessionConfig = {
   permissionMode: 'bypassPermissions',
 }
 
-// Дефолт для новых сессий — алиас: он всегда указывает на свежую версию,
-// а конкретный id из старых настроек застревал на прошлом поколении
-const MODEL_MIGRATION: Record<string, string> = {
-  'claude-sonnet-5':           'sonnet',
-  'claude-opus-5':             'opus',
-  'claude-fable-5':            'fable',
-  'claude-haiku-4-5-20251001': 'haiku',
-  'claude-sonnet-4-6':         'sonnet',
-  'claude-opus-4-8':           'opus',
-}
 
 export function loadDefaultSessionConfig(): DefaultSessionConfig {
   try {
     const raw = localStorage.getItem('vaeli:default-session-config')
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<DefaultSessionConfig>
-      if (parsed.model && MODEL_MIGRATION[parsed.model]) {
-        parsed.model = MODEL_MIGRATION[parsed.model]
+      if (parsed.model && toAlias(parsed.model) !== parsed.model) {
+        parsed.model = toAlias(parsed.model)
         localStorage.setItem('vaeli:default-session-config', JSON.stringify({ ...DEFAULT_SESSION_CONFIG, ...parsed }))
       }
       return { ...DEFAULT_SESSION_CONFIG, ...parsed }
