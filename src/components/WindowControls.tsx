@@ -1,49 +1,43 @@
-import { useState, useEffect } from 'react'
-import { Minus, Square, X } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import { api } from '../lib/api.js'
-import { cn } from '../lib/utils.js'
-import { t } from '../lib/i18n.js'
+
+// Кнопки окна рисует сама Windows (titleBarOverlay в main): системный вид и
+// Snap Layouts. Здесь только место под них в шапке и их цвета под текущую тему.
+
+/** Ширина трёх системных кнопок Windows 11 (46px каждая) */
+const OVERLAY_WIDTH = 138
+
+/** Первый непрозрачный фон вверх по дереву — на нём и стоят кнопки */
+function solidBackground(el: HTMLElement | null): string {
+  for (let n = el; n; n = n.parentElement) {
+    const bg = getComputedStyle(n).backgroundColor
+    const a = bg.match(/rgba\([^)]*,\s*([\d.]+)\)/)
+    if (bg !== 'transparent' && (!a || parseFloat(a[1]) >= 0.99)) return bg
+  }
+  return getComputedStyle(document.body).backgroundColor || '#0a0a0a'
+}
 
 export function WindowControls() {
-  const [maximized, setMaximized] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    api.windowIsMaximized().then(setMaximized)
-    // Poll for maximize state changes (window resize by dragging)
-    const iv = setInterval(() => {
-      api.windowIsMaximized().then(setMaximized)
-    }, 500)
-    return () => clearInterval(iv)
+    let last = ''
+    const sync = () => {
+      const el = ref.current
+      if (!el) return
+      const color = solidBackground(el.parentElement)
+      const symbol = getComputedStyle(el).getPropertyValue('--text-secondary').trim() || '#cfcfcf'
+      if (color + symbol === last) return
+      last = color + symbol
+      void api.windowSetOverlay(color, symbol)
+    }
+    sync()
+    // Тема меняет переменные на <html>/<body> — ловим это и перекрашиваем кнопки
+    const mo = new MutationObserver(() => requestAnimationFrame(sync))
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'class', 'data-theme'] })
+    mo.observe(document.body, { attributes: true, attributeFilter: ['style', 'class'] })
+    return () => mo.disconnect()
   }, [])
 
-  const btn = 'no-drag w-[46px] h-11 flex items-center justify-center transition-colors'
-
-  return (
-    <div className="no-drag flex items-center shrink-0 h-11">
-      <button
-        onClick={() => api.windowMinimize()}
-        className={cn(btn, 'text-text-ghost hover:text-text-muted hover:bg-surface-hover')}
-        title={t("Свернуть", "Minimize")}
-      >
-        <Minus size={12} strokeWidth={1.5} />
-      </button>
-      <button
-        onClick={() => api.windowMaximize().then(() => api.windowIsMaximized().then(setMaximized))}
-        className={cn(btn, 'text-text-ghost hover:text-text-muted hover:bg-surface-hover')}
-        title={maximized ? t("Восстановить", "Restore") : t("Развернуть", "Maximize")}
-      >
-        {maximized
-          ? <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><rect x="3" y="0.5" width="7" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.2"/><rect x="0.5" y="3" width="7" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.2" fill="var(--bg-sidebar)"/></svg>
-          : <Square size={11} strokeWidth={1.5} />
-        }
-      </button>
-      <button
-        onClick={() => api.windowClose()}
-        className={cn(btn, 'text-text-ghost hover:text-white hover:bg-red-500/70')}
-        title={t("Закрыть", "Close")}
-      >
-        <X size={13} strokeWidth={1.5} />
-      </button>
-    </div>
-  )
+  return <div ref={ref} aria-hidden className="shrink-0 h-11" style={{ width: OVERLAY_WIDTH }} />
 }

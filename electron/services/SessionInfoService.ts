@@ -36,6 +36,9 @@ export function readSessionInfo(jsonlPath: string): SessionInfo {
 
     if (d.type === 'assistant' && d.message && typeof d.message === 'object') {
       const msg = d.message as { model?: string; content?: Array<{ type: string; text?: string }> }
+      // <synthetic> — ответы локальных команд (/context, /usage, ошибки лимита):
+      // это не модель, запуск с ней шёл бы мимо кэша на ровном месте
+      if (msg.model === '<synthetic>') continue
       if (msg.model) out.model = msg.model
       const text = (msg.content || [])
         .filter(c => c.type === 'text' && c.text)

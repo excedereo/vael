@@ -15,7 +15,7 @@ interface NavItem {
 // Верхняя группа — работа, нижняя — контекст (аккаунт/настройки)
 const WORK: NavItem[] = [
   { id: 'sessions', label: t("Сессии", "Sessions"), icon: MessagesSquare },
-  { id: 'pyre',     label: 'Pyre',     icon: Zap },
+  { id: 'pyre',     label: t("Модули", "Modules"), icon: Zap },
 ]
 const DEV: NavItem = { id: 'dev', label: 'Dev', icon: SquareTerminal }
 // Аккаунты открываются из карточки аккаунта внизу сайдбара — отдельная иконка была дублем

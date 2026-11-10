@@ -3,19 +3,12 @@ import { Zap } from 'lucide-react'
 import { PyrePage } from '../components/PyrePage.js'
 import type { VaeliPanel } from '../types/panel.js'
 import { useActiveModule } from '../lib/activeModule.js'
-import { api } from '../lib/api.js'
+import { api, type ModuleListItem } from '../lib/api.js'
 import type { Session } from '../types/index.js'
-
-interface ModuleInfo {
-  id: string
-  name: string
-  icon?: string
-  running: boolean
-}
 
 function PyreWrapper() {
   const [sessions, setSessions] = useState<Session[]>([])
-  const [, setModules] = useState<ModuleInfo[]>([])
+  const [modules, setModules] = useState<ModuleListItem[]>([])
   // Выбранный модуль общий с сайдбаром — см. lib/activeModule.ts
   const activeModuleId = useActiveModule()
 
@@ -31,9 +24,17 @@ function PyreWrapper() {
       .catch(() => {})
   }, [])
 
+  // Страницы модулей берутся из папки — список перечитываем, когда она меняется
+  useEffect(() => {
+    const load = () => { api.modulesList().then(setModules).catch(() => {}) }
+    load()
+    return api.onModulesChanged?.(load)
+  }, [])
+
   return (
     <PyrePage
       sessions={sessions}
+      modules={modules}
       activeModuleId={activeModuleId}
       onModulesChange={setModules}
     />
@@ -42,7 +43,7 @@ function PyreWrapper() {
 
 export const pyrePanel: VaeliPanel = {
   id: 'pyre',
-  label: 'Pyre',
+  label: 'Modules',
   icon: <Zap size={16} />,
   render() {
     return <PyreWrapper />

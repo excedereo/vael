@@ -170,8 +170,9 @@ export type ChatItem =
   | { kind: 'user'; key: string; text: string; attachments?: string[]; pending?: boolean; at?: number }
   | { kind: 'text'; key: string; text: string; at?: number }
   | { kind: 'thinking'; key: string; done: boolean }
-  | { kind: 'tool'; key: string; id: string; name: string; input: unknown; result?: string; isError?: boolean; done?: boolean }
-  | { kind: 'note'; key: string; text: string; markdown?: boolean }
+  | { kind: 'tool'; key: string; id: string; name: string; input: unknown; result?: string; isError?: boolean; done?: boolean; at?: number }
+  /** task — если это уведомление CLI о фоновой задаче */
+  | { kind: 'note'; key: string; text: string; markdown?: boolean; task?: { id: string; status: string; at?: number } }
   | { kind: 'divider'; key: string; text: string }
   /** Сжатие контекста: идёт / сжато (было → стало) / не вышло */
   | { kind: 'compact'; key: string; state: 'running' | 'done' | 'failed'; startedAt?: number; before?: number; after?: number; error?: string; files?: CompactFile[]; summary?: string }

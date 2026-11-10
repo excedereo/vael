@@ -1,10 +1,9 @@
 import { Heart, Flash } from 'iconsax-reactjs'
-import { cn } from '../lib/utils.js'
 
-// Иконка модуля Pyre по ключу, который модуль отдаёт в поле `icon`.
+// Иконка модуля по ключу, который модуль отдаёт в поле `icon`.
 //
-// Иконки iconsax в цвете темы. Держим в одном месте, чтобы сайдбар и панели
-// не разъезжались, когда появится новый модуль.
+// Встроенные — иконки iconsax в цвете темы. Страницы из папки modules
+// приносят свою картинку (icon в module.json) — её url схемы vael-module.
 
 interface Props {
   icon?: string
@@ -15,6 +14,10 @@ interface Props {
 
 export function ModuleIcon({ icon, size = 18, dimmed }: Props) {
   const color = dimmed ? 'var(--text-faint)' : 'var(--accent)'
+
+  if (icon?.startsWith('vael-module://')) {
+    return <img src={icon} width={size} height={size} alt="" draggable={false} style={{ opacity: dimmed ? 0.6 : 1, objectFit: 'contain' }} />
+  }
 
   if (icon === 'heart') {
     return <Heart size={size} variant="Bold" color={color} />

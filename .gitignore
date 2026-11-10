@@ -54,3 +54,6 @@ shots/capture.log
 
 # Native addon build output (node-gyp)
 native/build/
+
+# Личные модули: лежат внутри программы, но не в репозитории
+/modules/

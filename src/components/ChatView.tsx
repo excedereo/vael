@@ -13,6 +13,8 @@ import type { ChatItem, ChatAttachment, TurnStats } from '../types/index'
 import { cn } from '../lib/utils.js'
 import { FileCard } from './FileCard.js'
 import { ImageGallery } from './ChatImages.js'
+import { SessionTray } from './SessionTray.js'
+import { ContextPanel } from './ContextPanel.js'
 import logo from '../assets/logo.svg'
 import logoSmall from '../assets/logo-small.svg'
 import { t, LOCALE } from '../lib/i18n.js'
@@ -24,6 +26,8 @@ interface Props {
   visible: boolean
   /** параметры, с которыми процесс запущен: effort из потока не узнать */
   effort?: string
+  /** Лента загружена и начала собираться — экран входа можно убирать */
+  onReady?: () => void
 }
 
 interface Option { value: string; label: string; sub?: string }
@@ -531,6 +535,25 @@ function groupRows(items: ChatItem[], group = true): Row[] {
     rows.push({ kind: 'item', item: it })
   }
   return rows
+}
+
+const rowKey = (r: Row) => r.kind === 'item' ? r.item.key : r.key
+
+const sameList = <T,>(a: T[], b: T[]) => a.length === b.length && a.every((x, i) => x === b[i])
+
+/**
+ * Строки пересобираются на каждом кадре стрима, и группы получали бы новые
+ * объекты — memo у прошлых ходов не срабатывал, вся лента перерисовывалась.
+ * Если содержимое группы то же, отдаём прошлый объект
+ */
+function reuseRow(prev: Map<string, Row>, r: Row): Row {
+  const old = prev.get(rowKey(r))
+  if (!old || old.kind !== r.kind) return r
+  if (r.kind === 'item') return old.kind === 'item' && old.item === r.item ? old : r
+  if (r.kind === 'tools') return old.kind === 'tools' && sameList(old.items, r.items) ? old : r
+  if (old.kind !== 'steps' || !sameList(old.tools, r.tools) || old.rows.length !== r.rows.length) return r
+  const inner = r.rows.map(x => reuseRow(new Map(old.rows.map(o => [rowKey(o), o])), x))
+  return sameList(inner, old.rows) ? old : { ...r, rows: inner }
 }
 
 function RowView({ row }: { row: Row }) {
@@ -1115,6 +1138,10 @@ function Composer({ disabled, busy, onSend, onStop, commands, visible, footer }:
     const files = Array.from(e.clipboardData.files)
     if (files.length > 0) {
       rememberCaret()
+      // Скопированные в проводнике файлы — с путём: читает main, любой формат.
+      // Без пути только вставка из буфера (скриншот), её читаем здесь
+      const paths = files.map(f => api.pathForFile?.(f) ?? '')
+      if (paths.every(Boolean)) { attachPaths(paths); return }
       insertAttachments(await Promise.all(files.map(f => fileToAttachment(f).catch(() => null))))
       return
     }
@@ -1216,7 +1243,7 @@ function Composer({ disabled, busy, onSend, onStop, commands, visible, footer }:
   )
 }
 
-export function ChatView({ sessionId, jsonlPath, alive, visible, effort: initialEffort }: Props) {
+export function ChatView({ sessionId, jsonlPath, alive, visible, effort: initialEffort, onReady }: Props) {
   const chat = useChatSession(sessionId, jsonlPath, alive)
   const displayName = useDisplayName()
   const [effort, setEffort] = useState(initialEffort ?? null)
@@ -1227,6 +1254,25 @@ export function ChatView({ sessionId, jsonlPath, alive, visible, effort: initial
   const toggleCtx = () => setCtxFull(v => { try { localStorage.setItem('vaeli:ctx-full', v ? '0' : '1') } catch {} return !v })
 
   const colRef = useRef<HTMLDivElement>(null)
+
+  // Вход в чат: пока история не пришла, ленту не показываем, а когда пришла —
+  // она собирается снизу вверх. Раньше экран проявлялся пустым и потом прыгал
+  // Сборка стартует через два кадра: за это время лента успевает отрисоваться
+  // и прилипнуть к низу, иначе прокрутка дёргает её посреди анимации
+  const ready = chat.historyLoaded
+  const [phase, setPhase] = useState<'wait' | 'enter' | 'done'>('wait')
+  const onReadyRef = useRef(onReady)
+  onReadyRef.current = onReady
+  useEffect(() => {
+    if (!visible || !ready) { setPhase('wait'); return }
+    let f2 = 0, id = 0
+    const f1 = requestAnimationFrame(() => { f2 = requestAnimationFrame(() => {
+      setPhase('enter')
+      onReadyRef.current?.()
+      id = window.setTimeout(() => setPhase('done'), 1100)
+    }) })
+    return () => { cancelAnimationFrame(f1); cancelAnimationFrame(f2); clearTimeout(id) }
+  }, [visible, ready])
 
   // Прилипаем к низу, пока пользователь сам не отмотал вверх. Следим за высотой
   // ленты, а не за items: текст проявляется плавно и растёт между событиями
@@ -1273,7 +1319,12 @@ export function ChatView({ sessionId, jsonlPath, alive, visible, effort: initial
   }
 
   const empty = chat.historyLoaded && chat.items.length === 0
-  const rows = useMemo(() => buildRows(chat.items, chat.busy), [chat.items, chat.busy])
+  const prevRows = useRef(new Map<string, Row>())
+  const rows = useMemo(() => {
+    const next = buildRows(chat.items, chat.busy).map(r => reuseRow(prevRows.current, r))
+    prevRows.current = new Map(next.map(r => [rowKey(r), r]))
+    return next
+  }, [chat.items, chat.busy])
 
   const pct = chat.contextTokens != null && chat.contextWindow ? chat.contextTokens / chat.contextWindow * 100 : null
 
@@ -1330,7 +1381,7 @@ export function ChatView({ sessionId, jsonlPath, alive, visible, effort: initial
   )
 
   return (
-    <div className="chat-root" style={{ display: visible ? 'flex' : 'none' }}>
+    <div className={cn('chat-root', phase === 'wait' && 'is-loading', phase === 'enter' && 'is-entering')} style={{ display: visible ? 'flex' : 'none' }}>
       {empty ? (
         <div className="chat-empty">
           <h1 className="chat-greeting"><Spark size={34} />{greeting(displayName)}</h1>
@@ -1338,6 +1389,7 @@ export function ChatView({ sessionId, jsonlPath, alive, visible, effort: initial
         </div>
       ) : (
         <>
+          <ContextPanel items={chat.items} />
           <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
             <div className="chat-col" ref={colRef}>
               <LiveKeyContext.Provider value={liveKey}>
@@ -1349,6 +1401,7 @@ export function ChatView({ sessionId, jsonlPath, alive, visible, effort: initial
           <div className="chat-bottom">
             {away && <button className="chat-to-bottom" onClick={toBottom} title={t("Вниз", "Down")}><ArrowDown size={16} /></button>}
             {chat.status && <div className="chat-status">{chat.status}</div>}
+            <SessionTray items={chat.items} />
             {composer}
           </div>
         </>

@@ -1,6 +1,18 @@
 import type { Account, Session, JsonlEntry, StreamEvent, UsageData, ContextData, SessionMeta } from '../types/index'
 import type { ChatHistory, ChatStartOptions, ChatAttachment, CompactTail, CompactSummary } from '../../shared/types.js'
 
+/** Модуль в разделе «Модули»: встроенный (Heartbeat) или страница из папки modules */
+export interface ModuleListItem {
+  id: string
+  name: string
+  icon?: string
+  running: boolean
+  /** page — страница из папки: рисуется в iframe, запуска и остановки нет */
+  kind?: 'builtin' | 'page'
+  description?: string
+  entry?: string
+}
+
 /** Модель из ответа CLI на initialize */
 export interface ChatModelInfo {
   value: string
@@ -178,6 +190,7 @@ export interface ElectronAPI {
   chatContextUsage: (sessionId: string) => Promise<{ ok: boolean; totalTokens?: number; maxTokens?: number; error?: string }>
   chatReadAttachments: (paths: string[]) => Promise<ChatAttachment[]>
   chatPickFiles: () => Promise<string[]>
+  pathForFile?: (file: File) => string
   chatInterrupt: (sessionId: string) => Promise<{ ok: boolean; error?: string }>
   chatSetModel: (sessionId: string, model: string) => Promise<{ ok: boolean; model?: string; error?: string }>
   chatSetPermissionMode: (sessionId: string, mode: string) => Promise<{ ok: boolean; mode?: string; error?: string }>
@@ -185,6 +198,8 @@ export interface ElectronAPI {
   chatAlive: (sessionId: string) => Promise<{ alive: boolean }>
   chatList: () => Promise<{ sessionId: string; hasJsonl: boolean }[]>
   chatHistory: (jsonlPath: string) => Promise<ChatHistory>
+  /** Хвост вывода фоновой задачи CLI (файл *.output во временной папке) */
+  taskTail: (file: string, bytes?: number) => Promise<{ size: number; text: string } | null>
   chatCompactTail: (jsonlPath: string, pre?: number) => Promise<CompactTail>
   chatSummaries: (jsonlPath: string) => Promise<CompactSummary[]>
   onChatEvent: (cb: (sessionId: string, ev: ChatStreamEvent) => void) => () => void
@@ -231,6 +246,8 @@ export interface ElectronAPI {
   windowMaximize: () => Promise<void>
   windowClose: () => Promise<void>
   windowIsMaximized: () => Promise<boolean>
+  /** Цвета системных кнопок окна (titleBarOverlay) */
+  windowSetOverlay: (color: string, symbolColor: string) => Promise<void>
 
   updateDownload: () => Promise<void>
   updateInstall: () => Promise<void>
@@ -266,11 +283,16 @@ export interface ElectronAPI {
   onSessionReply: (cb: (sessionId: string, text: string) => void) => () => void
 
   // Pyre modules
-  modulesList: () => Promise<{ id: string; name: string; icon?: string; running: boolean }[]>
+  modulesList: () => Promise<ModuleListItem[]>
   modulesGetSettings: (id: string) => Promise<Record<string, unknown> | null>
   modulesSetSettings: (id: string, settings: Record<string, unknown>) => Promise<{ ok: boolean }>
   modulesStart: (id: string) => Promise<{ ok: boolean }>
   modulesStop: (id: string) => Promise<{ ok: boolean }>
+  modulesCreate: (name: string) => Promise<{ ok: true; id: string } | { ok: false; error: string }>
+  modulesOpenFolder: (id?: string) => Promise<void>
+  modulesCall?: (id: string, method: string, args: unknown[]) => Promise<{ ok: true; result: unknown } | { ok: false; error: string }>
+  onModuleEvent?: (cb: (id: string, name: string, data: unknown) => void) => () => void
+  onModulesChanged: (cb: () => void) => () => void
 
   // Heartbeat
   heartbeatQueue: () => Promise<WakeEntry[]>

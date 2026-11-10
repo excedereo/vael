@@ -28,6 +28,8 @@ export type StatusChangeListener = (
   status: string,
   prev: string,
   replyText: string | null,
+  /** ход начался не с сообщения человека, а с уведомления CLI о фоновой задаче */
+  auto?: boolean,
 ) => void
 
 // Подписчики на смену статуса (уведомления и т.п.) — чтобы не вшивать их сюда
@@ -217,8 +219,9 @@ function startSessionWatch(
       }
 
       if (prev !== undefined) {
+        const auto = shouldFire && turnStartedByTask(jsonlPath)
         for (const listener of statusChangeListeners) {
-          try { listener(sessionId, status, prev, replyText) } catch {}
+          try { listener(sessionId, status, prev, replyText, auto) } catch {}
         }
       }
     }
@@ -358,6 +361,35 @@ type JsonlLike = { type?: string; isMeta?: boolean; message?: AssistantMessage }
 /** Держать в синхроне с SessionStatus в src/context/SessionContext.tsx */
 type SessionStatusValue = 'idle' | 'thinking' | 'streaming' | 'tool' | 'asking'
 
+/**
+ * Начался ли последний ход с уведомления CLI о фоновой задаче, а не с сообщения
+ * человека. Смотрим последнюю «живую» запись user в хвосте файла: целиком
+ * jsonl тут читать незачем
+ */
+function turnStartedByTask(jsonlPath: string): boolean {
+  try {
+    const fd = fs.openSync(jsonlPath, 'r')
+    const size = fs.fstatSync(fd).size
+    const len = Math.min(size, 512 * 1024)
+    const buf = Buffer.alloc(len)
+    fs.readSync(fd, buf, 0, len, size - len)
+    fs.closeSync(fd)
+    const lines = buf.toString('utf-8').split('\n')
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (!lines[i].includes('"type":"user"')) continue
+      let e: { type?: string; isMeta?: boolean; origin?: { kind?: string }; message?: { content?: unknown } }
+      try { e = JSON.parse(lines[i]) } catch { continue }
+      if (e.type !== 'user' || e.isMeta) continue
+      const c = e.message?.content
+      if (Array.isArray(c) && c.some((b: { type?: string }) => b?.type === 'tool_result')) continue
+      const text = typeof c === 'string' ? c : Array.isArray(c) ? c.map((b: { text?: string }) => b?.text ?? '').join('') : ''
+      return e.origin?.kind === 'task-notification'
+        || (/^\s*<(task-notification|system-reminder)>/.test(text) && text.includes('<task-notification>'))
+    }
+  } catch {}
+  return false
+}
+
 function extractLastAssistantText(jsonlPath: string): string | null {
   try {
     const content = fs.readFileSync(jsonlPath, 'utf-8')
@@ -420,7 +452,7 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null) {
     } else {
       args.push('--permission-mode', permissionMode)
     }
-    if (model)     args.push('--model', model)
+    if (model && model !== '<synthetic>') args.push('--model', model)
     if (effort)    args.push('--effort', effort)
     if (sessionId) args.push('--resume', sessionId)
 

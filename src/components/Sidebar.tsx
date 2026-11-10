@@ -3,12 +3,12 @@ import { motion } from 'framer-motion'
 import { createPortal } from 'react-dom'
 import type { Session, Account } from '../types/index'
 import { cn } from '../lib/utils.js'
-import { Zap, Trash2, Pencil, ArrowDownUp, Archive, ArchiveRestore, ChevronRight, Search, SquarePen, X, ScrollText } from 'lucide-react'
+import { Zap, Trash2, Pencil, ArrowDownUp, Archive, ArchiveRestore, ChevronRight, Search, SquarePen, X, ScrollText, FolderOpen } from 'lucide-react'
 import type { Section } from './NavRail.js'
 import { SECTION_LABEL } from '../lib/sectionLabels.js'
 import { Brush, Message, Notification, Monitor, Profile, Chart2 } from 'iconsax-reactjs'
 import type { Icon as IconType } from 'iconsax-reactjs'
-import { api } from '../lib/api.js'
+import { api, type ModuleListItem as ModuleInfo } from '../lib/api.js'
 import { ModuleIcon } from './ModuleIcon.js'
 import { useSettingsTab, setSettingsTab, useAccountsTab, setAccountsTab } from '../lib/sectionTabs.js'
 import type { SettingsTab, AccountsTab } from '../lib/sectionTabs.js'
@@ -20,12 +20,6 @@ interface ContextMenu {
   session: Session
 }
 
-interface ModuleInfo {
-  id: string
-  name: string
-  icon?: string
-  running: boolean
-}
 
 interface Props {
   section: Section
@@ -232,17 +226,29 @@ function SessionItem({ session, active, onClick, onContextMenu, isRenaming, rena
 
 export function Sidebar({ section, sessions, activeSessionId, newSessionId, runningSessionIds = [], chatSessionIds = [], onSelect, onNew, onDelete, onSummaries, isLocked, modules = [], activeModuleId, onSelectModule, onMetaChange }: Props) {
   const [query, setQuery] = useState('')
+  // Ввод имени нового модуля прямо в строке: null — строка обычная
+  const [creating, setCreating] = useState<string | null>(null)
+  const createModule = async () => {
+    const name = (creating ?? '').trim()
+    if (!name || !api.modulesCreate) { setCreating(null); return }
+    const r = await api.modulesCreate(name)
+    setCreating(null)
+    if (r.ok) onSelectModule?.(r.id)
+  }
   const searchRef = useRef<HTMLInputElement>(null)
 
-  // Ctrl+K — к поиску сессий
+  // Ctrl+K — к поиску сессий, Ctrl+N — новая сессия. В терминале Ctrl+N не
+  // перехватываем: это клавиша самого CLI
   useEffect(() => {
     if (section !== 'sessions') return
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyK') { e.preventDefault(); searchRef.current?.focus(); searchRef.current?.select() }
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return
+      if (e.code === 'KeyK') { e.preventDefault(); searchRef.current?.focus(); searchRef.current?.select() }
+      else if (e.code === 'KeyN' && !isLocked && !(e.target as HTMLElement | null)?.closest?.('.xterm')) { e.preventDefault(); onNew() }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [section])
+  }, [section, isLocked, onNew])
 
   const [ctxMenu, setCtxMenu] = useState<ContextMenu | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -415,76 +421,78 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
   return (
     <div className="flex flex-col h-full">
       {/* Верхняя линия окна: та же высота и граница, что у шапки справа */}
-      <div ref={sortRef} className="relative h-11 shrink-0 flex items-center gap-1.5 px-2 border-b border-border-subtle app-drag-region">
-        {section === 'sessions' ? (
-          <>
-            <label className="sidebar-search no-drag">
-              <Search size={14} className="shrink-0" />
-              <input
-                ref={searchRef}
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Escape') { setQuery(''); e.currentTarget.blur() } }}
-                placeholder={tr("Поиск", "Search")}
-                spellCheck={false}
-              />
-              {query ? (
-                <button onClick={() => setQuery('')} className="text-text-faint hover:text-text-secondary" title={tr("Очистить", "Clear")}><X size={13} /></button>
-              ) : <kbd>Ctrl K</kbd>}
-            </label>
-            <button
-              onClick={() => setSortOpen(v => !v)}
-              className={cn('no-drag w-7 h-7 shrink-0 rounded-md flex items-center justify-center transition-colors', sortOpen ? 'text-accent bg-accent-wash' : 'text-text-faint hover:text-text-secondary hover:bg-surface-hover')}
-              title={tr("Сортировка: ", "Sort: ") + SORT_LABEL[sortMode].toLowerCase()}
-            >
-              <ArrowDownUp size={14} />
-            </button>
-            <button
-              onClick={onNew}
-              disabled={isLocked}
-              className="no-drag w-7 h-7 shrink-0 rounded-md flex items-center justify-center text-text-faint hover:text-text-primary hover:bg-surface-hover transition-colors disabled:opacity-30"
-              title={tr("Новая сессия", "New session")}
-            >
-              <SquarePen size={15} />
-            </button>
-          </>
-        ) : (
-          <span className="px-1.5 text-[13.5px] font-medium text-text-primary select-none">{SECTION_LABEL[section]}</span>
-        )}
-
-            {/* Поповер сортировки */}
-            {section === 'sessions' && sortOpen && (
-              <div className="absolute top-9 right-2 z-30 no-drag w-[204px] rounded-[11px] border border-border-strong bg-bg-elevated p-1.5 shadow-[0_20px_44px_-14px_rgba(0,0,0,0.9)]">
-                <div className="px-2.5 pt-1.5 pb-1 text-[9.5px] uppercase tracking-[0.15em] text-text-faint">{tr("Сортировать по", "Sort by")}</div>
-                {(['recent', 'created', 'name', 'custom'] as SortMode[]).map(m => (
-                  <button
-                    key={m}
-                    onClick={() => changeSort(m)}
-                    className={cn('w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12.5px] transition-colors',
-                      sortMode === m ? 'text-text-primary' : 'text-text-secondary hover:bg-surface-hover')}
-                  >
-                    <span className={cn('w-[13px] h-[13px] rounded-full border flex-none relative', sortMode === m ? 'border-accent' : 'border-text-faint')}>
-                      {sortMode === m && <span className="absolute inset-[2.5px] rounded-full bg-accent" />}
-                    </span>
-                    {SORT_LABEL[m]}
-                  </button>
-                ))}
-                {archivedSessions.length > 0 && <>
-                  <div className="h-px bg-border-subtle mx-1.5 my-1" />
-                  <button
-                    onClick={() => { setShowArchived(v => !v); setSortOpen(false) }}
-                    className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12.5px] text-text-secondary hover:bg-surface-hover transition-colors"
-                  >
-                    <Archive size={14} className="text-text-faint flex-none" />
-                    {tr("Показывать архив", "Show archive")}
-                    <span className={cn('ml-auto w-7 h-4 rounded-full relative flex-none transition-colors', showArchived ? 'bg-accent-deep' : 'bg-surface-active')}>
-                      <span className={cn('absolute top-0.5 w-3 h-3 rounded-full transition-all', showArchived ? 'right-0.5 bg-white' : 'left-0.5 bg-text-muted')} />
-                    </span>
-                  </button>
-                </>}
-              </div>
-            )}
+      <div className="h-11 shrink-0 flex items-center px-2 border-b border-border-subtle app-drag-region">
+        <span className="px-1.5 text-[13.5px] font-medium text-text-primary select-none">{SECTION_LABEL[section]}</span>
       </div>
+
+      {section === 'sessions' && (<>
+        {/* Действия строками: с подписью и клавишей понятнее, чем иконки */}
+        <div className="px-1.5 pt-1.5 flex flex-col gap-px">
+          <button onClick={onNew} disabled={isLocked} className="sidebar-row">
+            <SquarePen size={15} className="shrink-0" />
+            <span className="flex-1 text-left">{tr("Новая сессия", "New session")}</span>
+            <kbd>Ctrl N</kbd>
+          </button>
+          <label className="sidebar-row is-search">
+            <Search size={15} className="shrink-0" />
+            <input
+              ref={searchRef}
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape') { setQuery(''); e.currentTarget.blur() } }}
+              placeholder={tr("Поиск", "Search")}
+              spellCheck={false}
+            />
+            {query ? (
+              <button onClick={() => setQuery('')} className="text-text-faint hover:text-text-secondary" title={tr("Очистить", "Clear")}><X size={13} /></button>
+            ) : <kbd>Ctrl K</kbd>}
+          </label>
+        </div>
+
+        {/* Разделитель списка с сортировкой справа */}
+        <div ref={sortRef} className="relative mx-3.5 mt-2 mb-0.5 flex items-center gap-2">
+          <span className="h-px flex-1 bg-border-subtle" />
+          <button
+            onClick={() => setSortOpen(v => !v)}
+            className={cn('w-6 h-6 shrink-0 rounded-md flex items-center justify-center transition-colors', sortOpen ? 'text-accent bg-accent-wash' : 'text-text-faint hover:text-text-secondary hover:bg-surface-hover')}
+            title={tr("Сортировка: ", "Sort: ") + SORT_LABEL[sortMode].toLowerCase()}
+          >
+            <ArrowDownUp size={13} />
+          </button>
+          {/* Поповер сортировки */}
+          {section === 'sessions' && sortOpen && (
+            <div className="absolute top-7 right-0 z-30 no-drag w-[204px] rounded-[11px] border border-border-strong bg-bg-elevated p-1.5 shadow-[0_20px_44px_-14px_rgba(0,0,0,0.9)]">
+              <div className="px-2.5 pt-1.5 pb-1 text-[9.5px] uppercase tracking-[0.15em] text-text-faint">{tr("Сортировать по", "Sort by")}</div>
+              {(['recent', 'created', 'name', 'custom'] as SortMode[]).map(m => (
+                <button
+                  key={m}
+                  onClick={() => changeSort(m)}
+                  className={cn('w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12.5px] transition-colors',
+                    sortMode === m ? 'text-text-primary' : 'text-text-secondary hover:bg-surface-hover')}
+                >
+                  <span className={cn('w-[13px] h-[13px] rounded-full border flex-none relative', sortMode === m ? 'border-accent' : 'border-text-faint')}>
+                    {sortMode === m && <span className="absolute inset-[2.5px] rounded-full bg-accent" />}
+                  </span>
+                  {SORT_LABEL[m]}
+                </button>
+              ))}
+              {archivedSessions.length > 0 && <>
+                <div className="h-px bg-border-subtle mx-1.5 my-1" />
+                <button
+                  onClick={() => { setShowArchived(v => !v); setSortOpen(false) }}
+                  className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12.5px] text-text-secondary hover:bg-surface-hover transition-colors"
+                >
+                  <Archive size={14} className="text-text-faint flex-none" />
+                  {tr("Показывать архив", "Show archive")}
+                  <span className={cn('ml-auto w-7 h-4 rounded-full relative flex-none transition-colors', showArchived ? 'bg-accent-deep' : 'bg-surface-active')}>
+                    <span className={cn('absolute top-0.5 w-3 h-3 rounded-full transition-all', showArchived ? 'right-0.5 bg-white' : 'left-0.5 bg-text-muted')} />
+                  </span>
+                </button>
+              </>}
+            </div>
+          )}
+    </div>
+      </>)}
 
       {/* Sessions */}
       {section === 'sessions' && (
@@ -526,11 +534,33 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
         </div>
       )}
 
-      {/* Pyre — modules */}
+      {/* Модули: встроенные и страницы из папки modules */}
       {section === 'pyre' && (
         <div className="flex flex-col flex-1 min-h-0 overflow-y-auto">
-          <div className="flex items-center justify-between px-3 pb-1.5">
-            <span className="text-[11px] text-text-faint uppercase tracking-widest">{tr("Модули", "Modules")}</span>
+          <div className="flex flex-col gap-0.5 px-2 pb-2">
+            {creating !== null ? (
+              <form className="sidebar-row is-input" onSubmit={e => { e.preventDefault(); void createModule() }}>
+                <SquarePen size={16} strokeWidth={1.8} />
+                <input
+                  autoFocus
+                  value={creating}
+                  onChange={e => setCreating(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Escape') setCreating(null) }}
+                  onBlur={() => { if (!creating.trim()) setCreating(null) }}
+                  placeholder={tr("Название модуля", "Module name")}
+                  maxLength={60}
+                />
+              </form>
+            ) : (
+              <button className="sidebar-row" onClick={() => setCreating('')}>
+                <SquarePen size={16} strokeWidth={1.8} />
+                <span>{tr("Новый модуль", "New module")}</span>
+              </button>
+            )}
+            <button className="sidebar-row" onClick={() => void api.modulesOpenFolder?.()}>
+              <FolderOpen size={16} strokeWidth={1.8} />
+              <span>{tr("Папка модулей", "Modules folder")}</span>
+            </button>
           </div>
           <div className="flex flex-col gap-0.5 px-2">
             {modules.length === 0 && (
@@ -568,12 +598,13 @@ export function Sidebar({ section, sessions, activeSessionId, newSessionId, runn
                       {m.name}
                     </div>
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className={cn(
+                      {/* У страницы нет запуска — и точки статуса тоже */}
+                      {m.kind !== 'page' && <span className={cn(
                         'w-1.5 h-1.5 rounded-full transition-colors',
                         m.running ? 'bg-[var(--color-success)] animate-pulse' : 'bg-text-ghost',
-                      )} />
-                      <span className="text-[11px] text-text-faint">
-                        {m.running ? tr("работает", "running") : tr("остановлен", "stopped")}
+                      )} />}
+                      <span className="text-[11px] text-text-faint truncate">
+                        {m.kind === 'page' ? (m.description || tr("страница", "page")) : m.running ? tr("работает", "running") : tr("остановлен", "stopped")}
                       </span>
                     </div>
                   </div>

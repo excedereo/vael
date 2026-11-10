@@ -50,7 +50,7 @@ type Info = Awaited<ReturnType<typeof api.fileInfo>>
 const cache = new Map<string, { info: Info; thumb: string | null }>()
 
 /** card — отдельной строкой; chip — плашка внутри фразы, чтобы не рвать текст */
-export function FileCard({ href, variant = 'card' }: { href: string; variant?: 'card' | 'chip' }) {
+export function FileCard({ href, variant = 'card', hideMissing = false }: { href: string; variant?: 'card' | 'chip'; hideMissing?: boolean }) {
   const [state, setState] = useState(() => cache.get(href) ?? null)
 
   useEffect(() => {
@@ -91,6 +91,9 @@ export function FileCard({ href, variant = 'card' }: { href: string; variant?: '
       if (!missing && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); void api.fileReveal(href) }
     },
   } as const
+
+  // В полоске файлов хода удалённые не нужны (а пока размер неизвестен — тоже не мигаем ими)
+  if (hideMissing && (missing || state === null)) return null
 
   if (variant === 'chip') {
     return (

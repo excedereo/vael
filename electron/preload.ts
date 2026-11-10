@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 contextBridge.exposeInMainWorld('api', {
   // Accounts
@@ -64,6 +64,8 @@ contextBridge.exposeInMainWorld('api', {
   chatContextUsage: (sessionId: string) => ipcRenderer.invoke('chat:contextUsage', sessionId),
   chatReadAttachments: (paths: string[]) => ipcRenderer.invoke('chat:readAttachments', paths),
   chatPickFiles: () => ipcRenderer.invoke('chat:pickFiles'),
+  // У File в окне больше нет .path — настоящий путь отдаёт только webUtils
+  pathForFile: (file: File) => { try { return webUtils.getPathForFile(file) || '' } catch { return '' } },
   chatInterrupt: (sessionId: string) => ipcRenderer.invoke('chat:interrupt', sessionId),
   chatSetModel: (sessionId: string, model: string) => ipcRenderer.invoke('chat:setModel', sessionId, model),
   chatSetPermissionMode: (sessionId: string, mode: string) => ipcRenderer.invoke('chat:setPermissionMode', sessionId, mode),
@@ -71,6 +73,7 @@ contextBridge.exposeInMainWorld('api', {
   chatAlive: (sessionId: string) => ipcRenderer.invoke('chat:alive', sessionId),
   chatList: () => ipcRenderer.invoke('chat:list'),
   chatHistory: (jsonlPath: string) => ipcRenderer.invoke('chat:history', jsonlPath),
+  taskTail: (file: string, bytes?: number) => ipcRenderer.invoke('task:tail', file, bytes),
   chatCompactTail: (jsonlPath: string, pre?: number) => ipcRenderer.invoke('chat:compactFiles', jsonlPath, pre),
   chatSummaries: (jsonlPath: string) => ipcRenderer.invoke('chat:summaries', jsonlPath),
   onChatEvent: (cb: (sessionId: string, ev: unknown) => void) => {
@@ -168,6 +171,7 @@ contextBridge.exposeInMainWorld('api', {
   windowMaximize: () => ipcRenderer.invoke('window:maximize'),
   windowClose: () => ipcRenderer.invoke('window:close'),
   windowIsMaximized: () => ipcRenderer.invoke('window:isMaximized'),
+  windowSetOverlay: (color: string, symbolColor: string) => ipcRenderer.invoke('window:setOverlay', color, symbolColor),
 
   onSessionReload: (cb: (sessionId: string) => void) => {
     const handler = (_: unknown, sessionId: string) => cb(sessionId)
@@ -221,6 +225,11 @@ contextBridge.exposeInMainWorld('api', {
   modulesSetSettings: (id: string, settings: Record<string, unknown>) => ipcRenderer.invoke('modules:setSettings', id, settings),
   modulesStart: (id: string) => ipcRenderer.invoke('modules:start', id),
   modulesStop: (id: string) => ipcRenderer.invoke('modules:stop', id),
+  modulesCreate: (name: string) => ipcRenderer.invoke('modules:create', name),
+  modulesOpenFolder: (id?: string) => ipcRenderer.invoke('modules:openFolder', id),
+  modulesCall: (id: string, method: string, args: unknown[]) => ipcRenderer.invoke('modules:call', id, method, args),
+  onModuleEvent: (cb: (id: string, name: string, data: unknown) => void) => { const h = (_: unknown, id: string, name: string, data: unknown) => cb(id, name, data); ipcRenderer.on('modules:event', h); return () => { ipcRenderer.removeListener('modules:event', h) } },
+  onModulesChanged: (cb: () => void) => { const h = () => cb(); ipcRenderer.on('modules:changed', h); return () => { ipcRenderer.removeListener('modules:changed', h) } },
 
   // Heartbeat — очередь побудок
   heartbeatQueue: () => ipcRenderer.invoke('heartbeat:queue'),

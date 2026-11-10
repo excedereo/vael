@@ -1,5 +1,6 @@
 import type { PyreModule, ModuleContext } from './modules/types.js'
 import { HeartbeatModule } from './modules/heartbeat.js'
+import { listUserModules } from './services/UserModules.js'
 
 export class ModuleRegistry {
   private modules: Map<string, PyreModule> = new Map()
@@ -26,13 +27,25 @@ export class ModuleRegistry {
     }
   }
 
+  /** Встроенные модули, а следом страницы из папки modules */
   list() {
-    return Array.from(this.modules.values()).map(m => ({
+    const builtin = Array.from(this.modules.values()).map(m => ({
       id: m.id,
       name: m.name,
       icon: m.icon,
       running: m.isRunning(),
+      kind: 'builtin' as const,
     }))
+    const pages = listUserModules().map(m => ({
+      id: m.id,
+      name: m.name,
+      icon: m.icon,
+      running: true,
+      kind: 'page' as const,
+      description: m.description,
+      entry: m.entry,
+    }))
+    return [...builtin, ...pages]
   }
 
   get(id: string) {

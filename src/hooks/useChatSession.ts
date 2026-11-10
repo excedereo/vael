@@ -77,6 +77,7 @@ export function useChatSession(sessionId: string | null, jsonlPath: string | nul
     compactKey: null as string | null,  // карточка идущего компакта
     // Свои сообщения, показанные сразу при отправке: ждут эха от CLI, потом ответа модели
     outbox: [] as { key: string; text: string; echoed: boolean }[],
+    seenTasks: new Set<string>(),       // task-id уведомлений о фоновых задачах, уже показанных
     curMsg: '',
     seq: 0,
     frame: 0,
@@ -217,7 +218,7 @@ export function useChatSession(sessionId: string | null, jsonlPath: string | nul
           if (cb.type === 'text') { push({ kind: 'text', key, text: '', at: Date.now() }); t.phase = 'writing' }
           else if (cb.type === 'thinking') { push({ kind: 'thinking', key, done: false }); t.phase = 'thinking' }
           else if (cb.type === 'tool_use') {
-            push({ kind: 'tool', key, id: cb.id, name: cb.name, input: null, done: false })
+            push({ kind: 'tool', key, id: cb.id, name: cb.name, input: null, done: false, at: Date.now() })
             r.tools.set(cb.id, key)
             r.json.set(key, '')
             t.phase = 'tool'
@@ -261,7 +262,7 @@ export function useChatSession(sessionId: string | null, jsonlPath: string | nul
           if (b.type === 'text' && b.text) push({ kind: 'text', key: nextKey(), text: b.text, at: Date.now() })
           else if (b.type === 'tool_use') {
             const key = nextKey()
-            push({ kind: 'tool', key, id: b.id, name: b.name, input: b.input, done: false })
+            push({ kind: 'tool', key, id: b.id, name: b.name, input: b.input, done: false, at: Date.now() })
             r.tools.set(b.id, key)
           }
         }
@@ -284,12 +285,19 @@ export function useChatSession(sessionId: string | null, jsonlPath: string | nul
         const { text, attachments } = splitUserContent(c)
         const out = text.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/)
         if (out) { if (out[1].trim()) push({ kind: 'note', key: nextKey(), text: out[1].trim() }); return }
-        // Уведомление CLI о фоновой задаче приходит эхом как реплика пользователя.
-        // Это не сообщение человека: показываем служебной строкой, ход модели всё равно начнётся
-        const tn = ev.isReplay ? text.match(/^\s*<task-notification>([\s\S]*?)<\/task-notification>/) : null
-        if (tn) {
-          const summary = tn[1].match(/<summary>([\s\S]*?)<\/summary>/)?.[1]?.trim()
-          push({ kind: 'note', key: nextKey(), text: summary || tr("Фоновая задача завершилась", "Background task finished") })
+        // Уведомление CLI о фоновой задаче приходит как реплика пользователя (эхом или
+        // с origin.kind). Это не сообщение человека: показываем служебной строкой, ход
+        // модели всё равно начнётся. Одна задача — одна строка, даже если пришла дважды
+        // Бывает и голым, и обёрнутым в <system-reminder> с пометкой [SYSTEM NOTIFICATION]
+        const tn = /^\s*<(task-notification|system-reminder)>/.test(text) ? text.match(/<task-notification>([\s\S]*?)<\/task-notification>/) : null
+        if (tn || ev.origin?.kind === 'task-notification') {
+          const body = tn?.[1] ?? text
+          const id = body.match(/<task-id>([\s\S]*?)<\/task-id>/)?.[1]?.trim() ?? body
+          if (r.seenTasks.has(id)) return
+          r.seenTasks.add(id)
+          const summary = body.match(/<summary>([\s\S]*?)<\/summary>/)?.[1]?.trim()
+          const status = body.match(/<status>([\s\S]*?)<\/status>/)?.[1]?.trim() ?? 'completed'
+          push({ kind: 'note', key: nextKey(), text: summary || tr("Фоновая задача завершилась", "Background task finished"), task: { id, status, at: Date.now() } })
           beginTurn()
           setBusy(true)
           return

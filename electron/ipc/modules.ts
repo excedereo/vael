@@ -1,4 +1,6 @@
-import { ipcMain } from 'electron'
+import { ipcMain, shell } from 'electron'
+import fs from 'fs'
+import { createUserModule, userModuleDir, callBackend, MODULES_DIR } from '../services/UserModules.js'
 import type { ModuleRegistry } from '../ModuleRegistry.js'
 import { loadQueue, saveQueue, type WakeEntry } from '../modules/heartbeat.js'
 import { listAlivePtySessions } from './pty.js'
@@ -13,6 +15,23 @@ export function registerModuleHandlers(moduleRegistry: ModuleRegistry) {
   })
   ipcMain.handle('modules:start', (_, id: string) => ({ ok: moduleRegistry.start(id) }))
   ipcMain.handle('modules:stop', (_, id: string) => ({ ok: moduleRegistry.stop(id) }))
+
+  // Страницы-модули: заготовка из раздела и папка в проводнике
+  ipcMain.handle('modules:create', (_, name: string) => {
+    try { return createUserModule(name) } catch (err) { return { ok: false, error: String((err as Error).message) } }
+  })
+  // Страница модуля зовёт свою серверную часть. Ошибку отдаём текстом, а не исключением
+  ipcMain.handle('modules:call', async (_, id: string, method: string, args: unknown[]) => {
+    if (typeof id !== 'string' || typeof method !== 'string') return { ok: false, error: 'bad call' }
+    try { return { ok: true, result: await callBackend(id, method, args) } }
+    catch (err) { return { ok: false, error: String((err as Error)?.message ?? err) } }
+  })
+  ipcMain.handle('modules:openFolder', async (_, id?: string) => {
+    const dir = userModuleDir(id ?? '')
+    if (!dir) return
+    fs.mkdirSync(MODULES_DIR, { recursive: true })
+    await shell.openPath(dir)
+  })
 
   // Heartbeat — очередь побудок. Правится и из UI, и снаружи (`vael wake`),
   // поэтому источник правды всегда файл, а не состояние в памяти.

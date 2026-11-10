@@ -70,6 +70,13 @@ export function registerWindowHandlers(getWindow: () => BrowserWindow | null) {
   })
   ipcMain.handle('window:close', () => getWindow()?.close())
   ipcMain.handle('window:isMaximized', () => getWindow()?.isMaximized() ?? false)
+  // Цвета системных кнопок окна под текущую тему. Только цвета вида #rgb/#rrggbb/rgb()/rgba()
+  ipcMain.handle('window:setOverlay', (e, color: string, symbolColor: string) => {
+    const isColor = (v: unknown) => typeof v === 'string' && /^(#[0-9a-f]{3,8}|rgba?\([\d.,\s%]+\))$/i.test(v)
+    const win = BrowserWindow.fromWebContents(e.sender)
+    if (!win || !isColor(color) || !isColor(symbolColor)) return
+    try { win.setTitleBarOverlay({ color, symbolColor, height: 43 }) } catch { /* окно без overlay */ }
+  })
 
   ipcMain.handle('shell:openExternal', (_, url: string) => isExternalUrl(url) ? shell.openExternal(url) : undefined)
 

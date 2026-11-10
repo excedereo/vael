@@ -2,6 +2,9 @@ import { ipcMain, BrowserWindow, dialog } from 'electron'
 import type { ChatStartOptions } from '../../shared/types.js'
 import { initChatService, startChat, sendChatMessage, control, killChat, isChatAlive, describeChats, getChatInit, getAccountLimits } from '../services/ChatService.js'
 import { readAttachment } from '../services/ChatAttachments.js'
+import { isInside } from '../services/Guard.js'
+import fs from 'fs'
+import os from 'os'
 import { readChatHistory, readCompactTail, readSummaries } from '../services/ChatHistory.js'
 
 export function registerChatHandlers(getWindow: () => BrowserWindow | null) {
@@ -66,6 +69,21 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null) {
   ipcMain.handle('chat:list', () => describeChats())
 
   ipcMain.handle('chat:history', (_, jsonlPath: string) => readChatHistory(jsonlPath))
+  // Хвост вывода фоновой задачи CLI. Только файлы *.output во временной папке —
+  // там CLI их и держит; остальное окну читать незачем
+  ipcMain.handle('task:tail', (_, file: string, bytes?: number) => {
+    if (typeof file !== 'string' || !file.toLowerCase().endsWith('.output') || !isInside(file, os.tmpdir())) return null
+    try {
+      const fd = fs.openSync(file, 'r')
+      const size = fs.fstatSync(fd).size
+      const len = Math.min(size, Math.min(Math.max(bytes || 6000, 500), 64000))
+      const buf = Buffer.alloc(len)
+      fs.readSync(fd, buf, 0, len, size - len)
+      fs.closeSync(fd)
+      // ANSI-цвета терминала в тексте не нужны
+      return { size, text: buf.toString('utf-8').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '') }
+    } catch { return null }
+  })
   ipcMain.handle('chat:compactFiles', (_, jsonlPath: string, pre?: number) => readCompactTail(jsonlPath, pre))
   ipcMain.handle('chat:summaries', (_, jsonlPath: string) => readSummaries(jsonlPath))
 }

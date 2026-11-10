@@ -16,7 +16,9 @@ export function toolResultText(content: unknown): string {
 
 // Служебные вставки CLI в user-записях, которые в ленте не нужны
 function isServiceText(t: string): boolean {
-  return t.startsWith('<local-command-caveat>') || t.startsWith('Caveat:') || t.startsWith('<system-reminder>')
+  return t.startsWith('<local-command-caveat>') || t.startsWith('Caveat:')
+    // уведомление о фоновой задаче в обёртке — не мусор, его разберут ниже
+    || (t.startsWith('<system-reminder>') && !t.includes('<task-notification>'))
 }
 
 /** Запись attachment сразу после компакта → файл, оставшийся в контексте */
@@ -149,6 +151,18 @@ export function readChatHistory(jsonlPath: string): ChatHistory {
         items.push({ kind: 'user', key: key(), text: (cmd[1] + ' ' + args).trim(), at })
         continue
       }
+      // Уведомление CLI о фоновой задаче записано как реплика user, но это не
+      // человек — показываем служебной строкой
+      // Бывает и голым, и обёрнутым в <system-reminder> с пометкой [SYSTEM NOTIFICATION]
+      const tn = /^<(task-notification|system-reminder)>/.test(t) ? t.match(/<task-notification>([\s\S]*?)<\/task-notification>/) : null
+      if (tn || (e as { origin?: { kind?: string } }).origin?.kind === 'task-notification') {
+        const summary = (tn?.[1] ?? t).match(/<summary>([\s\S]*?)<\/summary>/)?.[1]?.trim()
+        const body = tn?.[1] ?? t
+        const taskId = body.match(/<task-id>([\s\S]*?)<\/task-id>/)?.[1]?.trim()
+        const status = body.match(/<status>([\s\S]*?)<\/status>/)?.[1]?.trim() ?? 'completed'
+        items.push({ kind: 'note', key: key(), text: summary || 'Background task finished', task: taskId ? { id: taskId, status, at } : undefined })
+        continue
+      }
       items.push({ kind: 'user', key: key(), text: t, attachments: split.attachments.length ? split.attachments : undefined, at })
       continue
     }
@@ -160,7 +174,7 @@ export function readChatHistory(jsonlPath: string): ChatHistory {
         if (b.type === 'text' && b.text) {
           items.push(synthetic ? { kind: 'note', key: key(), text: b.text, markdown: true } : { kind: 'text', key: key(), text: b.text, at })
         } else if (b.type === 'tool_use' && b.id) {
-          const item: Extract<ChatItem, { kind: 'tool' }> = { kind: 'tool', key: key(), id: b.id, name: b.name ?? '?', input: b.input, done: false }
+          const item: Extract<ChatItem, { kind: 'tool' }> = { kind: 'tool', key: key(), id: b.id, name: b.name ?? '?', input: b.input, done: false, at }
           tools.set(b.id, item)
           items.push(item)
         }

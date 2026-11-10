@@ -1,7 +1,7 @@
 import { useCallback, useState, useEffect, useRef } from 'react'
 import type { Account } from './types/index'
 import { AnimatePresence, motion } from 'framer-motion'
-import { X, StopCircle, PanelLeftOpen, PanelLeftClose, SquareTerminal, MessageSquare, Ellipsis, Copy } from 'lucide-react'
+import { X, PanelLeftOpen, PanelLeftClose, SquareTerminal, MessageSquare, Copy, ChevronDown, ScrollText, Trash2, Square } from 'lucide-react'
 import { useAppState } from './hooks/useAppState.js'
 import { useNavHistory } from './hooks/useNavHistory.js'
 import { useUpdateManager } from './hooks/useUpdateManager.js'
@@ -10,7 +10,7 @@ import { useConsoleCapture } from './hooks/useConsoleCapture.js'
 import { useSettings } from './hooks/useSettings.js'
 import { SessionProvider, useSessionContext } from './context/SessionContext.js'
 import { panels } from './panels/index.js'
-import { setActiveModule } from './lib/activeModule.js'
+import { setActiveModule, getActiveModule } from './lib/activeModule.js'
 import { PanelErrorBoundary } from './components/PanelErrorBoundary.js'
 import { Sidebar } from './components/Sidebar.js'
 import { NavRail } from './components/NavRail.js'
@@ -32,13 +32,14 @@ import { NavControls } from './components/NavControls.js'
 import { PtyTerminalView } from './components/PtyTerminalView.js'
 import { ChatView } from './components/ChatView.js'
 import { useViewMode, setViewMode, type ViewMode } from './lib/viewMode.js'
+import { setSettingsTab } from './lib/sectionTabs.js'
 import { SessionToolbar } from './components/SessionToolbar.js'
 import { SessionWelcome } from './components/SessionWelcome.js'
 import { ConfettiCanvas } from './components/ConfettiCanvas.js'
 import { WindowControls } from './components/WindowControls.js'
 import { UpdateBanner } from './components/UpdateBanner.js'
 import { NetworkBanner } from './components/NetworkBanner.js'
-import { api } from './lib/api.js'
+import { api, type ModuleListItem } from './lib/api.js'
 import type { Session } from './types/index'
 import { restoreSavedTheme } from './lib/theme.js'
 import { statusLog } from './lib/statusLog.js'
@@ -115,15 +116,26 @@ function AppInner() {
   const [sessionConfig, setSessionConfig] = useState(DEFAULT_CONFIG)
   const [spawnTrigger, setSpawnTrigger] = useState(0)
   const [newSessionId, setNewSessionId] = useState<string | null>(null)
-  type StartPhase = 'idle' | 'confetti' | 'fadeout'
+  // leaving — процесс запускается, экран входа держится поверх, пока лента
+  // не загрузится, и уходит одновременно с её сборкой
+  type StartPhase = 'idle' | 'confetti' | 'leaving'
   const [startPhase, setStartPhase] = useState<StartPhase>('idle')
+  const leaveTimer = useRef(0)
+  const endLeaving = useCallback(() => { clearTimeout(leaveTimer.current); setStartPhase(p => p === 'leaving' ? 'idle' : p) }, [])
+  const beginLeaving = useCallback((run: () => void, waitChat: boolean) => {
+    setStartPhase('leaving')
+    run()
+    // У терминала сигнала готовности нет; у чата — подстраховка, если поток не поднялся
+    clearTimeout(leaveTimer.current)
+    leaveTimer.current = window.setTimeout(endLeaving, waitChat ? 6000 : 350)
+  }, [endLeaving])
   const [pendingStart, setPendingStart] = useState<(() => void) | null>(null)
   const [confettiOrigin, setConfettiOrigin] = useState<DOMRect | undefined>(undefined)
 
   // Единая навигация: раздел определяет, что показано в главной области.
   const [section, setSection] = useState<Section>('sessions')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [modules, setModules] = useState<{ id: string; name: string; icon?: string; running: boolean }[]>([])
+  const [modules, setModules] = useState<ModuleListItem[]>([])
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null)
   const { push: navPush, goBack, goForward, canGoBack, canGoForward } = useNavHistory()
 
@@ -132,14 +144,20 @@ function AppInner() {
   const { consoleLogs, setConsoleLogs, devConsole } = useConsoleCapture()
 
 
+  // Список модулей: встроенные + страницы из папки modules. Папку меняют
+  // снаружи, поэтому список перечитывается по сигналу от main
   useEffect(() => {
-    api.modulesList().then(list => {
+    const load = (first: boolean) => api.modulesList().then(list => {
       setModules(list)
-      if (list.length > 0) {
-        setActiveModuleId(list[0].id)
-        setActiveModule(list[0].id)
+      const cur = getActiveModule()
+      if (list.length > 0 && (first || !list.some(m => m.id === cur))) {
+        const id = first || !cur ? list[0].id : (list.find(m => m.id === cur) ?? list[0]).id
+        setActiveModuleId(id)
+        setActiveModule(id)
       }
     })
+    load(true)
+    return api.onModulesChanged?.(() => load(false))
   }, [])
 
   useEffect(() => { restoreSavedTheme() }, [])
@@ -157,10 +175,13 @@ function AppInner() {
 
   // Native drag-drop listeners
   useEffect(() => {
-    const mainEl = mainAreaRef.current
+    // Главную область берём в момент события: при первом рендере её ещё нет
+    // (экран проверки зависимостей), и запомненная ссылка навсегда оставалась null
+    const main = () => mainAreaRef.current
     const onDragOver = (e: DragEvent) => { e.preventDefault() }
     const onDragEnter = (e: DragEvent) => {
       e.preventDefault()
+      const mainEl = main()
       if (!mainEl) return
       const into = e.target as Node
       const from = e.relatedTarget as Node | null
@@ -170,6 +191,7 @@ function AppInner() {
     }
     const onDragLeave = (e: DragEvent) => {
       e.preventDefault()
+      const mainEl = main()
       if (!mainEl) return
       const from = e.target as Node
       const to = e.relatedTarget as Node | null
@@ -178,10 +200,10 @@ function AppInner() {
     const onDrop = (e: DragEvent) => {
       e.preventDefault()
       setDragOver(false)
-      if (mainEl?.contains(e.target as Node) && e.dataTransfer?.files.length) {
+      if (main()?.contains(e.target as Node) && e.dataTransfer?.files.length) {
         const files = Array.from(e.dataTransfer.files)
-        const paths = files.map(f => (f as File & { path?: string }).path).filter(Boolean) as string[]
-        if (paths.length > 0) {
+        const paths = files.map(f => api.pathForFile?.(f) || (f as File & { path?: string }).path).filter(Boolean) as string[]
+        if (paths.length === files.length) {
           document.dispatchEvent(new CustomEvent('vaeli:dropPaths', { detail: paths }))
         } else {
           document.dispatchEvent(new CustomEvent('vaeli:dropFiles', { detail: e.dataTransfer.files }))
@@ -526,9 +548,12 @@ function AppInner() {
             {section === 'sessions' ? (
               <>
                 <span className={cn('session-dot', isPtySpawned || isChatActive ? 'is-live' : 'is-off')} />
-                <span className="text-[14px] font-medium text-text-primary truncate select-none pointer-events-none" title={activeSession?.title}>
-                  {activeSession ? (activeSession.title || t("Без названия", "Untitled")) : t("Новая сессия", "New session")}
-                </span>
+                <SessionTitleMenu
+                  title={activeSession ? (activeSession.title || t("Без названия", "Untitled")) : t("Новая сессия", "New session")}
+                  sessionId={activeSessionId}
+                  onSummaries={activeSession ? () => setSummariesFor(activeSession) : undefined}
+                  onDelete={activeSession ? () => handleDeleteSession(activeSession) : undefined}
+                />
               </>
             ) : (
               <span className="text-[13.5px] font-medium text-text-primary truncate select-none pointer-events-none">
@@ -546,12 +571,14 @@ function AppInner() {
               </button>
             </div>
           )}
-          {section === 'sessions' && (
-            <SessionMenu
-              sessionId={activeSessionId}
-              canKill={isPtySpawned || isChatActive}
-              onKill={() => setKillSessionModal(true)}
-            />
+          {section === 'sessions' && (isPtySpawned || isChatActive) && (
+            <button
+              onClick={() => setKillSessionModal(true)}
+              className="header-end no-drag shrink-0"
+              title={t("Остановить процесс claude этой сессии. История сохранится", "Stop this session's claude process. History is kept")}
+            >
+              <Square size={10} fill="currentColor" />{t("Завершить", "End")}
+            </button>
           )}
           <WindowControls />
         </div>
@@ -667,6 +694,7 @@ function AppInner() {
                       jsonlPath={sess ? `${sess.projectPath}\\${sess.id}.jsonl` : null}
                       alive
                       visible={visible && section === 'sessions'}
+                      onReady={endLeaving}
                       effort={key === '__new__' ? sessionConfig.effort : loadSessionConfig(sid).effort}
                     />
                   </div>
@@ -675,13 +703,14 @@ function AppInner() {
             </div>
 
             <AnimatePresence>
-              {!isPtySpawned && !isChatActive && (startPhase === 'idle' || startPhase === 'confetti' || startPhase === 'fadeout') && (
+              {((!isPtySpawned && !isChatActive) || startPhase === 'leaving') && (
                 <motion.div
                   key="welcome"
                   className="absolute inset-0"
+                  style={{ pointerEvents: startPhase === 'leaving' ? 'none' : undefined }}
                   initial={{ opacity: 1 }}
-                  animate={{ opacity: startPhase === 'fadeout' ? 0 : 1 }}
-                  transition={{ duration: 0.5 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0, y: -14, filter: 'blur(6px)', transition: { duration: 0.4, ease: [0.4, 0, 0.2, 1] } }}
                 >
                   <SessionWelcome
                     sessionTitle={activeSession?.title}
@@ -691,7 +720,10 @@ function AppInner() {
                     lastModified={activeSession?.lastModified}
                     config={sessionConfig}
                     onChange={setSessionConfig}
-                    onSettings={() => setSection('settings')}
+                    viewMode={viewMode}
+                    onViewModeChange={handleViewModeChange}
+                    // Свои варианты модели/мышления/разрешений живут во вкладке «Сессии»
+                    onSettings={() => { setSettingsTab('sessions'); setSection('settings') }}
                     onImport={async () => {
                       const configDir = accounts.find(a => a.id === activeAccountId)?.configDir
                       if (!configDir) return
@@ -720,8 +752,7 @@ function AppInner() {
                         setPendingStart(() => doSpawn)
                         setStartPhase('confetti')
                       } else {
-                        setStartPhase('fadeout')
-                        setTimeout(() => { doSpawn(); setStartPhase('idle') }, 500)
+                        beginLeaving(doSpawn, viewMode === 'chat')
                       }
                     }}
                   />
@@ -729,28 +760,14 @@ function AppInner() {
               )}
             </AnimatePresence>
 
-            {(startPhase === 'confetti' || startPhase === 'fadeout') && (
+            {startPhase === 'confetti' && (
               <ConfettiCanvas
-                active={startPhase === 'confetti'}
+                active
                 originRect={confettiOrigin}
                 onDone={() => {
-                  setStartPhase('fadeout')
-                  setTimeout(() => {
-                    pendingStart?.()
-                    setPendingStart(null)
-                    setStartPhase('idle')
-                  }, 500)
+                  beginLeaving(() => pendingStart?.(), viewMode === 'chat')
+                  setPendingStart(null)
                 }}
-              />
-            )}
-
-            {startPhase === 'fadeout' && (
-              <motion.div
-                className="absolute inset-0"
-                style={{ background: '#0a0a0a' }}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.5 }}
               />
             )}
         </div>
@@ -822,7 +839,13 @@ function AppInner() {
 }
 
 /** «⋯» в шапке сессии: редкие действия, чтобы не висели текстом рядом с названием */
-function SessionMenu({ sessionId, canKill, onKill }: { sessionId: string | null; canKill: boolean; onKill: () => void }) {
+/** Название сессии в шапке — кнопка с меню действий над ней */
+function SessionTitleMenu({ title, sessionId, onSummaries, onDelete }: {
+  title: string
+  sessionId: string | null
+  onSummaries?: () => void
+  onDelete?: () => void
+}) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -833,26 +856,29 @@ function SessionMenu({ sessionId, canKill, onKill }: { sessionId: string | null;
     document.addEventListener('keydown', onKey)
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
   }, [open])
-  if (!sessionId && !canKill) return null
+  const hasMenu = !!(sessionId || onSummaries || onDelete)
+  if (!hasMenu) return <span className="text-[14px] font-medium text-text-primary truncate select-none pointer-events-none">{title}</span>
   return (
-    <div ref={ref} className="relative no-drag shrink-0 ml-1">
-      <button
-        onClick={() => setOpen(v => !v)}
-        title={t("Действия с сессией", "Session actions")}
-        className={cn('w-7 h-7 rounded-md flex items-center justify-center transition-colors', open ? 'text-text-primary bg-surface-hover' : 'text-text-faint hover:text-text-secondary hover:bg-surface-hover')}
-      >
-        <Ellipsis size={16} />
+    <div ref={ref} className="relative no-drag min-w-0">
+      <button onClick={() => setOpen(v => !v)} className={cn('header-title', open && 'is-open')} title={title}>
+        <span className="truncate">{title}</span>
+        <ChevronDown size={14} className="shrink-0" />
       </button>
       {open && (
-        <div className="header-menu">
+        <div className="header-menu is-left">
+          {onSummaries && (
+            <button onClick={() => { setOpen(false); onSummaries() }}>
+              <ScrollText size={14} />{t("Пересказы сжатий", "Compaction summaries")}
+            </button>
+          )}
           {sessionId && (
             <button onClick={() => { navigator.clipboard.writeText(sessionId).catch(() => {}); setOpen(false) }}>
               <Copy size={14} />{t("Скопировать ID сессии", "Copy session ID")}
             </button>
           )}
-          {canKill && (
-            <button className="is-danger" onClick={() => { setOpen(false); onKill() }}>
-              <StopCircle size={14} />{t("Завершить процесс", "End process")}
+          {onDelete && (
+            <button className="is-danger" onClick={() => { setOpen(false); onDelete() }}>
+              <Trash2 size={14} />{t("Удалить сессию", "Delete session")}
             </button>
           )}
         </div>

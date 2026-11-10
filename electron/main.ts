@@ -18,11 +18,14 @@ import { isChatAlive, listChatSessions, chatWriteLikePty, killAllChats } from '.
 import { runStartupTempCleanup } from './ipc/temp.js'
 import { registerNotificationIpc } from './ipc/notifications.js'
 import { destroyNotificationWindow } from './services/NotificationWindow.js'
+import { registerModuleScheme, handleModuleScheme, watchUserModules, initBackends, syncBackends, stopBackends } from './services/UserModules.js'
 
 // ── Singletons ────────────────────────────────────────────────────────────────
 
 const accountManager = new AccountManager()
 const moduleRegistry = new ModuleRegistry()
+// Схема страниц-модулей регистрируется до ready, иначе Electron её не примет
+registerModuleScheme()
 
 let mainWindow: BrowserWindow | null = null
 
@@ -87,7 +90,9 @@ function createWindow() {
     width: 1400, height: 900, minWidth: 900, minHeight: 600,
     backgroundColor: '#0a0a0a',
     titleBarStyle: 'hidden',
-    frame: false,
+    // Родные кнопки окна Windows поверх нашей шапки (43px — нижний пиксель шапки это граница): системный вид,
+    // Snap Layouts при наведении на «развернуть». Цвета подстраивает окно под тему
+    titleBarOverlay: { color: '#0a0a0a', symbolColor: '#cfcfcf', height: 43 },
     // Многоразмерный .ico: на 16–32px в нём упрощённый рисунок, иначе в панели задач каша
     icon: path.join(__dirname, process.env.VITE_DEV_SERVER_URL ? '../public/icon.ico' : '../dist/icon.ico'),
     webPreferences: {
@@ -213,7 +218,11 @@ app.whenReady().then(() => {
     flushLogBuffer,
   })
 
+  handleModuleScheme()
   createWindow()
+  const toWindow = (ch: string, ...a: unknown[]) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(ch, ...a) }
+  initBackends((id, name, data) => toWindow('modules:event', id, name, data))
+  watchUserModules(() => { syncBackends(); toWindow('modules:changed') })
 
   moduleRegistry.init({
     claudeRunner: null,
@@ -250,6 +259,7 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   moduleRegistry.destroy()
   stopAllSessionWatches()
+  stopBackends()
   killAllPtys()
   killAllChats()
   destroyNotificationWindow()

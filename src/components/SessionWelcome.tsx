@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, ChevronDown, Check, Plus } from 'lucide-react'
+import { ArrowRight, ChevronDown, Check, Download, SlidersHorizontal } from 'lucide-react'
 import logo from '../assets/logo.svg'
 import { loadCustomOptions } from '../lib/customOptions.js'
 import { api, type SessionInfo } from '../lib/api.js'
 import { loadCliModels, modelDisplayName } from '../lib/cliModels.js'
 import { MdBlock } from './ChatView.js'
+import { EffortSlider, PermissionPicker, ViewModePicker } from './WelcomeControls.js'
 import { cn } from '../lib/utils.js'
 import { t, LOCALE } from '../lib/i18n.js'
 
@@ -113,6 +114,9 @@ interface Props {
   onStart: (btnRect?: DOMRect) => void
   onSettings?: () => void
   onImport?: () => void
+  /** Чат или терминал — выбирается прямо на экране новой сессии */
+  viewMode?: 'chat' | 'terminal'
+  onViewModeChange?: (v: 'chat' | 'terminal') => void
 }
 
 // «5 минут назад», «вчера», дата
@@ -163,7 +167,7 @@ function cliModelOptions(): Option[] {
   return list.map(m => ({ value: m.value, label: m.displayName, sub: m.description }))
 }
 
-export function SessionWelcome({ sessionTitle, isNew = false, jsonlPath, messageCount, lastModified, config, onChange, onStart, onSettings, onImport }: Props) {
+export function SessionWelcome({ sessionTitle, isNew = false, jsonlPath, messageCount, lastModified, config, onChange, onStart, onSettings, onImport, viewMode = 'chat', onViewModeChange }: Props) {
   const btnRef = useRef<HTMLButtonElement>(null)
   const [clicked, setClicked] = useState(false)
 
@@ -273,11 +277,15 @@ export function SessionWelcome({ sessionTitle, isNew = false, jsonlPath, message
         )}
 
         {isNew ? (
-          <div className="grid grid-cols-2 gap-3">
-            <Dropdown label={t("Модель", "Model")}     value={config.model}          options={allModels}      onChange={v => onChange({ ...config, model: v })} display={modelDisplayName(config.model) ?? undefined} />
-            <Dropdown label={t("Мышление", "Thinking")}   value={config.effort}         options={allEfforts}     onChange={v => onChange({ ...config, effort: v })} />
-            <Dropdown label={t("Разрешения", "Permissions")} value={config.permissionMode} options={allPermissions} onChange={v => onChange({ ...config, permissionMode: v })} />
-            <Dropdown label={t("Промпт", "Prompt")}     value={config.prompt}         options={PROMPTS}        onChange={v => onChange({ ...config, prompt: v })} />
+          <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-2 gap-3">
+              <Dropdown label={t("Модель", "Model")} value={config.model}  options={allModels} onChange={v => onChange({ ...config, model: v })} display={modelDisplayName(config.model) ?? undefined} />
+              {onViewModeChange
+                ? <ViewModePicker value={viewMode} onChange={onViewModeChange} />
+                : <Dropdown label={t("Промпт", "Prompt")} value={config.prompt} options={PROMPTS} onChange={v => onChange({ ...config, prompt: v })} />}
+            </div>
+            <EffortSlider value={config.effort} options={allEfforts} onChange={v => onChange({ ...config, effort: v })} />
+            <PermissionPicker value={config.permissionMode} options={allPermissions} onChange={v => onChange({ ...config, permissionMode: v })} />
           </div>
         ) : info?.lastText ? (
           // Последний ответ — как в самой ленте, только приглушённо и с фейдом
@@ -287,16 +295,16 @@ export function SessionWelcome({ sessionTitle, isNew = false, jsonlPath, message
           </div>
         ) : null}
 
-        <button ref={btnRef} onClick={start} className="welcome-start">
-          <Play size={12} fill="currentColor" />
-          {isNew ? (clicked ? t("Запуск…", "Starting…") : t("Начать", "Start")) : t("Продолжить", "Continue")}
-          <kbd>Enter</kbd>
+        <button ref={btnRef} onClick={start} className={cn('welcome-start', clicked && 'is-busy')}>
+          <span>{isNew ? (clicked ? t("Запуск…", "Starting…") : t("Начать", "Start")) : t("Продолжить", "Continue")}</span>
+          <ArrowRight size={17} strokeWidth={2.2} className="welcome-start-arrow" />
+          <kbd title="Enter">↵</kbd>
         </button>
 
         {isNew && (onImport || onSettings) && (
-          <div className="flex justify-center gap-4 -mt-1 text-[12.5px]">
-            {onImport && <button onClick={onImport} className="text-text-muted hover:text-text-secondary transition-colors">{t("Импортировать сессию", "Import session")}</button>}
-            {onSettings && <button onClick={onSettings} className="flex items-center gap-1 text-text-muted hover:text-text-secondary transition-colors"><Plus size={12} />{t("Свои варианты", "Custom options")}</button>}
+          <div className="welcome-links">
+            {onImport && <button onClick={onImport}><Download size={13} />{t("Импортировать сессию", "Import session")}</button>}
+            {onSettings && <button onClick={onSettings}><SlidersHorizontal size={13} />{t("Свои варианты", "Custom options")}</button>}
           </div>
         )}
       </motion.div>

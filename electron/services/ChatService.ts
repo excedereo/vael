@@ -142,7 +142,7 @@ export async function startChat(opts: ChatStartOptions): Promise<string> {
     // Без этого флага на живом процессе нельзя переключиться в bypass
     '--allow-dangerously-skip-permissions']
   args.push(opts.sessionId ? '--resume' : '--session-id', sessionId)
-  if (opts.model) args.push('--model', opts.model)
+  if (opts.model && opts.model !== '<synthetic>') args.push('--model', opts.model)
   if (opts.effort) args.push('--effort', opts.effort)
   if (opts.permissionMode) args.push('--permission-mode', opts.permissionMode)
 

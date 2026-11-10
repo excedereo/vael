@@ -102,7 +102,7 @@ export function registerNotificationIpc(getWindow: () => BrowserWindow | null) {
     })
   })
 
-  onSessionStatusChange((sessionId, status, prev, replyText) => {
+  onSessionStatusChange((sessionId, status, prev, replyText, auto) => {
     const win = getWindow()
     if (!shouldNotify(sessionId, win)) return
 
@@ -113,6 +113,8 @@ export function registerNotificationIpc(getWindow: () => BrowserWindow | null) {
       kind = 'asking'
       body = 'Ждёт ответа на вопрос'
     } else if (status === 'idle' && prev !== 'idle') {
+      // Ответ на уведомление о фоновой задаче — не то, чего человек ждал
+      if (auto) return
       kind = 'done'
       body = replyText ? trim(replyText) : 'Ответ готов'
     } else {
