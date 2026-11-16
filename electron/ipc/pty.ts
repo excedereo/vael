@@ -275,19 +275,50 @@ export function killAllPtys() {
   }
 }
 
-function isLastEntryMeta(jsonlPath: string): boolean {
+/**
+ * Строки jsonl с конца, кусками по 256 КБ: fn вернул true — дальше не читаем.
+ * Статус, мета-ответ и последний текст лежат в самом хвосте, а файл сессии —
+ * десятки МБ: раньше он целиком читался на каждый опрос (раз в 400 мс) и на
+ * каждое изменение файла, и main-процесс почти не вылезал из чтения
+ */
+function forEachLineFromEnd(jsonlPath: string, fn: (line: string) => boolean | void) {
+  const CHUNK = 256 * 1024
+  let fd: number
+  try { fd = fs.openSync(jsonlPath, 'r') } catch { return }
   try {
-    const content = fs.readFileSync(jsonlPath, 'utf-8')
-    const lines = content.trim().split('\n').filter(Boolean)
-    for (let i = lines.length - 1; i >= 0; i--) {
-      try {
-        const entry = JSON.parse(lines[i]) as { type?: string; isMeta?: boolean }
-        if (entry.type === 'user' && entry.isMeta) return true
-        break
-      } catch {}
+    let end = fs.fstatSync(fd).size
+    let tail = Buffer.alloc(0)
+    while (end > 0) {
+      const start = Math.max(0, end - CHUNK)
+      const buf = Buffer.alloc(end - start)
+      fs.readSync(fd, buf, 0, buf.length, start)
+      const data = tail.length ? Buffer.concat([buf, tail]) : buf
+      const nl = start > 0 ? data.indexOf(0x0a) : -1
+      end = start
+      // Кусок целиком внутри одной длинной строки — копим дальше
+      if (start > 0 && nl === -1) { tail = data; continue }
+      const body = nl === -1 ? data : data.subarray(nl + 1)
+      tail = nl === -1 ? Buffer.alloc(0) : data.subarray(0, nl + 1)
+      const lines = body.toString('utf-8').split('\n')
+      for (let i = lines.length - 1; i >= 0; i--) {
+        if (lines[i].trim() && fn(lines[i])) return
+      }
     }
-  } catch {}
-  return false
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
+function isLastEntryMeta(jsonlPath: string): boolean {
+  let meta = false
+  forEachLineFromEnd(jsonlPath, line => {
+    try {
+      const entry = JSON.parse(line) as { type?: string; isMeta?: boolean }
+      meta = entry.type === 'user' && !!entry.isMeta
+      return true
+    } catch { return false }
+  })
+  return meta
 }
 
 // Инструменты, которые блокируют сессию в ожидании действия пользователя.
@@ -336,23 +367,20 @@ export function detectStatus(jsonlPath: string, sessionId?: string): SessionStat
 }
 
 function detectJsonlStatus(jsonlPath: string): SessionStatusValue {
+  // Идём с конца: служебные записи (attachment, system, last-prompt, ai-title,
+  // mode, permission-mode и т.п.) сами по себе не меняют статус — берём первую
+  // содержательную (user/assistant) запись.
+  let found: SessionStatusValue = 'idle'
   try {
-    const content = fs.readFileSync(jsonlPath, 'utf-8')
-    const lines = content.trim().split('\n').filter(Boolean)
-    if (lines.length === 0) return 'idle'
-
-    // Идём с конца: служебные записи (attachment, system, last-prompt, ai-title,
-    // mode, permission-mode и т.п.) сами по себе не меняют статус — берём первую
-    // содержательную (user/assistant) запись.
-    for (let i = lines.length - 1; i >= 0; i--) {
+    forEachLineFromEnd(jsonlPath, line => {
       let entry: JsonlLike | null = null
-      try { entry = JSON.parse(lines[i]) } catch { continue }
-      if (!entry) continue
-      const status = statusFromEntry(entry)
-      if (status) return status
-    }
+      try { entry = JSON.parse(line) } catch { return false }
+      const status = entry ? statusFromEntry(entry) : null
+      if (status) { found = status; return true }
+      return false
+    })
   } catch {}
-  return 'idle'
+  return found
 }
 
 type ContentBlock = { type: string; text?: string; name?: string }
@@ -391,32 +419,33 @@ function turnStartedByTask(jsonlPath: string): boolean {
 }
 
 function extractLastAssistantText(jsonlPath: string): string | null {
+  let result: string | null = null
   try {
-    const content = fs.readFileSync(jsonlPath, 'utf-8')
-    const lines = content.trim().split('\n').filter(Boolean)
-
-    for (let i = lines.length - 1; i >= 0; i--) {
+    forEachLineFromEnd(jsonlPath, line => {
       try {
-        const entry = JSON.parse(lines[i]) as { type?: string; isMeta?: boolean; message?: AssistantMessage & { role?: string; content?: unknown } }
+        const entry = JSON.parse(line) as { type?: string; isMeta?: boolean; message?: AssistantMessage & { role?: string; content?: unknown } }
         // Мета-ответы команд вроде /context
         if (entry.type === 'user' && entry.isMeta && typeof entry.message?.content === 'string' && entry.message.content) {
-          return entry.message.content
+          result = entry.message.content
+          return true
         }
-        if (entry.type !== 'assistant' || !entry.message?.stop_reason) continue
+        if (entry.type !== 'assistant' || !entry.message?.stop_reason) return false
         const msg = entry.message
         if (Array.isArray(msg.content)) {
           const text = (msg.content as ContentBlock[])
             .filter((b: ContentBlock) => b.type === 'text' && b.text)
             .map((b: ContentBlock) => b.text!)
             .join('')
-          if (text) return text
+          if (text) { result = text; return true }
         } else if (typeof msg.content === 'string' && msg.content) {
-          return msg.content
+          result = msg.content
+          return true
         }
       } catch {}
-    }
+      return false
+    })
   } catch {}
-  return null
+  return result
 }
 
 export function registerPtyHandlers(getWindow: () => BrowserWindow | null) {
