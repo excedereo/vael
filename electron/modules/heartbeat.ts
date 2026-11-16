@@ -1,3 +1,4 @@
+import { forEachLineFromEnd } from '../services/JsonlTail.js'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
@@ -118,23 +119,19 @@ function plural(n: number, one: string, few: string, many: string): string {
 
 /** Время последнего ответа ассистента в сессии (epoch ms), либо null. */
 function readLastAssistantAt(jsonlPath: string): number | null {
-  let content: string
-  try { content = fs.readFileSync(jsonlPath, 'utf-8') } catch { return null }
-
-  // Идём с конца — последний ответ почти всегда в хвосте файла
-  const lines = content.split('\n')
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i]
-    if (!line.trim()) continue
+  // Идём с конца — последний ответ почти всегда в хвосте файла, целиком не читаем
+  let result: number | null = null
+  forEachLineFromEnd(jsonlPath, line => {
     let d: { type?: string; timestamp?: string; message?: { content?: Array<{ type: string; text?: string }> } }
-    try { d = JSON.parse(line) } catch { continue }
-    if (d.type !== 'assistant' || !d.timestamp) continue
+    try { d = JSON.parse(line) } catch { return false }
+    if (d.type !== 'assistant' || !d.timestamp) return false
     const hasText = (d.message?.content || []).some(c => c.type === 'text' && c.text?.trim())
-    if (!hasText) continue
+    if (!hasText) return false
     const ts = Date.parse(d.timestamp)
-    return Number.isNaN(ts) ? null : ts
-  }
-  return null
+    result = Number.isNaN(ts) ? null : ts
+    return true
+  })
+  return result
 }
 
 /**
