@@ -160,16 +160,73 @@ export interface BackendContext {
   log: (...args: unknown[]) => void
   /** Сообщить странице модуля: придёт как { type: 'vael:event', name, data } */
   emit: (name: string, data?: unknown) => void
+  /** Живые сессии Vael — PTY и чат одинаково */
+  sessions: ModuleSessions
+}
+
+export interface ModuleSessions {
+  /** id сессий, у которых сейчас запущен процесс */
+  alive: () => string[]
+  /** idle | thinking | streaming | tool | asking, либо null — сессии нет */
+  status: (sessionId: string) => string | null
+  /** Отправить сообщение в сессию как от человека. false — сессия не запущена */
+  send: (sessionId: string, text: string) => boolean
+  /**
+   * Смена статуса сессии. replyText — последний ответ, когда ход закончился
+   * (status idle). Возвращает отписку; при выгрузке модуля подписки снимаются сами.
+   * ⚠️ Vael следит за статусом только сессии, открытой сейчас в окне: по
+   * фоновым событий не будет — их опрашивать через status(), как Heartbeat
+   */
+  onStatus: (cb: (e: { sessionId: string; status: string; prev: string; replyText: string | null; auto: boolean }) => void) => () => void
+}
+
+/** Что main даёт модулям для работы с сессиями (без отписок — их ведём здесь) */
+export interface SessionsHost {
+  alive: () => string[]
+  status: (sessionId: string) => string | null
+  write: (sessionId: string, data: string) => boolean
+  onStatus: (cb: (sessionId: string, status: string, prev: string, replyText: string | null, auto?: boolean) => void) => () => void
 }
 
 const requireCjs = createRequire(import.meta.url)
 const backends = new Map<string, { mod: Backend; file: string; mtime: number }>()
 let emitToWindow: (moduleId: string, name: string, data: unknown) => void = () => {}
 
+let host: SessionsHost | null = null
+/** Подписки модуля на сессии — снимаем при выгрузке, даже если модуль забыл */
+const disposers = new Map<string, Set<() => void>>()
+
+function sessionsFor(id: string, tag: string): ModuleSessions {
+  return {
+    alive: () => host?.alive() ?? [],
+    status: sid => host?.status(sid) ?? null,
+    send: (sid, text) => {
+      if (!host || !host.alive().includes(sid)) return false
+      // Как Heartbeat: текст, затем Enter отдельно — TUI иначе принимает его за вставку
+      host.write(sid, String(text))
+      setTimeout(() => host?.write(sid, '\r'), 60)
+      return true
+    },
+    onStatus: cb => {
+      if (!host) return () => {}
+      const off = host.onStatus((sessionId, status, prev, replyText, auto) => {
+        try { cb({ sessionId, status, prev, replyText, auto: !!auto }) } catch (e) { console.error(tag, 'onStatus:', e) }
+      })
+      const set = disposers.get(id) ?? new Set()
+      disposers.set(id, set)
+      const dispose = () => { off(); set.delete(dispose) }
+      set.add(dispose)
+      return dispose
+    },
+  }
+}
+
 function unloadBackend(id: string) {
   const b = backends.get(id)
   if (!b) return
   try { b.mod.deactivate?.() } catch (e) { console.error(`[module ${id}] deactivate:`, e) }
+  for (const d of [...(disposers.get(id) ?? [])]) d()
+  disposers.delete(id)
   delete requireCjs.cache[requireCjs.resolve(b.file)]
   backends.delete(id)
 }
@@ -204,6 +261,7 @@ export function syncBackends() {
         claudeMd: path.join(os.homedir(), '.claude', 'CLAUDE.md'),
         log: (...a) => console.log(tag, ...a),
         emit: (name, data) => emitToWindow(id, name, data),
+        sessions: sessionsFor(id, tag),
       })
       backends.set(id, { mod, file, mtime: fs.statSync(file).mtimeMs })
       console.log(tag, 'загружен')
@@ -214,8 +272,9 @@ export function syncBackends() {
   }
 }
 
-export function initBackends(emit: typeof emitToWindow) {
+export function initBackends(emit: typeof emitToWindow, sessions: SessionsHost) {
   emitToWindow = emit
+  host = sessions
   syncBackends()
 }
 

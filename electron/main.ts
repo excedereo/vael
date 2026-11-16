@@ -13,7 +13,7 @@ import { ModuleRegistry } from './ModuleRegistry.js'
 import { loadVaeliSettings, saveVaeliSettings, migrateFromUserData, PATHS } from './services/SettingsService.js'
 import { linkAllAccounts, linkAccountSessions } from './services/SessionStoreService.js'
 import { registerAllHandlers } from './ipc/index.js'
-import { watchSessionDirect, unsubscribeSessionReply, subscribeSessionReply, ptyWriteBySessionId, stopAllSessionWatches, killAllPtys, detectStatus, isPtyAlive, listAlivePtySessions } from './ipc/pty.js'
+import { watchSessionDirect, unsubscribeSessionReply, subscribeSessionReply, ptyWriteBySessionId, stopAllSessionWatches, killAllPtys, detectStatus, isPtyAlive, listAlivePtySessions, onSessionStatusChange } from './ipc/pty.js'
 import { isChatAlive, listChatSessions, chatWriteLikePty, killAllChats } from './services/ChatService.js'
 import { runStartupTempCleanup } from './ipc/temp.js'
 import { registerNotificationIpc } from './ipc/notifications.js'
@@ -220,7 +220,21 @@ app.whenReady().then(() => {
   handleModuleScheme()
   createWindow()
   const toWindow = (ch: string, ...a: unknown[]) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(ch, ...a) }
-  initBackends((id, name, data) => toWindow('modules:event', id, name, data))
+  // Модулям — живые сессии: PTY и чат для них одно и то же
+  initBackends((id, name, data) => toWindow('modules:event', id, name, data), {
+    alive: () => [...listAlivePtySessions(), ...listChatSessions()],
+    status: (sessionId) => {
+      const jsonl = findJsonlForSession(sessionId)
+      return jsonl ? detectStatus(jsonl, sessionId) : null
+    },
+    write: (sessionId, data) => {
+      if (chatWriteLikePty(sessionId, data)) return true
+      if (!isPtyAlive(sessionId)) return false
+      ptyWriteBySessionId(sessionId, data)
+      return true
+    },
+    onStatus: (cb) => onSessionStatusChange(cb),
+  })
   watchUserModules(() => { syncBackends(); toWindow('modules:changed') })
 
   moduleRegistry.init({
