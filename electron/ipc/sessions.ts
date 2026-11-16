@@ -1,3 +1,4 @@
+import { getSessionsCached } from '../services/SessionScanService.js'
 import { ipcMain, BrowserWindow, dialog, clipboard, shell } from 'electron'
 import fs from 'fs'
 import path from 'path'
@@ -18,8 +19,10 @@ export function registerSessionHandlers(
   accountManager: AccountManager,
   getWindow: () => BrowserWindow | null,
 ) {
+  // Кэш с дочитыванием прироста: полное чтение всех jsonl на каждый вызов
+  // подвешивало main-процесс (см. SessionScanService)
   ipcMain.handle('sessions:get', (_, accountId: string) =>
-    accountManager.getSessionsForAccount(accountId)
+    getSessionsCached(accountManager, accountId)
   )
 
   ipcMain.handle('sessions:read', (_, sessionPath: string) => {
