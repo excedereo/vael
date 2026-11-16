@@ -4,7 +4,7 @@ import { ExternalLink, Trash2, HardDrive, Loader2, X, Plus, FolderOpen } from 'l
 import { api } from '../lib/api.js'
 import { cn } from '../lib/utils.js'
 import { loadActiveThemeFile, applyTheme } from '../lib/theme.js'
-import { loadCliModels } from '../lib/cliModels.js'
+import { modelChoiceOptions } from '../lib/cliModels.js'
 import { BUILTIN_THEMES } from '../lib/builtinThemes.js'
 import {
   Section, ToggleRow, Toggle, ThemePicker, Dropdown,
@@ -91,15 +91,7 @@ function saveDefaultSessionConfig(c: DefaultSessionConfig) {
 }
 
 // Модели — из списка CLI (кэшируется при запуске чата); до первого чата — алиасы
-function modelOptions() {
-  const list = loadCliModels().filter(m => m.value !== 'default')
-  if (!list.length) return [
-    { value: 'opus',   label: 'Opus',   sub: t("последняя Opus", "latest Opus") },
-    { value: 'sonnet', label: 'Sonnet', sub: t("последняя Sonnet", "latest Sonnet") },
-    { value: 'haiku',  label: 'Haiku',  sub: t("последняя Haiku", "latest Haiku") },
-  ]
-  return list.map(m => ({ value: m.value, label: m.displayName, sub: m.description ?? '' }))
-}
+const modelOptions = () => modelChoiceOptions()
 const EFFORT_OPTIONS_DEF = [
   { value: 'low',    label: 'Low',    sub: t("быстро, экономно", "fast, economical") },
   { value: 'medium', label: 'Medium', sub: t("баланс", "balanced") },

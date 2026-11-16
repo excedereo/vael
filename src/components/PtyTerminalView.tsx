@@ -1,3 +1,4 @@
+import { resolveModel } from '../lib/cliModels.js'
 import { useEffect, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -222,7 +223,7 @@ export function PtyTerminalView({ termId, sessionId, projectPath, configDir, vis
     fitAddon?.fit()
 
     spawnedRef.current = sessionId
-    api.ptySpawn(termId, sessionId ?? '', projectPath ?? '', configDir ?? '', term.cols, term.rows, model, effort, permissionMode)
+    api.ptySpawn(termId, sessionId ?? '', projectPath ?? '', configDir ?? '', term.cols, term.rows, model ? resolveModel(model) : model, effort, permissionMode)
   }, [spawnTrigger, termId])
 
   // Refit and focus when becoming visible

@@ -11,6 +11,7 @@ import { loadCustomOptions } from '../lib/customOptions.js'
 import { api, type ChatModelInfo } from '../lib/api.js'
 import type { ChatItem, ChatAttachment, TurnStats } from '../types/index'
 import { cn } from '../lib/utils.js'
+import { MAIN_ALIASES, pickNewest } from '../lib/cliModels.js'
 import { FileCard } from './FileCard.js'
 import { ImageGallery } from './ChatImages.js'
 import { SessionTray } from './SessionTray.js'
@@ -39,8 +40,6 @@ const FALLBACK_MODELS: ChatModelInfo[] = [
   { value: 'sonnet', displayName: 'Sonnet', description: t("последняя Sonnet", "latest Sonnet") },
   { value: 'haiku', displayName: 'Haiku', description: t("последняя Haiku", "latest Haiku") },
 ]
-// Порядок основных — как на claude.ai: от самой сильной к самой быстрой
-const MAIN_ALIASES = ['fable', 'opus', 'sonnet', 'haiku']
 const EFFORT_LABEL: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-High', max: 'Max' }
 const ALL_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const MODES: Option[] = [
@@ -858,31 +857,6 @@ function findModel(models: ChatModelInfo[], id: string | null): ChatModelInfo | 
   if (!b) return undefined
   return models.find(m => MAIN_ALIASES.includes(m.value) && m.resolvedModel === b)
     ?? models.find(m => m.value !== 'default' && (m.resolvedModel === b || m.value === b))
-}
-
-/** Семейство и версия модели: claude-fable-5-2 → fable, 502. У алиаса — по тому, во что он разворачивается */
-function modelVersion(m: ChatModelInfo): { fam: string; v: number } | null {
-  const id = baseModel(m.resolvedModel ?? m.value) ?? ''
-  const mm = id.match(/^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/)
-  if (mm) return { fam: mm[1], v: +mm[2] * 100 + (mm[3] ? +mm[3] : 0) }
-  return MAIN_ALIASES.includes(m.value) ? { fam: m.value, v: -1 } : null
-}
-
-/**
- * Основной выбор — самая новая модель каждого семейства из того, что знает CLI.
- * Алиас CLI иногда отстаёт (fable → 5.1, когда 5.2 уже в списке отдельно), поэтому
- * берём максимум по версии; при равенстве — алиас: он сам переедет на следующую
- */
-function pickNewest(list: ChatModelInfo[]): ChatModelInfo[] {
-  return MAIN_ALIASES.map(fam => {
-    let best: ChatModelInfo | undefined, bestV = -2
-    for (const m of list) {
-      const mv = modelVersion(m)
-      if (!mv || mv.fam !== fam) continue
-      if (mv.v > bestV || (mv.v === bestV && m.value === fam)) { best = m; bestV = mv.v }
-    }
-    return best
-  }).filter(Boolean) as ChatModelInfo[]
 }
 
 /** Выбор модели в духе claude.ai: основные, внутри — Effort и «Ещё модели» */

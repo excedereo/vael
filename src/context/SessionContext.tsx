@@ -1,3 +1,4 @@
+import { resolveModel } from '../lib/cliModels.js'
 import { DEFAULT_MODEL, toAlias } from '../lib/modelAlias.js'
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import { api } from '../lib/api.js'
@@ -191,7 +192,8 @@ export function SessionProvider({ children }: Props) {
     const r = await api.chatStart({
       sessionId,
       configDir,
-      model: config.model || undefined,
+      // Семейство (fable) → самая новая известная версия: алиас CLI бывает отстаёт
+      model: config.model ? resolveModel(config.model) : undefined,
       effort: config.effort || undefined,
       permissionMode: config.permissionMode || undefined,
     })

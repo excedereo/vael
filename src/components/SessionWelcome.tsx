@@ -4,7 +4,7 @@ import { ArrowRight, ChevronDown, Check, Download, SlidersHorizontal } from 'luc
 import logo from '../assets/logo.svg'
 import { loadCustomOptions } from '../lib/customOptions.js'
 import { api, type SessionInfo } from '../lib/api.js'
-import { loadCliModels, modelDisplayName } from '../lib/cliModels.js'
+import { loadCliModels, modelDisplayName, modelChoiceOptions } from '../lib/cliModels.js'
 import { MdBlock } from './ChatView.js'
 import { EffortSlider, PermissionPicker, ViewModePicker } from './WelcomeControls.js'
 import { cn } from '../lib/utils.js'
@@ -162,9 +162,10 @@ const PROMPTS: Option[] = [
 ]
 
 function cliModelOptions(): Option[] {
-  const list = loadCliModels().filter(m => m.value !== 'default')
-  if (!list.length) return FALLBACK_MODELS
-  return list.map(m => ({ value: m.value, label: m.displayName, sub: m.description }))
+  // Сверху семейства: значение — алиас (fable), подпись — самая новая версия.
+  // При запуске алиас развернётся в неё же (resolveModel), а выйдет следующая — переедет сам
+  if (!loadCliModels().some(m => m.value !== 'default')) return FALLBACK_MODELS
+  return modelChoiceOptions()
 }
 
 export function SessionWelcome({ sessionTitle, isNew = false, jsonlPath, messageCount, lastModified, config, onChange, onStart, onSettings, onImport, viewMode = 'chat', onViewModeChange }: Props) {
