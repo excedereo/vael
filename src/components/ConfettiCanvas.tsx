@@ -19,6 +19,8 @@ export function ConfettiCanvas({ active, onDone, originRect }: Props) {
     canvas.height = window.innerHeight
 
     const fire = confetti.create(canvas, { resize: true, useWorker: false })
+    // Без конфетти старт всё равно должен пройти дальше
+    if (!fire) { onDone(); return }
 
     const canvasRect = canvas.getBoundingClientRect()
     const originX = originRect
@@ -28,7 +30,7 @@ export function ConfettiCanvas({ active, onDone, originRect }: Props) {
       ? (originRect.top + originRect.height / 2) / canvasRect.height
       : 0.5
 
-    fire({
+    const shot = fire({
       particleCount: 60,
       spread: 80,
       startVelocity: 18,
@@ -39,7 +41,8 @@ export function ConfettiCanvas({ active, onDone, originRect }: Props) {
       shapes: ['square'],
       gravity: 0.4,
       drift: 0,
-    }).then(() => onDone())
+    })
+    if (shot) shot.then(() => onDone()); else onDone()
 
   }, [active])
 

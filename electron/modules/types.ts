@@ -1,8 +1,6 @@
-import { ClaudeRunner } from '../ClaudeRunner.js'
 import { AccountManager } from '../AccountManager.js'
 
 export interface ModuleContext {
-  claudeRunner: ClaudeRunner | null
   accountManager: AccountManager
   getLastConfigDir: () => string
   getLastSessionId: () => string | null

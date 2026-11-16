@@ -99,7 +99,6 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      clipboard: true,
     },
   })
 
@@ -225,7 +224,6 @@ app.whenReady().then(() => {
   watchUserModules(() => { syncBackends(); toWindow('modules:changed') })
 
   moduleRegistry.init({
-    claudeRunner: null,
     accountManager,
     getLastConfigDir: () => '',
     getLastSessionId: () => null,

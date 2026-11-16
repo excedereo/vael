@@ -4,6 +4,8 @@ export interface Account {
   id: string
   name: string
   configDir: string
+  /** Почта из oauthAccount конфига аккаунта, если вход выполнен */
+  email?: string
 }
 
 export interface Session {

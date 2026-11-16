@@ -67,7 +67,8 @@ export function PtyTerminalView({ termId, sessionId, projectPath, configDir, vis
       macOptionIsMeta: false,
       drawBoldTextInBrightColors: true,
       minimumContrastRatio: 1,
-      fastScrollModifier: 'shift',
+      // fastScrollModifier убран из типов xterm 5, но опция работает — оставляем
+      ...({ fastScrollModifier: 'shift' } as object),
       fastScrollSensitivity: 5,
     })
 
@@ -221,7 +222,7 @@ export function PtyTerminalView({ termId, sessionId, projectPath, configDir, vis
     fitAddon?.fit()
 
     spawnedRef.current = sessionId
-    api.ptySpawn(termId, sessionId ?? '', projectPath, configDir ?? '', term.cols, term.rows, model, effort, permissionMode)
+    api.ptySpawn(termId, sessionId ?? '', projectPath ?? '', configDir ?? '', term.cols, term.rows, model, effort, permissionMode)
   }, [spawnTrigger, termId])
 
   // Refit and focus when becoming visible

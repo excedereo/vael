@@ -498,7 +498,7 @@ export function SettingsPage(_props: Props) {
                   { label: t("Доступ", "Access"),   key: 'permissionMode' as const,  icon: ShieldTick, desc: t("Что можно делать без спроса", "What it may do without asking"),  options: [...PERMISSION_OPTIONS_DEF, ...customPerms] },
                 ] as const).map(({ label, key, icon, desc, options }) => (
                   <Row key={key} icon={icon} label={label} desc={desc}>
-                    <Dropdown value={defaultConfig[key]} options={options} onChange={v => updateDefaultConfig({ [key]: v })} />
+                    <Dropdown value={defaultConfig[key]} options={[...options]} onChange={v => updateDefaultConfig({ [key]: v })} />
                   </Row>
                 ))}
               </Section>

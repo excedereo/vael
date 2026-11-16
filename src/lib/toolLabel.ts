@@ -1,6 +1,6 @@
 // Единое место для лейблов инструментов
 // toolLabel() — для лайв-индикатора в useSession (одна строка)
-// toolHeading() — для отрендеренного блока в MessageBubble (verb + subject)
+// toolHeading() — заголовок блока инструмента в ленте чата (verb + subject)
 
 const short = (p: unknown) => {
   const s = String(p || '').replace(/\\/g, '/')
