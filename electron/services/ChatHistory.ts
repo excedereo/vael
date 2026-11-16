@@ -1,4 +1,5 @@
 import fs from 'fs'
+import readline from 'readline'
 import type { ChatItem, ChatHistory, CompactFile, CompactTail, CompactSummary } from '../../shared/types.js'
 import { splitUserContent } from '../../shared/chatContent.js'
 
@@ -90,20 +91,29 @@ export async function readSummaries(jsonlPath: string): Promise<CompactSummary[]
   return out.filter(s => s.summary)
 }
 
-export function readChatHistory(jsonlPath: string): ChatHistory {
+/**
+ * История для ленты чата. Читаем асинхронно и разбираем с паузами: наша сессия —
+ * сотни МБ, и синхронный разбор подвешивал main-процесс почти на секунду
+ */
+export async function readChatHistory(jsonlPath: string): Promise<ChatHistory> {
   const items: ChatItem[] = []
   let contextTokens: number | null = null
   let model: string | null = null
   const tools = new Map<string, Extract<ChatItem, { kind: 'tool' }>>()
   let lastCompact: Extract<ChatItem, { kind: 'compact' }> | null = null
 
-  let lines: string[]
-  try { lines = fs.readFileSync(jsonlPath, 'utf-8').split('\n') } catch { return { items, contextTokens, model } }
+  // Построчно потоком: файл в сотни МБ не превращается в одну огромную строку,
+  // а между кусками main-процесс успевает заняться окном и IPC
+  if (!fs.existsSync(jsonlPath)) return { items, contextTokens, model }
+  const lines = readline.createInterface({
+    input: fs.createReadStream(jsonlPath, { encoding: 'utf-8', highWaterMark: 256 * 1024 }),
+    crlfDelay: Infinity,
+  })
 
   let n = 0
   const key = () => `h${n++}`
 
-  for (const line of lines) {
+  for await (const line of lines) {
     if (!line.trim()) continue
     let e: Record<string, any>
     try { e = JSON.parse(line) } catch { continue }
